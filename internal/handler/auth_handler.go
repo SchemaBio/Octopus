@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/bioinfo/schema-platform/internal/config"
@@ -13,13 +12,13 @@ import (
 
 type AuthHandler struct {
 	cfg        *config.Config
-	jwtService *service.JWTService
+	userService *service.UserService
 }
 
 func NewAuthHandler(cfg *config.Config) *AuthHandler {
 	return &AuthHandler{
 		cfg:        cfg,
-		jwtService: service.NewJWTService(cfg),
+		userService: service.NewUserService(cfg),
 	}
 }
 
@@ -41,39 +40,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Find user (in real implementation, query database)
-	// For demo, we use a mock user
-	user, err := h.findUserByUsername(req.Username)
+	resp, err := h.userService.Login(req.Username, req.Password)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Check password
-	if !service.CheckPassword(req.Password, user.Password) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
-		return
-	}
-
-	// Check if user is active
-	if !user.Active {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User account is disabled"})
-		return
-	}
-
-	// Generate tokens
-	token, refreshToken, expiresAt, err := h.jwtService.GenerateToken(user)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-		return
-	}
-
-	c.JSON(http.StatusOK, model.LoginResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
-		ExpiresAt:    expiresAt,
-		User:         *user,
-	})
+	c.JSON(http.StatusOK, resp)
 }
 
 // Register godoc
@@ -94,47 +67,17 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// Check if username exists
-	if h.usernameExists(req.Username) {
-		c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
-		return
-	}
-
-	// Hash password
-	hashedPassword, err := service.HashPassword(req.Password)
+	resp, err := h.userService.Register(&req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		if err.Error() == "username already exists" || err.Error() == "email already exists" {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
 		return
 	}
 
-	// Create user
-	user := &model.User{
-		Username: req.Username,
-		Password: hashedPassword,
-		Email:    req.Email,
-		Role:     model.RoleUser,
-		Active:   true,
-	}
-
-	// Save user (in real implementation, save to database)
-	if err := h.saveUser(user); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
-		return
-	}
-
-	// Generate tokens
-	token, refreshToken, expiresAt, err := h.jwtService.GenerateToken(user)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, model.LoginResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
-		ExpiresAt:    expiresAt,
-		User:         *user,
-	})
+	c.JSON(http.StatusCreated, resp)
 }
 
 // Refresh godoc
@@ -155,17 +98,13 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
-	token, refreshToken, expiresAt, err := h.jwtService.RefreshToken(req.RefreshToken)
+	resp, err := h.userService.RefreshToken(req.RefreshToken)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid refresh token"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, model.RefreshResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
-		ExpiresAt:    expiresAt,
-	})
+	c.JSON(http.StatusOK, resp)
 }
 
 // Me godoc
@@ -201,43 +140,4 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	// JWT is stateless, so logout is handled client-side
 	// Client should discard the tokens
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
-}
-
-// Mock database functions (replace with real database implementation)
-func (h *AuthHandler) findUserByUsername(username string) (*model.User, error) {
-	// TODO: Replace with actual database query
-	// For demo, create a mock user
-	if username == "admin" {
-		hashedPassword, _ := service.HashPassword("admin123")
-		return &model.User{
-			ID:       1,
-			Username: "admin",
-			Password: hashedPassword,
-			Role:     model.RoleAdmin,
-			Active:   true,
-		}, nil
-	}
-	if username == "user" {
-		hashedPassword, _ := service.HashPassword("user123")
-		return &model.User{
-			ID:       2,
-			Username: "user",
-			Password: hashedPassword,
-			Role:     model.RoleUser,
-			Active:   true,
-		}, nil
-	}
-	return nil, errors.New("user not found")
-}
-
-func (h *AuthHandler) usernameExists(username string) bool {
-	// TODO: Replace with actual database query
-	return username == "admin" || username == "user"
-}
-
-func (h *AuthHandler) saveUser(user *model.User) error {
-	// TODO: Replace with actual database save
-	// Mock: assign an ID
-	user.ID = 3
-	return nil
 }

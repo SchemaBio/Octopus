@@ -81,6 +81,32 @@ func New(cfg *config.Config) *gin.Engine {
 			archive.GET("/:uuid/parquet", archiveHandler.GetParquet)
 			archive.GET("/:uuid/data", archiveHandler.GetCombinedData)
 		}
+
+		// Sample management (protected)
+		sampleHandler := handler.NewSampleHandler(cfg)
+		samples := v1.Group("/samples")
+		samples.Use(middleware.JWTAuth(cfg))
+		{
+			samples.POST("", sampleHandler.CreateSample)
+			samples.GET("", sampleHandler.ListSamples)
+			samples.POST("/assign", sampleHandler.AssignProject)
+			samples.GET("/:id", sampleHandler.GetSample)
+			samples.PUT("/:id", sampleHandler.UpdateSample)
+			samples.DELETE("/:id", sampleHandler.DeleteSample)
+		}
+
+		// Project management (protected)
+		projectHandler := handler.NewProjectHandler(cfg)
+		projects := v1.Group("/projects")
+		projects.Use(middleware.JWTAuth(cfg))
+		{
+			projects.POST("", projectHandler.CreateProject)
+			projects.GET("", projectHandler.ListProjects)
+			projects.GET("/:id", projectHandler.GetProject)
+			projects.GET("/:id/summary", projectHandler.GetProjectSummary)
+			projects.PUT("/:id", projectHandler.UpdateProject)
+			projects.DELETE("/:id", projectHandler.DeleteProject)
+		}
 	}
 
 	return r

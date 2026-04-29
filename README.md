@@ -4,7 +4,10 @@
 
 ## 功能特性
 
+- **数据库持久化**：支持 SQLite（开发）和 PostgreSQL（生产），自动迁移表结构
 - **JWT 认证**：无状态认证系统，支持登录、注册、Token 刷新
+- **样本管理**：样本创建、查询、状态追踪，关联项目
+- **项目管理**：项目批次管理，进度汇总统计
 - 任务提交：支持 local/slurm/lsf 多种执行环境
 - Sepiida 集成：实时查询任务进度和状态
 - 自动归档：任务完成后自动将结果归档到指定目录
@@ -71,6 +74,28 @@ go run cmd/server/main.go
 | DELETE | /api/v1/tasks/:id | 取消任务 |
 | GET | /api/v1/tasks/:id/logs | 获取任务日志 |
 
+### 样本管理 (需要认证)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/v1/samples | 创建样本 |
+| GET | /api/v1/samples | 获取样本列表 (支持项目筛选) |
+| GET | /api/v1/samples/:id | 获取样本详情 |
+| PUT | /api/v1/samples/:id | 更新样本信息 |
+| DELETE | /api/v1/samples/:id | 删除样本 |
+| POST | /api/v1/samples/assign | 批量分配样本到项目 |
+
+### 项目管理 (需要认证)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/v1/projects | 创建项目 |
+| GET | /api/v1/projects | 获取项目列表 |
+| GET | /api/v1/projects/:id | 获取项目详情 |
+| GET | /api/v1/projects/:id/summary | 获取项目汇总 (样本/任务统计) |
+| PUT | /api/v1/projects/:id | 更新项目信息 |
+| DELETE | /api/v1/projects/:id | 删除项目 |
+
 ### WDL 模板 (公开接口)
 
 | Method | Path | Description |
@@ -108,6 +133,8 @@ go run cmd/server/main.go
 |------|--------|------|
 | SERVER_PORT | 8080 | 服务端口 |
 | GIN_MODE | debug | 运行模式 |
+| DB_DRIVER | sqlite | 数据库驱动 (sqlite/postgres) |
+| DB_DSN | ./data/schema-platform.db | 数据库连接串 |
 | OUTPUT_DIR | /mnt/data/output | 输出目录 (UUID 父目录) |
 | TEMPLATE_DIR | /home/ubuntu/schema-germline | WDL 模板目录 |
 | ARCHIVE_DIR | /mnt/data/archive | 归档目录 |
@@ -125,6 +152,13 @@ go run cmd/server/main.go
 | JWT_ISSUER | octopus | JWT Issuer |
 | JWT_EXPIRE | 24h | Access Token 有效期 |
 | JWT_REFRESH | 168h | Refresh Token 有效期 (7天) |
+
+### PostgreSQL 配置示例
+
+```bash
+export DB_DRIVER=postgres
+export DB_DSN="host=localhost user=octopus password=octopus123 dbname=octopus port=5432 sslmode=disable"
+```
 
 ## JWT 认证
 

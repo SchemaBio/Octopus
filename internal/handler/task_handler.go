@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/bioinfo/schema-platform/internal/config"
+	"github.com/bioinfo/schema-platform/internal/middleware"
 	"github.com/bioinfo/schema-platform/internal/model"
 	"github.com/bioinfo/schema-platform/internal/service"
 	"github.com/gin-gonic/gin"
@@ -37,7 +38,14 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		return
 	}
 
-	task, err := h.svc.CreateTask(c.Request.Context(), &req)
+	// Get current user ID
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	task, err := h.svc.CreateTask(c.Request.Context(), &req, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

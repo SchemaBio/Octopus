@@ -12,6 +12,7 @@ import (
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/bioinfo/schema-platform/internal/repository"
 	"github.com/bioinfo/schema-platform/internal/sepiida"
 	"github.com/google/uuid"
 )
@@ -20,8 +21,8 @@ type TaskService struct {
 	cfg       *config.Config
 	sepiida   *sepiida.Client
 	archiver  *Archiver
+	repo      *repository.TaskRepository
 	mu        sync.RWMutex
-	tasks     map[string]*model.Task
 	running   map[string]*exec.Cmd
 }
 
@@ -35,7 +36,7 @@ func NewTaskService(cfg *config.Config) *TaskService {
 		cfg:       cfg,
 		sepiida:   sepClient,
 		archiver:  NewArchiver(cfg),
-		tasks:     make(map[string]*model.Task),
+		repo:      repository.NewTaskRepository(),
 		running:   make(map[string]*exec.Cmd),
 	}
 }
@@ -72,10 +73,7 @@ func (s *TaskService) getConfigFile(executor model.ExecutorType, customConfig st
 }
 
 // CreateTask creates and starts a new task
-func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateRequest) (*model.Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateRequest, userID uint) (*model.Task, error) {
 	// Determine executor (use request or default from config)
 	executor := req.Executor
 	if executor == "" {
@@ -120,12 +118,17 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		ConfigFile: configFile,
 		OutputDir:  outputDir,
 		Status:     model.TaskStatusPending,
+		SampleID:   req.SampleID,
+		ProjectID:  req.ProjectID,
+		CreatedBy:  userID,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
 
-	// Save task
-	s.tasks[taskID] = task
+	// Save task to database
+	if err := s.repo.Create(task); err != nil {
+		return nil, fmt.Errorf("failed to save task: %w", err)
+	}
 
 	// Start task execution in background
 	go s.executeTask(task)
@@ -139,6 +142,7 @@ func (s *TaskService) executeTask(task *model.Task) {
 	task.Status = model.TaskStatusRunning
 	now := time.Now()
 	task.StartedAt = &now
+	s.repo.Update(task)
 	s.mu.Unlock()
 
 	// Get executor path based on executor type
@@ -177,6 +181,7 @@ func (s *TaskService) executeTask(task *model.Task) {
 	}
 
 	task.LogPath = logPath
+	s.repo.Update(task)
 
 	// Setup log output
 	cmd.Stdout = logFile
@@ -213,6 +218,8 @@ func (s *TaskService) executeTask(task *model.Task) {
 			go s.archiver.ArchiveOnCompletion(task)
 		}
 	}
+
+	s.repo.Update(task)
 }
 
 func (s *TaskService) updateTaskError(task *model.Task, errMsg string) {
@@ -220,28 +227,19 @@ func (s *TaskService) updateTaskError(task *model.Task, errMsg string) {
 	task.Status = model.TaskStatusFailed
 	task.Error = errMsg
 	task.UpdatedAt = time.Now()
+	s.repo.Update(task)
 	s.mu.Unlock()
 }
 
 // GetTask retrieves a task by ID
 func (s *TaskService) GetTask(ctx context.Context, id string) (*model.Task, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	task, ok := s.tasks[id]
-	if !ok {
-		return nil, fmt.Errorf("task not found: %s", id)
-	}
-	return task, nil
+	return s.repo.FindByStringID(id)
 }
 
 // GetTaskProgress retrieves task with Sepiida progress
 func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.TaskProgressResponse, error) {
-	s.mu.RLock()
-	task, ok := s.tasks[id]
-	s.mu.RUnlock()
-
-	if !ok {
+	task, err := s.repo.FindByStringID(id)
+	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
 	}
 
@@ -283,49 +281,23 @@ func (s *TaskService) updateStatusFromSepiida(task *model.Task, workflow *model.
 		task.Status = model.TaskStatusCancelled
 	}
 	task.UpdatedAt = time.Now()
+	s.repo.Update(task)
 }
 
 // ListTasks lists tasks with optional filtering
 func (s *TaskService) ListTasks(ctx context.Context, query *model.TaskListQuery) (*model.TaskListResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var items []model.Task
-	for _, task := range s.tasks {
-		if query.Status != "" && task.Status != query.Status {
-			continue
-		}
-		if query.Executor != "" && task.Executor != query.Executor {
-			continue
-		}
-		items = append(items, *task)
-	}
-
-	page := query.Page
-	if page < 1 {
-		page = 1
-	}
-	pageSize := query.PageSize
-	if pageSize < 1 {
-		pageSize = 10
-	}
-
-	start := (page - 1) * pageSize
-	end := start + pageSize
-	if start >= len(items) {
-		return &model.TaskListResponse{Total: len(items), Items: []model.TaskResponse{}}, nil
-	}
-	if end > len(items) {
-		end = len(items)
+	tasks, total, err := s.repo.PaginateByQuery(query)
+	if err != nil {
+		return nil, err
 	}
 
 	var respItems []model.TaskResponse
-	for i := start; i < end; i++ {
-		respItems = append(respItems, s.TaskToResponse(&items[i]))
+	for _, task := range tasks {
+		respItems = append(respItems, s.TaskToResponse(&task))
 	}
 
 	return &model.TaskListResponse{
-		Total: len(items),
+		Total: int(total),
 		Items: respItems,
 	}, nil
 }
@@ -335,8 +307,8 @@ func (s *TaskService) CancelTask(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	task, ok := s.tasks[id]
-	if !ok {
+	task, err := s.repo.FindByStringID(id)
+	if err != nil {
 		return fmt.Errorf("task not found: %s", id)
 	}
 
@@ -355,16 +327,13 @@ func (s *TaskService) CancelTask(ctx context.Context, id string) error {
 	task.FinishedAt = &now
 	task.UpdatedAt = now
 
-	return nil
+	return s.repo.Update(task)
 }
 
 // GetTaskLogs retrieves task logs
 func (s *TaskService) GetTaskLogs(ctx context.Context, id string) (string, error) {
-	s.mu.RLock()
-	task, ok := s.tasks[id]
-	s.mu.RUnlock()
-
-	if !ok {
+	task, err := s.repo.FindByStringID(id)
+	if err != nil {
 		return "", fmt.Errorf("task not found: %s", id)
 	}
 
@@ -404,6 +373,9 @@ func (s *TaskService) TaskToResponse(task *model.Task) model.TaskResponse {
 		Executor:   task.Executor,
 		Inputs:     inputs,
 		Status:     task.Status,
+		SampleID:   task.SampleID,
+		ProjectID:  task.ProjectID,
+		CreatedBy:  task.CreatedBy,
 		PID:        task.PID,
 		StartedAt:  task.StartedAt,
 		FinishedAt: task.FinishedAt,
