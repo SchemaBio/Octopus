@@ -50,7 +50,36 @@ func (r *UserRepository) FindActiveUsers() ([]model.User, error) {
 
 // FindByRole finds users by role
 func (r *UserRepository) FindByRole(role string) ([]model.User, error) {
-	return r.FindByCondition(map[string]interface{}{"role": role})
+	return r.FindByCondition(map[string]interface{}{"system_role": role})
+}
+
+// PaginateByQuery finds users with pagination and search
+func (r *UserRepository) PaginateByQuery(query *model.UserListQuery) ([]model.User, int64, error) {
+	db := r.db.Model(&model.User{})
+
+	if query.Search != "" {
+		search := "%" + query.Search + "%"
+		db = db.Where("email LIKE ? OR name LIKE ?", search, search)
+	}
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	page := query.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := query.PageSize
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
+	var users []model.User
+	offset := (page - 1) * pageSize
+	err := db.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&users).Error
+	return users, total, err
 }
 
 // UpdatePassword updates user password
@@ -64,18 +93,20 @@ func (r *UserRepository) UpdateActive(userID uint, active bool) error {
 }
 
 // CreateDefaultAdmin creates default admin user if not exists
-func (r *UserRepository) CreateDefaultAdmin(username, hashedPassword string) (*model.User, error) {
-	// Check if admin exists
-	if r.ExistsByUsername(username) {
-		return r.FindByUsername(username)
+func (r *UserRepository) CreateDefaultAdmin(email, hashedPassword, name string) (*model.User, error) {
+	// Check if admin exists by email
+	if r.ExistsByEmail(email) {
+		return r.FindByEmail(email)
 	}
 
 	// Create admin
 	admin := &model.User{
-		Username: username,
-		Password: hashedPassword,
-		Role:     model.RoleAdmin,
-		Active:   true,
+		Username:   email,
+		Password:   hashedPassword,
+		Email:      email,
+		Name:       name,
+		SystemRole: model.SystemRoleSuperAdmin,
+		IsActive:   true,
 	}
 
 	err := r.Create(admin)

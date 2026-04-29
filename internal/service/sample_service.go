@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/model"
 	"github.com/bioinfo/schema-platform/internal/repository"
+	"github.com/google/uuid"
 )
 
 // SampleService handles sample business logic
@@ -24,20 +27,41 @@ func NewSampleService(cfg *config.Config) *SampleService {
 
 // CreateSample creates a new sample
 func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreateRequest, userID uint) (*model.Sample, error) {
-	// Check if sample_id exists
-	if s.repo.ExistsBySampleID(req.SampleID) {
+	if s.repo.ExistsByInternalID(req.InternalID) {
 		return nil, nil // Already exists
 	}
 
 	sample := &model.Sample{
-		SampleID:   req.SampleID,
-		SampleName: req.SampleName,
-		SampleType: req.SampleType,
-		Source:     req.Source,
-		ProjectID:  req.ProjectID,
-		Status:     model.SampleStatusPending,
-		Metadata:   req.Metadata,
-		CreatedBy:  userID,
+		UUID:              uuid.New().String(),
+		InternalID:        req.InternalID,
+		Gender:            req.Gender,
+		Age:               req.Age,
+		SampleType:        req.SampleType,
+		Batch:             req.Batch,
+		ClinicalDiagnosis: req.ClinicalDiagnosis,
+		Remark:            req.Remark,
+		Status:            model.SampleStatusPending,
+		CreatedBy:         userID,
+	}
+
+	if sample.Gender == "" {
+		sample.Gender = model.SampleGenderUnknown
+	}
+	if sample.SampleType == "" {
+		sample.SampleType = model.SampleTypeOther
+	}
+
+	// Set HPO terms
+	if req.HPOTerms != nil {
+		sample.SetHPOTerms(req.HPOTerms)
+	}
+
+	// Set matched pair from R1/R2 paths
+	if req.R1Path != "" || req.R2Path != "" {
+		sample.SetMatchedPair(&model.MatchedPair{
+			R1Path: req.R1Path,
+			R2Path: req.R2Path,
+		})
 	}
 
 	if err := s.repo.Create(sample); err != nil {
@@ -47,14 +71,9 @@ func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreat
 	return sample, nil
 }
 
-// GetSample gets a sample by ID
-func (s *SampleService) GetSample(ctx context.Context, id uint) (*model.Sample, error) {
-	return s.repo.FindByID(id)
-}
-
-// GetSampleBySampleID gets a sample by sample_id (business identifier)
-func (s *SampleService) GetSampleBySampleID(ctx context.Context, sampleID string) (*model.Sample, error) {
-	return s.repo.FindBySampleID(sampleID)
+// GetSample gets a sample by UUID
+func (s *SampleService) GetSample(ctx context.Context, id string) (*model.Sample, error) {
+	return s.repo.FindByUUID(id)
 }
 
 // ListSamples lists samples with pagination and filters
@@ -66,19 +85,7 @@ func (s *SampleService) ListSamples(ctx context.Context, query *model.SampleList
 
 	items := make([]model.SampleResponse, len(samples))
 	for i, sample := range samples {
-		items[i] = model.SampleResponse{
-			ID:         sample.ID,
-			SampleID:   sample.SampleID,
-			SampleName: sample.SampleName,
-			SampleType: sample.SampleType,
-			Source:     sample.Source,
-			ProjectID:  sample.ProjectID,
-			Status:     sample.Status,
-			Metadata:   sample.Metadata,
-			CreatedBy:  sample.CreatedBy,
-			CreatedAt:  sample.CreatedAt,
-			UpdatedAt:  sample.UpdatedAt,
-		}
+		items[i] = model.SampleToResponse(&sample)
 	}
 
 	return &model.SampleListResponse{
@@ -88,29 +95,44 @@ func (s *SampleService) ListSamples(ctx context.Context, query *model.SampleList
 }
 
 // UpdateSample updates a sample
-func (s *SampleService) UpdateSample(ctx context.Context, id uint, req *model.SampleUpdateRequest) (*model.Sample, error) {
-	sample, err := s.repo.FindByID(id)
+func (s *SampleService) UpdateSample(ctx context.Context, id string, req *model.SampleUpdateRequest) (*model.Sample, error) {
+	sample, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return nil, err
 	}
 
-	if req.SampleName != "" {
-		sample.SampleName = req.SampleName
+	if req.InternalID != "" {
+		sample.InternalID = req.InternalID
+	}
+	if req.Gender != "" {
+		sample.Gender = req.Gender
+	}
+	if req.Age != nil {
+		sample.Age = req.Age
 	}
 	if req.SampleType != "" {
 		sample.SampleType = req.SampleType
 	}
-	if req.Source != "" {
-		sample.Source = req.Source
+	if req.Batch != "" {
+		sample.Batch = req.Batch
 	}
-	if req.ProjectID > 0 {
-		sample.ProjectID = req.ProjectID
+	if req.ClinicalDiagnosis != "" {
+		sample.ClinicalDiagnosis = req.ClinicalDiagnosis
+	}
+	if req.HPOTerms != nil {
+		sample.SetHPOTerms(req.HPOTerms)
+	}
+	if req.R1Path != "" || req.R2Path != "" {
+		sample.SetMatchedPair(&model.MatchedPair{
+			R1Path: req.R1Path,
+			R2Path: req.R2Path,
+		})
+	}
+	if req.Remark != "" {
+		sample.Remark = req.Remark
 	}
 	if req.Status != "" {
 		sample.Status = req.Status
-	}
-	if req.Metadata != "" {
-		sample.Metadata = req.Metadata
 	}
 
 	if err := s.repo.Update(sample); err != nil {
@@ -121,38 +143,51 @@ func (s *SampleService) UpdateSample(ctx context.Context, id uint, req *model.Sa
 }
 
 // DeleteSample deletes a sample
-func (s *SampleService) DeleteSample(ctx context.Context, id uint) error {
-	return s.repo.Delete(id)
+func (s *SampleService) DeleteSample(ctx context.Context, id string) error {
+	sample, err := s.repo.FindByUUID(id)
+	if err != nil {
+		return err
+	}
+	return s.repo.Delete(sample.ID)
 }
 
-// AssignProject assigns samples to a project
-func (s *SampleService) AssignProject(ctx context.Context, sampleIDs []uint, projectID uint) error {
-	return s.repo.AssignProject(sampleIDs, projectID)
-}
-
-// UpdateStatus updates sample status
-func (s *SampleService) UpdateStatus(ctx context.Context, id uint, status model.SampleStatus) error {
-	return s.repo.UpdateStatus(id, status)
-}
-
-// GetSamplesByProject gets all samples for a project
-func (s *SampleService) GetSamplesByProject(ctx context.Context, projectID uint) ([]model.Sample, error) {
-	return s.repo.FindByProjectID(projectID)
-}
-
-// SampleToResponse converts sample to response format
+// SampleToResponse converts sample to response
 func (s *SampleService) SampleToResponse(sample *model.Sample) model.SampleResponse {
-	return model.SampleResponse{
-		ID:         sample.ID,
-		SampleID:   sample.SampleID,
-		SampleName: sample.SampleName,
-		SampleType: sample.SampleType,
-		Source:     sample.Source,
-		ProjectID:  sample.ProjectID,
-		Status:     sample.Status,
-		Metadata:   sample.Metadata,
-		CreatedBy:  sample.CreatedBy,
-		CreatedAt:  sample.CreatedAt,
-		UpdatedAt:  sample.UpdatedAt,
+	return model.SampleToResponse(sample)
+}
+
+// SampleToDetailResponse converts sample to detail response
+func (s *SampleService) SampleToDetailResponse(sample *model.Sample) model.SampleDetailResponse {
+	return model.SampleDetailResponse{
+		ID:                sample.UUID,
+		InternalID:        sample.InternalID,
+		Gender:            sample.Gender,
+		Age:               sample.Age,
+		SampleType:        sample.SampleType,
+		Batch:             sample.Batch,
+		MatchedPair:       sample.GetMatchedPair(),
+		Remark:            sample.Remark,
+		ClinicalDiagnosis: parseClinicalDiagnosis(sample.ClinicalDiagnosis),
+		SubmissionInfo:    sample.GetSubmissionInfo(),
+		ProjectInfo:       sample.GetProjectInfo(),
+		FamilyHistory:     sample.GetFamilyHistory(),
+		AnalysisTasks:     []model.AnalysisTaskBrief{},
+		CreatedAt:         sample.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:         sample.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func parseClinicalDiagnosis(s string) model.ClinicalDiagnosisInfo {
+	if s == "" {
+		return model.ClinicalDiagnosisInfo{}
+	}
+	var info model.ClinicalDiagnosisInfo
+	// Try parsing as structured JSON first
+	if err := json.Unmarshal([]byte(s), &info); err == nil {
+		return info
+	}
+	// Fallback: treat as plain string
+	return model.ClinicalDiagnosisInfo{
+		MainDiagnosis: s,
 	}
 }

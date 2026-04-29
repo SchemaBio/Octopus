@@ -13,6 +13,7 @@ type Config struct {
 	Sepiida  SepiidaConfig
 	Parquet  ParquetConfig
 	JWT      JWTConfig
+	LLM      LLMConfig
 }
 
 type ServerConfig struct {
@@ -58,6 +59,13 @@ type JWTConfig struct {
 	RefreshDuration time.Duration // Refresh token expiry
 }
 
+type LLMConfig struct {
+	BaseURL string // OpenAI-compatible API base URL (e.g. https://api.openai.com/v1)
+	APIKey  string // API key
+	Model   string // Model name (e.g. gpt-4o)
+	Enabled bool   // Enable AI evaluation
+}
+
 // Load loads configuration from environment and files
 func Load() *Config {
 	return &Config{
@@ -96,6 +104,12 @@ func Load() *Config {
 			Issuer:          getEnv("JWT_ISSUER", "octopus"),
 			ExpireDuration:  parseDuration(getEnv("JWT_EXPIRE", "24h")),
 			RefreshDuration: parseDuration(getEnv("JWT_REFRESH", "168h")),
+		},
+		LLM: LLMConfig{
+			BaseURL: getEnv("LLM_BASE_URL", ""),
+			APIKey:  getEnv("LLM_API_KEY", ""),
+			Model:   getEnv("LLM_MODEL", "gpt-4o"),
+			Enabled: getEnv("LLM_ENABLED", "false") == "true",
 		},
 	}
 }

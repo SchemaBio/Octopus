@@ -32,7 +32,6 @@ func InitDB(cfg *config.Config) error {
 	case "sqlite":
 		// Ensure directory exists for SQLite file
 		if cfg.Database.DSN != "" {
-			// DSN is file path for SQLite
 			dir := cfg.Database.DSN
 			if lastSlash := len(dir) - 1; dir[lastSlash] == '/' {
 				dir = dir[:lastSlash]
@@ -70,10 +69,33 @@ func AutoMigrate() error {
 	}
 
 	err := DB.AutoMigrate(
+		// Core models
 		&model.User{},
 		&model.Task{},
 		&model.Sample{},
 		&model.Project{},
+		// Organization models
+		&model.Organization{},
+		&model.UserOrganization{},
+		// Pedigree models
+		&model.Pedigree{},
+		&model.PedigreeMember{},
+		// Gene list models
+		&model.GeneList{},
+		// Pipeline models
+		&model.Pipeline{},
+		// Variant result models
+		&model.SNVIndel{},
+		&model.CNVSegment{},
+		&model.CNVExon{},
+		&model.STR{},
+		&model.MEIVariant{},
+		&model.MitochondrialVariant{},
+		&model.UPDRegion{},
+		&model.QCResult{},
+		// Report models
+		&model.Report{},
+		&model.ReportTemplate{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)

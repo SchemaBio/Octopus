@@ -48,7 +48,7 @@ func JWTAuth(cfg *config.Config) gin.HandlerFunc {
 
 		// Set user info in context
 		c.Set("user_id", claims.UserID)
-		c.Set("username", claims.Username)
+		c.Set("email", claims.Email)
 		c.Set("role", claims.Role)
 
 		c.Next()
@@ -84,7 +84,7 @@ func OptionalJWTAuth(cfg *config.Config) gin.HandlerFunc {
 
 		// Set user info in context
 		c.Set("user_id", claims.UserID)
-		c.Set("username", claims.Username)
+		c.Set("email", claims.Email)
 		c.Set("role", claims.Role)
 
 		c.Next()
@@ -116,13 +116,14 @@ func RequireRole(role string) gin.HandlerFunc {
 }
 
 // GetCurrentUser gets current user info from context
+// Returns: userID, email, role, ok
 func GetCurrentUser(c *gin.Context) (uint, string, string, bool) {
 	userID, exists := c.Get("user_id")
 	if !exists {
 		return 0, "", "", false
 	}
-	username, _ := c.Get("username")
+	email, _ := c.Get("email")
 	role, _ := c.Get("role")
 
-	return userID.(uint), username.(string), role.(string), true
+	return userID.(uint), email.(string), role.(string), true
 }

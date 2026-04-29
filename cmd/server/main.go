@@ -6,7 +6,6 @@ import (
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/database"
-	"github.com/bioinfo/schema-platform/internal/repository"
 	"github.com/bioinfo/schema-platform/internal/router"
 	"github.com/bioinfo/schema-platform/internal/service"
 )
@@ -30,13 +29,12 @@ func main() {
 	}
 
 	// Create default admin user
-	userRepo := repository.NewUserRepository()
 	userSvc := service.NewUserService(cfg)
-	adminUser, err := userSvc.CreateDefaultAdmin("admin", "admin123")
+	adminUser, err := userSvc.CreateDefaultAdmin("admin@schema.bio", "admin123", "Administrator")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to create default admin: %v\n", err)
 	} else {
-		fmt.Printf("Default admin user ready: %s (ID: %d)\n", adminUser.Username, adminUser.ID)
+		fmt.Printf("Default admin user ready: %s (ID: %d)\n", adminUser.Email, adminUser.ID)
 	}
 
 	fmt.Printf("Starting schema-platform server on port %s...\n", cfg.Server.Port)

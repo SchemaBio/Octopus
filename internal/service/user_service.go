@@ -24,47 +24,64 @@ func NewUserService(cfg *config.Config) *UserService {
 	}
 }
 
-// Login authenticates user and returns tokens
-func (s *UserService) Login(username, password string) (*model.LoginResponse, error) {
-	// Find user
-	user, err := s.repo.FindByUsername(username)
+// Login authenticates user by email and returns tokens
+func (s *UserService) Login(email, password string) (*model.LoginResponse, error) {
+	// Find user by email
+	user, err := s.repo.FindByEmail(email)
 	if err != nil {
-		return nil, errors.New("invalid username or password")
+		return nil, errors.New("invalid email or password")
 	}
 
 	// Check password
 	if !CheckPassword(password, user.Password) {
-		return nil, errors.New("invalid username or password")
+		return nil, errors.New("invalid email or password")
 	}
 
 	// Check if user is active
-	if !user.Active {
+	if !user.IsActive {
 		return nil, errors.New("user account is disabled")
 	}
 
 	// Generate tokens
-	token, refreshToken, expiresAt, err := s.jwtSvc.GenerateToken(user)
+	accessToken, refreshToken, expiresAt, err := s.jwtSvc.GenerateToken(user)
 	if err != nil {
 		return nil, errors.New("failed to generate token")
 	}
 
+	// Build response
+	userResp := model.UserToResponse(user)
+
+	// Default organization (empty list for now, will be populated when org module is ready)
+	orgs := []model.OrganizationInfo{}
+	var currentOrg *model.OrganizationInfo
+
+	// If user has a primary org, include it
+	if user.PrimaryOrgID != "" {
+		org := model.OrganizationInfo{
+			ID:       user.PrimaryOrgID,
+			Name:     "Default",
+			Slug:     "default",
+			OrgRole:  "OWNER",
+			JoinedAt: user.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		}
+		orgs = append(orgs, org)
+		currentOrg = &org
+	}
+
 	return &model.LoginResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
-		ExpiresAt:    expiresAt,
-		User:         *user,
+		User:          userResp,
+		Organizations: orgs,
+		CurrentOrg:    currentOrg,
+		AccessToken:   accessToken,
+		RefreshToken:  refreshToken,
+		ExpiresAt:     expiresAt,
 	}, nil
 }
 
 // Register creates a new user account
 func (s *UserService) Register(req *model.RegisterRequest) (*model.LoginResponse, error) {
-	// Check if username exists
-	if s.repo.ExistsByUsername(req.Username) {
-		return nil, errors.New("username already exists")
-	}
-
-	// Check if email exists (if provided)
-	if req.Email != "" && s.repo.ExistsByEmail(req.Email) {
+	// Check if email exists
+	if s.repo.ExistsByEmail(req.Email) {
 		return nil, errors.New("email already exists")
 	}
 
@@ -74,13 +91,14 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.LoginResponse
 		return nil, errors.New("failed to hash password")
 	}
 
-	// Create user
+	// Create user with email as username (internal)
 	user := &model.User{
-		Username: req.Username,
-		Password: hashedPassword,
-		Email:    req.Email,
-		Role:     model.RoleUser,
-		Active:   true,
+		Username:   req.Email,
+		Password:   hashedPassword,
+		Email:      req.Email,
+		Name:       req.Name,
+		SystemRole: model.SystemRoleUser,
+		IsActive:   true,
 	}
 
 	if err := s.repo.Create(user); err != nil {
@@ -88,16 +106,19 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.LoginResponse
 	}
 
 	// Generate tokens
-	token, refreshToken, expiresAt, err := s.jwtSvc.GenerateToken(user)
+	accessToken, refreshToken, expiresAt, err := s.jwtSvc.GenerateToken(user)
 	if err != nil {
 		return nil, errors.New("failed to generate token")
 	}
 
+	userResp := model.UserToResponse(user)
+
 	return &model.LoginResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
-		ExpiresAt:    expiresAt,
-		User:         *user,
+		User:          userResp,
+		Organizations: []model.OrganizationInfo{},
+		AccessToken:   accessToken,
+		RefreshToken:  refreshToken,
+		ExpiresAt:     expiresAt,
 	}, nil
 }
 
@@ -109,7 +130,7 @@ func (s *UserService) RefreshToken(refreshToken string) (*model.RefreshResponse,
 	}
 
 	return &model.RefreshResponse{
-		Token:        token,
+		AccessToken:  token,
 		RefreshToken: newRefreshToken,
 		ExpiresAt:    expiresAt,
 	}, nil
@@ -120,41 +141,84 @@ func (s *UserService) GetUserByID(id uint) (*model.User, error) {
 	return s.repo.FindByID(id)
 }
 
-// GetUserByUsername gets user by username
-func (s *UserService) GetUserByUsername(username string) (*model.User, error) {
-	return s.repo.FindByUsername(username)
+// GetUserByEmail gets user by email
+func (s *UserService) GetUserByEmail(email string) (*model.User, error) {
+	return s.repo.FindByEmail(email)
 }
 
 // CreateDefaultAdmin creates default admin user if not exists
-func (s *UserService) CreateDefaultAdmin(username, password string) (*model.User, error) {
+func (s *UserService) CreateDefaultAdmin(email, password, name string) (*model.User, error) {
+	// Check if admin exists by email
+	if s.repo.ExistsByEmail(email) {
+		return s.repo.FindByEmail(email)
+	}
+
 	hashedPassword, err := HashPassword(password)
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.CreateDefaultAdmin(username, hashedPassword)
+
+	admin := &model.User{
+		Username:   email,
+		Password:   hashedPassword,
+		Email:      email,
+		Name:       name,
+		SystemRole: model.SystemRoleSuperAdmin,
+		IsActive:   true,
+	}
+
+	if err := s.repo.Create(admin); err != nil {
+		return nil, err
+	}
+
+	return admin, nil
 }
 
-// ListUsers lists all users
-func (s *UserService) ListUsers() ([]model.User, error) {
-	return s.repo.FindAll()
+// ListUsers lists users with pagination
+func (s *UserService) ListUsers(query *model.UserListQuery) (*model.UserListResponse, error) {
+	users, total, err := s.repo.PaginateByQuery(query)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]model.UserResponse, len(users))
+	for i, u := range users {
+		items[i] = model.UserToResponse(&u)
+	}
+
+	return &model.UserListResponse{
+		Total: int(total),
+		Items: items,
+	}, nil
 }
 
 // UpdateUser updates user information
-func (s *UserService) UpdateUser(id uint, email string, role string, active bool) error {
+func (s *UserService) UpdateUser(id uint, req *model.UserUpdateRequest) (*model.User, error) {
 	user, err := s.repo.FindByID(id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if email != "" {
-		user.Email = email
+	if req.Name != "" {
+		user.Name = req.Name
 	}
-	if role != "" {
-		user.Role = role
+	if req.SystemRole != "" {
+		user.SystemRole = req.SystemRole
 	}
-	user.Active = active
+	if req.PrimaryOrgID != "" {
+		user.PrimaryOrgID = req.PrimaryOrgID
+	}
 
-	return s.repo.Update(user)
+	if err := s.repo.Update(user); err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+
+// DeleteUser deletes a user
+func (s *UserService) DeleteUser(id uint) error {
+	return s.repo.Delete(id)
 }
 
 // ChangePassword changes user password
@@ -164,12 +228,10 @@ func (s *UserService) ChangePassword(id uint, oldPassword, newPassword string) e
 		return err
 	}
 
-	// Verify old password
 	if !CheckPassword(oldPassword, user.Password) {
 		return errors.New("invalid old password")
 	}
 
-	// Hash new password
 	hashedPassword, err := HashPassword(newPassword)
 	if err != nil {
 		return err

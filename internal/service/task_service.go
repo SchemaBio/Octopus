@@ -18,12 +18,11 @@ import (
 )
 
 type TaskService struct {
-	cfg       *config.Config
-	sepiida   *sepiida.Client
-	archiver  *Archiver
-	repo      *repository.TaskRepository
-	mu        sync.RWMutex
-	running   map[string]*exec.Cmd
+	cfg     *config.Config
+	sepiida *sepiida.Client
+	repo    *repository.TaskRepository
+	mu      sync.RWMutex
+	running map[string]*exec.Cmd
 }
 
 func NewTaskService(cfg *config.Config) *TaskService {
@@ -33,11 +32,10 @@ func NewTaskService(cfg *config.Config) *TaskService {
 	}
 
 	return &TaskService{
-		cfg:       cfg,
-		sepiida:   sepClient,
-		archiver:  NewArchiver(cfg),
-		repo:      repository.NewTaskRepository(),
-		running:   make(map[string]*exec.Cmd),
+		cfg:     cfg,
+		sepiida: sepClient,
+		repo:    repository.NewTaskRepository(),
+		running: make(map[string]*exec.Cmd),
 	}
 }
 
@@ -72,7 +70,7 @@ func (s *TaskService) getConfigFile(executor model.ExecutorType, customConfig st
 	return filepath.Join(s.cfg.Task.TemplateDir, "conf", cfgName)
 }
 
-// CreateTask creates and starts a new task
+// CreateTask creates a new task (initially queued)
 func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateRequest, userID uint) (*model.Task, error) {
 	// Determine executor (use request or default from config)
 	executor := req.Executor
@@ -80,24 +78,23 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		executor = model.ExecutorType(s.cfg.Task.DefaultExecutor)
 	}
 
-	// Validate executor
-	if executor != model.ExecutorLocal && executor != model.ExecutorSlurm && executor != model.ExecutorLSF {
-		return nil, fmt.Errorf("invalid executor: %s (valid: local, slurm, lsf)", executor)
-	}
-
-	// Generate workflow UUID (standard format for Sepiida)
+	// Generate workflow UUID
 	workflowUUID := uuid.New().String()
 
 	// Generate short task ID from first 8 chars of UUID
 	taskID := workflowUUID[:8]
 
-	// Prepare input JSON
-	inputJSON, err := json.Marshal(req.Inputs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal inputs: %w", err)
+	// Prepare input JSON if provided
+	var inputJSONStr string
+	if req.Inputs != nil {
+		inputJSON, err := json.Marshal(req.Inputs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal inputs: %w", err)
+		}
+		inputJSONStr = string(inputJSON)
 	}
 
-	// Output directory uses standard UUID format (Sepiida requirement)
+	// Output directory
 	outputDir := req.OutputDir
 	if outputDir == "" {
 		outputDir = filepath.Join(s.cfg.Task.OutputDir, workflowUUID)
@@ -109,20 +106,24 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	// Create task record
 	now := time.Now()
 	task := &model.Task{
-		ID:         taskID,
-		UUID:       workflowUUID,
-		Name:       req.Name,
-		Template:   req.Template,
-		Executor:   executor,
-		InputJSON:  string(inputJSON),
-		ConfigFile: configFile,
-		OutputDir:  outputDir,
-		Status:     model.TaskStatusPending,
-		SampleID:   req.SampleID,
-		ProjectID:  req.ProjectID,
-		CreatedBy:  userID,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		ID:              taskID,
+		UUID:            workflowUUID,
+		Name:            req.PipelineName,
+		SampleID:        req.SampleID,
+		InternalID:      req.InternalID,
+		Pipeline:        req.PipelineName,
+		PipelineVersion: req.PipelineVersion,
+		Template:        req.Template,
+		Executor:        executor,
+		InputJSON:       inputJSONStr,
+		ConfigFile:      configFile,
+		OutputDir:       outputDir,
+		Status:          model.TaskStatusQueued,
+		Progress:        0,
+		Remark:          req.Remark,
+		CreatedBy:       userID,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 
 	// Save task to database
@@ -130,7 +131,94 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		return nil, fmt.Errorf("failed to save task: %w", err)
 	}
 
-	// Start task execution in background
+	return task, nil
+}
+
+// StartTask starts a queued or failed task
+func (s *TaskService) StartTask(ctx context.Context, id string) (*model.Task, error) {
+	task, err := s.repo.FindByUUID(id)
+	if err != nil {
+		return nil, fmt.Errorf("task not found: %s", id)
+	}
+
+	if task.Status != model.TaskStatusQueued && task.Status != model.TaskStatusFailed {
+		return nil, fmt.Errorf("task cannot be started from status: %s", task.Status)
+	}
+
+	task.Status = model.TaskStatusRunning
+	task.Progress = 0
+	task.Error = ""
+	now := time.Now()
+	task.StartedAt = &now
+	task.UpdatedAt = now
+
+	if err := s.repo.Update(task); err != nil {
+		return nil, err
+	}
+
+	// Start execution in background
+	go s.executeTask(task)
+
+	return task, nil
+}
+
+// StopTask stops a running task
+func (s *TaskService) StopTask(ctx context.Context, id string) (*model.Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	task, err := s.repo.FindByUUID(id)
+	if err != nil {
+		return nil, fmt.Errorf("task not found: %s", id)
+	}
+
+	if task.Status != model.TaskStatusRunning {
+		return nil, fmt.Errorf("task is not running")
+	}
+
+	// Kill process if running
+	if cmd, ok := s.running[id]; ok {
+		if err := cmd.Process.Kill(); err != nil {
+			return nil, fmt.Errorf("failed to kill process: %w", err)
+		}
+		delete(s.running, id)
+	}
+
+	task.Status = model.TaskStatusQueued
+	task.Progress = 0
+	now := time.Now()
+	task.UpdatedAt = now
+
+	if err := s.repo.Update(task); err != nil {
+		return nil, err
+	}
+
+	return task, nil
+}
+
+// RetryTask retries a failed task
+func (s *TaskService) RetryTask(ctx context.Context, id string) (*model.Task, error) {
+	task, err := s.repo.FindByUUID(id)
+	if err != nil {
+		return nil, fmt.Errorf("task not found: %s", id)
+	}
+
+	if task.Status != model.TaskStatusFailed {
+		return nil, fmt.Errorf("only failed tasks can be retried")
+	}
+
+	task.Status = model.TaskStatusRunning
+	task.Progress = 0
+	task.Error = ""
+	now := time.Now()
+	task.StartedAt = &now
+	task.UpdatedAt = now
+
+	if err := s.repo.Update(task); err != nil {
+		return nil, err
+	}
+
+	// Start execution in background
 	go s.executeTask(task)
 
 	return task, nil
@@ -142,6 +230,7 @@ func (s *TaskService) executeTask(task *model.Task) {
 	task.Status = model.TaskStatusRunning
 	now := time.Now()
 	task.StartedAt = &now
+	task.Progress = 0
 	s.repo.Update(task)
 	s.mu.Unlock()
 
@@ -213,10 +302,8 @@ func (s *TaskService) executeTask(task *model.Task) {
 		task.Error = err.Error()
 	} else {
 		task.Status = model.TaskStatusCompleted
-		// Archive completed task results
-		if s.archiver != nil {
-			go s.archiver.ArchiveOnCompletion(task)
-		}
+		task.Progress = 100
+		// Note: archiving and parquet generation are handled by Sepiida Agent
 	}
 
 	s.repo.Update(task)
@@ -231,24 +318,25 @@ func (s *TaskService) updateTaskError(task *model.Task, errMsg string) {
 	s.mu.Unlock()
 }
 
-// GetTask retrieves a task by ID
+// GetTask retrieves a task by UUID
 func (s *TaskService) GetTask(ctx context.Context, id string) (*model.Task, error) {
-	return s.repo.FindByStringID(id)
+	return s.repo.FindByUUID(id)
 }
 
 // GetTaskProgress retrieves task with Sepiida progress
 func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.TaskProgressResponse, error) {
-	task, err := s.repo.FindByStringID(id)
+	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
 	}
 
 	resp := &model.TaskProgressResponse{
-		ID:        task.ID,
+		ID:        task.UUID,
 		UUID:      task.UUID,
 		Name:      task.Name,
 		Template:  task.Template,
 		Status:    task.Status,
+		Progress:  task.Progress,
 		CreatedAt: task.CreatedAt,
 	}
 
@@ -291,14 +379,14 @@ func (s *TaskService) ListTasks(ctx context.Context, query *model.TaskListQuery)
 		return nil, err
 	}
 
-	var respItems []model.TaskResponse
-	for _, task := range tasks {
-		respItems = append(respItems, s.TaskToResponse(&task))
+	items := make([]model.TaskResponse, len(tasks))
+	for i, task := range tasks {
+		items[i] = task.ToResponse()
 	}
 
 	return &model.TaskListResponse{
 		Total: int(total),
-		Items: respItems,
+		Items: items,
 	}, nil
 }
 
@@ -307,13 +395,13 @@ func (s *TaskService) CancelTask(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	task, err := s.repo.FindByStringID(id)
+	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return fmt.Errorf("task not found: %s", id)
 	}
 
-	if task.Status != model.TaskStatusRunning && task.Status != model.TaskStatusPending {
-		return fmt.Errorf("task is not running or pending")
+	if task.Status != model.TaskStatusRunning && task.Status != model.TaskStatusQueued {
+		return fmt.Errorf("task is not running or queued")
 	}
 
 	if cmd, ok := s.running[id]; ok {
@@ -330,9 +418,38 @@ func (s *TaskService) CancelTask(ctx context.Context, id string) error {
 	return s.repo.Update(task)
 }
 
+// UpdateTask updates task fields
+func (s *TaskService) UpdateTask(ctx context.Context, id string, req *model.TaskUpdateRequest) (*model.Task, error) {
+	task, err := s.repo.FindByUUID(id)
+	if err != nil {
+		return nil, fmt.Errorf("task not found: %s", id)
+	}
+
+	if task.Status == model.TaskStatusRunning {
+		return nil, fmt.Errorf("cannot edit a running task")
+	}
+
+	if req.InternalID != "" {
+		task.InternalID = req.InternalID
+	}
+	if req.Pipeline != "" {
+		task.Pipeline = req.Pipeline
+	}
+	if req.Remark != "" {
+		task.Remark = req.Remark
+	}
+	task.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(task); err != nil {
+		return nil, err
+	}
+
+	return task, nil
+}
+
 // GetTaskLogs retrieves task logs
 func (s *TaskService) GetTaskLogs(ctx context.Context, id string) (string, error) {
-	task, err := s.repo.FindByStringID(id)
+	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return "", fmt.Errorf("task not found: %s", id)
 	}
@@ -356,31 +473,4 @@ func (s *TaskService) GetTaskLogs(ctx context.Context, id string) (string, error
 	}
 
 	return "", fmt.Errorf("no log file available")
-}
-
-// TaskToResponse converts a task to response format
-func (s *TaskService) TaskToResponse(task *model.Task) model.TaskResponse {
-	var inputs map[string]interface{}
-	if task.InputJSON != "" {
-		json.Unmarshal([]byte(task.InputJSON), &inputs)
-	}
-
-	return model.TaskResponse{
-		ID:         task.ID,
-		UUID:       task.UUID,
-		Name:       task.Name,
-		Template:   task.Template,
-		Executor:   task.Executor,
-		Inputs:     inputs,
-		Status:     task.Status,
-		SampleID:   task.SampleID,
-		ProjectID:  task.ProjectID,
-		CreatedBy:  task.CreatedBy,
-		PID:        task.PID,
-		StartedAt:  task.StartedAt,
-		FinishedAt: task.FinishedAt,
-		CreatedAt:  task.CreatedAt,
-		Error:      task.Error,
-		LogPath:    task.LogPath,
-	}
 }

@@ -22,20 +22,21 @@ func NewJWTService(cfg *config.Config) *JWTService {
 
 // Claims represents JWT claims
 type Claims struct {
-	UserID   uint   `json:"user_id"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
+	UserID     uint   `json:"user_id"`
+	Email      string `json:"email"`
+	Role       string `json:"role"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken generates a JWT token for a user
-func (j *JWTService) GenerateToken(user *model.User) (string, string, int64, error) {
+// Returns: accessToken, refreshToken, expiresAt (RFC3339 string), error
+func (j *JWTService) GenerateToken(user *model.User) (string, string, string, error) {
 	expiresAt := time.Now().Add(j.cfg.JWT.ExpireDuration)
 
 	claims := Claims{
-		UserID:   user.ID,
-		Username: user.Username,
-		Role:     user.Role,
+		UserID: user.ID,
+		Email:  user.Email,
+		Role:   string(user.SystemRole),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -47,15 +48,15 @@ func (j *JWTService) GenerateToken(user *model.User) (string, string, int64, err
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString([]byte(j.cfg.JWT.Secret))
 	if err != nil {
-		return "", "", 0, err
+		return "", "", "", err
 	}
 
 	// Generate refresh token (longer expiry)
 	refreshExpiresAt := time.Now().Add(j.cfg.JWT.RefreshDuration)
 	refreshClaims := Claims{
-		UserID:   user.ID,
-		Username: user.Username,
-		Role:     user.Role,
+		UserID: user.ID,
+		Email:  user.Email,
+		Role:   string(user.SystemRole),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(refreshExpiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -66,10 +67,10 @@ func (j *JWTService) GenerateToken(user *model.User) (string, string, int64, err
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
 	refreshTokenString, err := refreshToken.SignedString([]byte(j.cfg.JWT.Secret))
 	if err != nil {
-		return "", "", 0, err
+		return "", "", "", err
 	}
 
-	return tokenString, refreshTokenString, expiresAt.Unix(), nil
+	return tokenString, refreshTokenString, expiresAt.Format(time.RFC3339), nil
 }
 
 // ValidateToken validates a JWT token and returns claims
@@ -93,18 +94,19 @@ func (j *JWTService) ValidateToken(tokenString string) (*Claims, error) {
 }
 
 // RefreshToken refreshes an access token using refresh token
-func (j *JWTService) RefreshToken(refreshTokenString string) (string, string, int64, error) {
+// Returns: accessToken, refreshToken, expiresAt (RFC3339 string), error
+func (j *JWTService) RefreshToken(refreshTokenString string) (string, string, string, error) {
 	claims, err := j.ValidateToken(refreshTokenString)
 	if err != nil {
-		return "", "", 0, err
+		return "", "", "", err
 	}
 
 	// Generate new access token
 	expiresAt := time.Now().Add(j.cfg.JWT.ExpireDuration)
 	newClaims := Claims{
-		UserID:   claims.UserID,
-		Username: claims.Username,
-		Role:     claims.Role,
+		UserID: claims.UserID,
+		Email:  claims.Email,
+		Role:   claims.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -116,15 +118,15 @@ func (j *JWTService) RefreshToken(refreshTokenString string) (string, string, in
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, newClaims)
 	tokenString, err := token.SignedString([]byte(j.cfg.JWT.Secret))
 	if err != nil {
-		return "", "", 0, err
+		return "", "", "", err
 	}
 
 	// Generate new refresh token
 	refreshExpiresAt := time.Now().Add(j.cfg.JWT.RefreshDuration)
 	refreshClaims := Claims{
-		UserID:   claims.UserID,
-		Username: claims.Username,
-		Role:     claims.Role,
+		UserID: claims.UserID,
+		Email:  claims.Email,
+		Role:   claims.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(refreshExpiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -135,10 +137,10 @@ func (j *JWTService) RefreshToken(refreshTokenString string) (string, string, in
 	newRefreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
 	newRefreshTokenString, err := newRefreshToken.SignedString([]byte(j.cfg.JWT.Secret))
 	if err != nil {
-		return "", "", 0, err
+		return "", "", "", err
 	}
 
-	return tokenString, newRefreshTokenString, expiresAt.Unix(), nil
+	return tokenString, newRefreshTokenString, expiresAt.Format(time.RFC3339), nil
 }
 
 // HashPassword hashes a password using bcrypt
