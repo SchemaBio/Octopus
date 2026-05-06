@@ -213,8 +213,8 @@ func (r *ResultRepository) PaginateMEIs(query *model.MEIListQuery) ([]model.MEIV
 		s := "%" + query.Search + "%"
 		db = db.Where("gene LIKE ? OR chromosome LIKE ?", s, s)
 	}
-	if query.MEIType != "" {
-		db = db.Where("mei_type = ?", query.MEIType)
+	if query.TEType != "" {
+		db = db.Where("te_type = ?", query.TEType)
 	}
 
 	var total int64
@@ -389,4 +389,90 @@ func (r *ResultRepository) CreateUPDRegions(results []model.UPDRegion) error {
 		return nil
 	}
 	return r.db.CreateInBatches(results, 100).Error
+}
+
+// ========== ROH ==========
+
+func (r *ResultRepository) FindROHRegionsByTaskID(taskID string) ([]model.ROHRegion, error) {
+	var results []model.ROHRegion
+	err := r.db.Where("task_id = ?", taskID).Find(&results).Error
+	return results, err
+}
+
+func (r *ResultRepository) PaginateROHRegions(query *model.ROHListQuery) ([]model.ROHRegion, int64, error) {
+	db := r.db.Model(&model.ROHRegion{}).Where("task_id = ?", query.TaskID)
+	if query.Search != "" {
+		s := "%" + query.Search + "%"
+		db = db.Where("chr LIKE ? OR recessive_genes LIKE ?", s, s)
+	}
+
+	var total int64
+	db.Count(&total)
+
+	page := query.Page
+	if page < 1 { page = 1 }
+	pageSize := query.PageSize
+	if pageSize < 1 { pageSize = 10 }
+
+	var results []model.ROHRegion
+	err := db.Order("chr ASC, begin ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
+	return results, total, err
+}
+
+func (r *ResultRepository) CreateROHRegions(results []model.ROHRegion) error {
+	if len(results) == 0 {
+		return nil
+	}
+	return r.db.CreateInBatches(results, 100).Error
+}
+
+// ========== Delete by TaskID (for re-import) ==========
+
+func (r *ResultRepository) DeleteSNVIndelsByTaskID(taskID string) error {
+	return r.db.Where("task_id = ?", taskID).Delete(&model.SNVIndel{}).Error
+}
+
+func (r *ResultRepository) DeleteCNVSegmentsByTaskID(taskID string) error {
+	return r.db.Where("task_id = ?", taskID).Delete(&model.CNVSegment{}).Error
+}
+
+func (r *ResultRepository) DeleteCNVExonsByTaskID(taskID string) error {
+	return r.db.Where("task_id = ?", taskID).Delete(&model.CNVExon{}).Error
+}
+
+func (r *ResultRepository) DeleteSTRsByTaskID(taskID string) error {
+	return r.db.Where("task_id = ?", taskID).Delete(&model.STR{}).Error
+}
+
+func (r *ResultRepository) DeleteMEIsByTaskID(taskID string) error {
+	return r.db.Where("task_id = ?", taskID).Delete(&model.MEIVariant{}).Error
+}
+
+func (r *ResultRepository) DeleteMTVariantsByTaskID(taskID string) error {
+	return r.db.Where("task_id = ?", taskID).Delete(&model.MitochondrialVariant{}).Error
+}
+
+func (r *ResultRepository) DeleteUPDRegionsByTaskID(taskID string) error {
+	return r.db.Where("task_id = ?", taskID).Delete(&model.UPDRegion{}).Error
+}
+
+func (r *ResultRepository) DeleteROHRegionsByTaskID(taskID string) error {
+	return r.db.Where("task_id = ?", taskID).Delete(&model.ROHRegion{}).Error
+}
+
+func (r *ResultRepository) DeleteQCByTaskID(taskID string) error {
+	return r.db.Where("task_id = ?", taskID).Delete(&model.QCResult{}).Error
+}
+
+// ROH Review/Report
+func (r *ResultRepository) UpdateROHRegionReview(id string, reviewed bool, reviewer string) error {
+	return r.db.Model(&model.ROHRegion{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"reviewed": reviewed, "reviewed_by": reviewer,
+	}).Error
+}
+
+func (r *ResultRepository) UpdateROHRegionReport(id string, reported bool, reporter string) error {
+	return r.db.Model(&model.ROHRegion{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"reported": reported, "reported_by": reporter,
+	}).Error
 }

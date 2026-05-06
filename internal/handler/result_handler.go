@@ -164,6 +164,25 @@ func (h *ResultHandler) ListUPDRegions(c *gin.Context) {
 	SuccessList(c, results, total, query.Page, query.PageSize)
 }
 
+// ListROHRegions returns paginated ROH region results
+func (h *ResultHandler) ListROHRegions(c *gin.Context) {
+	var query model.ROHListQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	query.TaskID = c.Param("id")
+	setQueryDefaults(&query.Page, &query.PageSize)
+
+	results, total, err := h.svc.ListROHRegions(c.Request.Context(), &query)
+	if err != nil {
+		ErrorInternal(c, err.Error())
+		return
+	}
+
+	SuccessList(c, results, total, query.Page, query.PageSize)
+}
+
 // ReviewVariant marks a variant as reviewed
 func (h *ResultHandler) ReviewVariant(c *gin.Context) {
 	taskID := c.Param("id")

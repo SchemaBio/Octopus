@@ -8,13 +8,15 @@
 - **JWT 认证**：无状态认证系统，支持登录、注册、Token 刷新
 - **样本管理**：样本创建、查询、状态追踪，关联项目
 - **项目管理**：项目批次管理，进度汇总统计
-- 任务提交：支持 local/slurm/lsf 多种执行环境
-- Sepiida 集成：实时查询任务进度和状态
-- 自动归档：任务完成后自动将结果归档到指定目录
-- Parquet 转换：将文本类结果文件合并为单个 Parquet 文件，支持嵌套结构
-- 状态管理：独立存储回报/审核状态，前端动态合并展示
-- 结果查询：根据 UUID 和 outputs.json 中的 key 查询归档文件路径
-- WDL 模板管理：预定义模板选择
+- **任务执行**：支持 local/slurm/lsf 多种执行环境
+- **Sepiida 集成**：实时查询任务进度和状态
+- **自动归档**：任务完成后自动将结果归档到指定目录，读取 `outputs.resolved.json`
+- **数据导入**：从归档的 parquet/TSV 文件解析并导入数据库，支持 7 种变异类型 + QC
+- **变异结果管理**：SNV/Indel、CNV Segment/Exon、STR、MEI、线粒体、UPD、ROH 共 7 类变异
+- **审核/回报**：统一通过数据库管理变异的审核和回报状态
+- **AI 辅助评估**：对接 LLM 对变异进行临床遗传学分析，支持多级过滤
+- **结果查询**：根据 UUID 和 outputs.resolved.json 中的 key 查询归档文件路径
+- **WDL 模板管理**：预定义模板选择
 
 ## 目录结构
 
@@ -26,19 +28,24 @@ MiniWDL 使用 `-d uuid` 模式执行，符合 Sepiida 目录规范：
 │   ├── _LAST -> 20260428_094955_SingleWES/  # 软链接指向最新执行
 │   ├── 20260428_094955_SingleWES/           # 执行目录
 │   │   ├── workflow.log          # MiniWDL日志
-│   │   ├── outputs.json          # 最终输出
-│   │   └── call-CreateMitoBed/   # Task输出目录
+│   │   ├── outputs.json          # 最终输出 (扁平 key)
+│   │   ├── outputs.resolved.json # 解析后的输出 (内联 QC + 文件 URL)
+│   │   └── call-*/               # Task 输出目录 (含 TSV 结果文件)
 │   └── octopus.log               # Octopus 日志
 
 /mnt/data/archive/                           # 归档目录
 ├── a1b2c3d4-e5f6-7890-abcd-ef1234567890/    # 归档UUID目录
-│   ├── outputs.json              # 输出定义
+│   ├── outputs.json              # 输出定义 (原始)
+│   ├── outputs.resolved.json     # 解析后输出 (含 QC + COS URL)
 │   ├── workflow.log              # 执行日志
-│   ├── result.vcf.gz             # 结果文件1
-│   ├── aligned.bam               # 结果文件2
-│   ├── metrics.csv               # 文本数据文件
-│   ├── combined_tables.parquet   # 合并后的 Parquet 文件
-│   └── status.json               # 行状态数据 (report/review)
+│   ├── snv_indel.txt             # SNV/Indel 结果
+│   ├── region.cnvanno.txt        # CNV Segment 结果
+│   ├── gene.cnvanno.txt          # CNV Exon 结果
+│   ├── str.txt                   # STR 结果
+│   ├── mei.txt                   # MEI 结果
+│   ├── mt_report.txt             # 线粒体变异结果
+│   ├── roh.anno.txt              # ROH 结果
+│   └── *.bam / *.bai             # 比对文件 (保留 URL 引用)
 ```
 
 ## 快速开始
@@ -117,15 +124,23 @@ go run cmd/server/main.go
 | GET | /api/v1/archive/:uuid | 查询归档状态 |
 | GET | /api/v1/archive/:uuid/outputs | 列出所有 output keys |
 | GET | /api/v1/archive/:uuid/output/:key | 根据 key 查询归档文件路径 |
+| POST | /api/v1/archive/:uuid/import | 手动触发数据导入 (parquet → DB) |
 
-### 状态管理 (需要认证)
+### 结果管理 (需要认证)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/v1/archive/:uuid/status | 获取行状态数据 |
-| PUT | /api/v1/archive/:uuid/status | 更新行状态 |
-| GET | /api/v1/archive/:uuid/parquet | 获取 Parquet 文件信息 |
-| GET | /api/v1/archive/:uuid/data | 获取合并数据 (schema + status) |
+| GET | /api/v1/results/qc?task_id=xxx | 获取 QC 结果 |
+| GET | /api/v1/results/snv-indel | 获取 SNV/Indel 列表 |
+| POST | /api/v1/results/snv-indel/:id/review | 审核 SNV/Indel |
+| POST | /api/v1/results/snv-indel/:id/report | 回报 SNV/Indel |
+| GET | /api/v1/results/cnv-segment | 获取 CNV Segment 列表 |
+| GET | /api/v1/results/cnv-exon | 获取 CNV Exon 列表 |
+| GET | /api/v1/results/str | 获取 STR 列表 |
+| GET | /api/v1/results/mei | 获取 MEI 列表 |
+| GET | /api/v1/results/mt | 获取线粒体变异列表 |
+| GET | /api/v1/results/upd | 获取 UPD 区域列表 |
+| GET | /api/v1/results/roh | 获取 ROH 区域列表 |
 
 ## 环境变量
 
@@ -347,10 +362,10 @@ curl http://localhost:8080/api/v1/tasks/a1b2c3d4/progress \
 
 **归档流程：**
 
-1. 解析 `outputs.json` 获取输出文件列表
-2. 复制结果文件到 `ArchiveDir/UUID/` 目录
-3. 同时归档 `outputs.json` 和 `workflow.log`
-4. 生成 `combined_tables.parquet` (合并所有文本文件)
+1. 读取 `outputs.resolved.json` 获取 QC 数据和输出文件 URL
+2. 复制结果文件到 `ArchiveDir/UUID/` 目录 (TSV/BAM 等)
+3. 同时归档 `outputs.json`、`outputs.resolved.json` 和 `workflow.log`
+4. 自动触发数据导入：从 TSV 文件解析 7 类变异数据 + QC 写入数据库
 5. 如果配置 `ARCHIVE_CLEANUP=true`，删除原始运行目录
 
 **清理配置：**
@@ -362,8 +377,33 @@ export ARCHIVE_CLEANUP=true
 ```
 
 安全机制：
-- 只有在归档目录存在且 `outputs.json` 已归档后才执行删除
+- 只有在归档目录存在且 `outputs.resolved.json` 已归档后才执行删除
 - 删除失败不影响归档结果，仅记录警告日志
+
+### 手动触发数据导入
+
+```bash
+curl -X POST http://localhost:8080/api/v1/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890/import \
+  -H "Authorization: Bearer <token>"
+```
+
+响应示例：
+
+```json
+{
+  "message": "import completed",
+  "result": {
+    "qc": 1,
+    "snv_indel": 156,
+    "cnv_segment": 12,
+    "cnv_exon": 34,
+    "str": 5,
+    "mei": 3,
+    "mt": 8,
+    "roh": 2
+  }
+}
+```
 
 ### 查询归档状态
 
@@ -381,7 +421,7 @@ curl http://localhost:8080/api/v1/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
   "archive_dir": "/mnt/data/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "output_dir": "/mnt/data/output/a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "deleted": true,
-  "files": ["outputs.json", "workflow.log", "result.vcf.gz", "aligned.bam"]
+  "files": ["outputs.json", "outputs.resolved.json", "workflow.log", "snv_indel.txt", "region.cnvanno.txt", "aligned.bam"]
 }
 ```
 
@@ -397,12 +437,12 @@ curl http://localhost:8080/api/v1/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890/o
 ```json
 {
   "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "keys": ["gvcf", "final_vcf", "aligned_bam", "metrics_json"],
+  "keys": ["SingleWES.summary.snp_indel", "SingleWES.summary.cnv_region", "SingleWES.summary.aligned_bam", "SingleWES.summary.qc_result"],
   "outputs": {
-    "gvcf": "/data/runs/sample001.gvcf.gz",
-    "final_vcf": "/data/runs/sample001.vcf.gz",
-    "aligned_bam": "/data/runs/sample001.bam",
-    "metrics_json": "/data/runs/sample001_metrics.json"
+    "SingleWES.summary.snp_indel": "https://cos.example.com/xxx/snv_indel.txt",
+    "SingleWES.summary.cnv_region": "https://cos.example.com/xxx/region.cnvanno.txt",
+    "SingleWES.summary.aligned_bam": "https://cos.example.com/xxx/aligned.bam",
+    "SingleWES.summary.qc_result": "(inline object)"
   }
 }
 ```
@@ -410,7 +450,7 @@ curl http://localhost:8080/api/v1/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890/o
 ### 根据 key 查询归档文件路径
 
 ```bash
-curl http://localhost:8080/api/v1/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890/output/gvcf \
+curl http://localhost:8080/api/v1/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890/output/SingleWES.summary.snv_indel \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -419,48 +459,53 @@ curl http://localhost:8080/api/v1/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890/o
 ```json
 {
   "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "key": "gvcf",
-  "value": "/data/runs/sample001.gvcf.gz",
-  "path": "/data/runs/sample001.gvcf.gz",
+  "key": "SingleWES.summary.snv_indel",
+  "value": "https://cos.example.com/xxx/snv_indel.txt",
   "archived": true,
-  "archive_path": "/mnt/data/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890/sample001.gvcf.gz",
+  "archive_path": "/mnt/data/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890/snv_indel.txt",
   "exists": true
 }
 ```
 
 ### 支持嵌套 key 查询
 
-outputs.json 中的嵌套结构可以通过点号分隔的路径查询：
+outputs.resolved.json 中的嵌套结构可以通过点号分隔的路径查询：
 
 ```bash
-curl http://localhost:8080/api/v1/archive/{uuid}/output/outputs.gvcf \
+curl http://localhost:8080/api/v1/archive/{uuid}/output/SingleWES.summary.snv_indel \
   -H "Authorization: Bearer <token>"
 ```
 
-## outputs.json 结构示例
+## outputs.resolved.json 结构示例
 
 ```json
 {
-  "outputs": {
-    "gvcf": "/data/runs/20260428/sample001.gvcf.gz",
-    "final_vcf": "/data/runs/20260428/sample001.vcf.gz",
-    "aligned_bam": "/data/runs/20260428/sample001.bam",
-    "metrics": {
-      "total_reads": 1000000,
-      "mapped_reads": 950000,
-      "metrics_file": "/data/runs/20260428/sample001_metrics.json"
+  "SingleWES.summary": {
+    "snp_indel": "https://cos.example.com/xxx/snv_indel.txt",
+    "cnv_region": "https://cos.example.com/xxx/region.cnvanno.txt",
+    "cnv_gene": "https://cos.example.com/xxx/gene.cnvanno.txt",
+    "str": "https://cos.example.com/xxx/str.txt",
+    "mei": "https://cos.example.com/xxx/mei.txt",
+    "mt_report": "https://cos.example.com/xxx/mt_report.txt",
+    "roh": "https://cos.example.com/xxx/roh.anno.txt",
+    "aligned_bam": "https://cos.example.com/xxx/aligned.bam",
+    "qc_result": {
+      "sample_id": "sample001",
+      "fastp": { "total_reads": 1000000, "q30_rate": 0.92, "gc_content": 0.41 },
+      "xamdst": { "average_depth": 120.5, "coverage_gte30x": 0.95, "mapped_reads_fraction": 0.99 },
+      "hs_metrics": { "mean_target_coverage": 118.3, "pct_target_bases_30x": 0.96 },
+      "sambamba": { "percent_duplication": 0.05 },
+      "sry": { "predicted_gender": "Male", "sry_count": 1 }
     }
-  },
-  "dir": "/data/runs/20260428"
+  }
 }
 ```
 
-可用查询的 keys：
-- `gvcf` → sample001.gvcf.gz
-- `final_vcf` → sample001.vcf.gz
-- `aligned_bam` → sample001.bam
-- `metrics.total_reads` → 1000000 (非文件，返回值)
-- `metrics.metrics_file` → sample001_metrics.json
+可用查询的 keys (通过 dot path)：
+- `SingleWES.summary.snp_indel` → snv_indel.txt 的 COS URL
+- `SingleWES.summary.cnv_region` → region.cnvanno.txt 的 COS URL
+- `SingleWES.summary.aligned_bam` → aligned.bam 的 COS URL
+- `SingleWES.summary.qc_result` → QC 数据 (内联对象)
 
 ## 与 Sepiida 集成
 
@@ -477,76 +522,46 @@ export SEPIIDA_URL=http://localhost:9090
 export SEPIIDA_QUERY_KEY=my-query-key-001
 ```
 
-## Parquet 数据管理
+## 数据导入与状态管理
 
-采用 **数据分离架构**，保证高性能：
+### 数据导入流程
 
-- **Parquet 文件**：静态存储原始数据，结构不变
-- **状态数据**：独立存储于 `status.json`，支持动态更新
-- **前端展示**：加载两者后合并展示
+归档后自动触发 (也可手动 `POST /api/v1/archive/:uuid/import`)：
 
-### 数据结构
+1. 从 `outputs.resolved.json` 解析 `qc_result` → 写入 QC 表
+2. 从归档目录的 TSV 文件逐行解析 7 类变异数据 → 写入对应表
+3. 每次导入前清空该任务的旧数据，支持重复导入
 
-**combined_tables.parquet (嵌套结构)：**
+**支持的变异类型与数据源文件：**
 
-```
-message CombinedRecord {
-  required binary uuid (UTF8);
-  
-  group metrics (LIST) {
-    repeated group list {
-      group element {
-        optional binary sample_id (UTF8);
-        optional binary total_reads (UTF8);
-        optional binary mapped_reads (UTF8);
-      }
-    }
-  }
-}
-```
+| 类型 | 文件 | 列数 | 说明 |
+|------|------|------|------|
+| SNV/Indel | snv_indel.txt | 47 | 点突变/小插入缺失 |
+| CNV Segment | region.cnvanno.txt | ~44 | 拷贝数变异 (区域级) |
+| CNV Exon | gene.cnvanno.txt | ~53 | 拷贝数变异 (外显子级) |
+| STR | str.txt | 25 | 短串联重复 |
+| MEI | mei.txt | 21 | 移动元件插入 |
+| Mitochondrial | mt_report.txt | 42 | 线粒体变异 |
+| ROH | roh.anno.txt | 10 | 纯合区域 |
+| QC | outputs.resolved.json | - | 质控数据 (内联 JSON) |
 
-**status.json (行状态)：**
+### 状态管理
 
-```json
-{
-  "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "tables": {
-    "metrics": {
-      "rows": [
-        {"row_index": 0, "report_status": "", "review_status": ""},
-        {"row_index": 1, "report_status": "已回报", "review_status": "已审核"}
-      ]
-    }
-  }
-}
-```
+审核 (review) 和回报 (report) 状态统一存储在数据库中，每条变异记录包含：
 
-### API 使用示例
+- `reviewed` / `reviewed_by` / `reviewed_at` — 审核状态
+- `reported` / `reported_by` / `reported_at` — 回报状态
 
-#### 获取合并数据
+通过 API 按类型批量操作：
 
 ```bash
-curl http://localhost:8080/api/v1/archive/{uuid}/data \
+# 审核一条 SNV/Indel
+curl -X POST http://localhost:8080/api/v1/results/snv-indel/{id}/review \
   -H "Authorization: Bearer <token>"
-```
 
-#### 更新行状态
-
-```bash
-curl -X PUT http://localhost:8080/api/v1/archive/{uuid}/status \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '[
-    {"table": "metrics", "row_index": 0, "report_status": "已回报", "review_status": ""}
-  ]'
-```
-
-### 配置待转换文件
-
-在 `internal/config/config.go` 中修改 `FilePatterns`：
-
-```go
-FilePatterns: []string{"*.csv", "*.tsv", "metrics.txt", "results.tbl"}
+# 回报一条 CNV Segment
+curl -X POST http://localhost:8080/api/v1/results/cnv-segment/{id}/report \
+  -H "Authorization: Bearer <token>"
 ```
 
 ### 前端集成流程
@@ -554,5 +569,5 @@ FilePatterns: []string{"*.csv", "*.tsv", "metrics.txt", "results.tbl"}
 1. 用户登录获取 Token
 2. 调用 API 时携带 `Authorization: Bearer <token>`
 3. Token 过期前调用 `/auth/refresh` 刷新
-4. 加载 Parquet 数据与状态数据合并展示
-5. 用户操作后调用 `PUT /archive/:uuid/status` 同步状态
+4. 通过结果查询 API 加载各类变异数据 (含审核/回报状态)
+5. 用户操作后调用 review/report API 同步状态到数据库

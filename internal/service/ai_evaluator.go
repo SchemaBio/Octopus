@@ -308,14 +308,14 @@ func buildEvaluationPrompt(
 	if qc != nil {
 		b.WriteString("## 测序质控指标\n")
 		b.WriteString(fmt.Sprintf("- 总读数: %d\n", qc.TotalReads))
-		b.WriteString(fmt.Sprintf("- 比对率: %.2f%%\n", qc.MappingRate*100))
+		b.WriteString(fmt.Sprintf("- 比对率: %.2f%%\n", qc.MappedReadsFraction*100))
 		b.WriteString(fmt.Sprintf("- 平均测序深度: %.1fX\n", qc.AverageDepth))
 		b.WriteString(fmt.Sprintf("- 去重后深度: %.1fX\n", qc.DedupDepth))
-		b.WriteString(fmt.Sprintf("- 目标区域覆盖: %.2f%%\n", qc.TargetCoverage*100))
+		b.WriteString(fmt.Sprintf("- 目标区域覆盖 (30x): %.2f%%\n", qc.PctTargetBases30x*100))
 		b.WriteString(fmt.Sprintf("- 重复率: %.2f%%\n", qc.DuplicateRate*100))
 		b.WriteString(fmt.Sprintf("- Q30: %.2f%%\n", qc.Q30Rate*100))
 		b.WriteString(fmt.Sprintf("- 预测性别: %s\n", qc.PredictedGender))
-		b.WriteString(fmt.Sprintf("- 污染率: %.4f%%\n\n", qc.ContaminationRate*100))
+		b.WriteString(fmt.Sprintf("- 平均目标深度: %.1fX\n", qc.MeanTargetCoverage))
 	}
 
 	// Variant section
@@ -444,17 +444,17 @@ func formatSampleForPrompt(s *model.Sample) string {
 
 func formatSNVTable(variants []model.SNVIndel) string {
 	var b strings.Builder
-	b.WriteString("| 基因 | 染色体 | 位置 | 变异 | 类型 | 杂合性 | ACMG | gnomAD AF | 深度 | HGVSc | HGVSp |\n")
-	b.WriteString("|------|--------|------|------|------|--------|------|-----------|------|-------|-------|\n")
+	b.WriteString("| 基因 | 染色体 | 位置 | 变异 | 类型 | 杂合性 | ACMG | gnomAD AF | 深度 | VAF | HGVSc | HGVSp |\n")
+	b.WriteString("|------|--------|------|------|------|--------|------|-----------|------|-----|-------|-------|\n")
 	for _, v := range variants {
 		af := "-"
 		if v.GnomadAF != nil {
 			af = fmt.Sprintf("%.6f", *v.GnomadAF)
 		}
-		b.WriteString(fmt.Sprintf("| %s | %s | %d | %s>%s | %s | %s | %s | %s | %d | %s | %s |\n",
+		b.WriteString(fmt.Sprintf("| %s | %s | %d | %s>%s | %s | %s | %s | %s | %d | %.4f | %s | %s |\n",
 			v.Gene, v.Chromosome, v.Position, v.Ref, v.Alt,
 			v.VariantType, v.Zygosity, v.ACMGClassification,
-			af, v.Depth, v.HGVSc, v.HGVSp))
+			af, v.Depth, v.VAF, v.HGVSc, v.HGVSp))
 	}
 	return b.String()
 }

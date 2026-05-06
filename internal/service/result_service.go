@@ -128,6 +128,12 @@ func (s *ResultService) ReportUPDRegion(ctx context.Context, id string, reporter
 	return s.repo.UpdateUPDRegionReport(id, true, reporter)
 }
 
+// ========== ROH ==========
+
+func (s *ResultService) ListROHRegions(ctx context.Context, query *model.ROHListQuery) ([]model.ROHRegion, int64, error) {
+	return s.repo.PaginateROHRegions(query)
+}
+
 // ========== Review/Report by type ==========
 
 // ReviewVariant marks a variant as reviewed by type
@@ -150,6 +156,8 @@ func (s *ResultService) ReviewVariant(ctx context.Context, variantType string, i
 		return s.repo.UpdateMTVariantReview(id, true, reviewer)
 	case "upd":
 		return s.repo.UpdateUPDRegionReview(id, true, reviewer)
+	case "roh":
+		return s.repo.UpdateROHRegionReview(id, true, reviewer)
 	default:
 		return fmt.Errorf("unknown variant type: %s", variantType)
 	}
@@ -172,6 +180,8 @@ func (s *ResultService) ReportVariant(ctx context.Context, variantType string, i
 		return s.repo.UpdateMTVariantReport(id, true, reporter)
 	case "upd":
 		return s.repo.UpdateUPDRegionReport(id, true, reporter)
+	case "roh":
+		return s.repo.UpdateROHRegionReport(id, true, reporter)
 	default:
 		return fmt.Errorf("unknown variant type: %s", variantType)
 	}

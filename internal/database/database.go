@@ -63,6 +63,7 @@ func AutoMigrate() error {
 		&model.MEIVariant{},
 		&model.MitochondrialVariant{},
 		&model.UPDRegion{},
+		&model.ROHRegion{},
 		&model.QCResult{},
 		// Report models
 		&model.Report{},

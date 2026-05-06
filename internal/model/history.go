@@ -85,7 +85,7 @@ type GroupedSTR struct {
 	RepeatUnit      string            `json:"repeatUnit"`
 	NormalRangeMin  int               `json:"normalRangeMin"`
 	NormalRangeMax  int               `json:"normalRangeMax"`
-	Status          STRStatus         `json:"status"`
+	Status          string            `json:"status"`
 	MinRepeatCount  int               `json:"minRepeatCount"`
 	MaxRepeatCount  int               `json:"maxRepeatCount"`
 	DetectionCount  int               `json:"detectionCount"`
@@ -96,19 +96,18 @@ type GroupedSTR struct {
 
 // GroupedMEI represents a grouped MEI in history
 type GroupedMEI struct {
-	GroupID            string             `json:"groupId"`
-	Chromosome         string             `json:"chromosome"`
-	Position           int64              `json:"position"`
-	Gene               string             `json:"gene"`
-	MEIType            MEIType            `json:"meiType"`
-	Strand             string             `json:"strand"`
-	Length             int64              `json:"length"`
-	Impact             string             `json:"impact,omitempty"`
-	ACMGClassification ACMGClassification `json:"acmgClassification,omitempty"`
-	DetectionCount     int                `json:"detectionCount"`
-	FirstDetectedAt    string             `json:"firstDetectedAt"`
-	LastDetectedAt     string             `json:"lastDetectedAt"`
-	Records            []DetectionRecord  `json:"records"`
+	GroupID         string            `json:"groupId"`
+	Chromosome      string            `json:"chromosome"`
+	Position        int64             `json:"position"`
+	Gene            string            `json:"gene"`
+	TEType          string            `json:"teType"`
+	Direction       string            `json:"direction"`
+	Length          int64             `json:"length"`
+	Impact          string            `json:"impact,omitempty"`
+	DetectionCount  int               `json:"detectionCount"`
+	FirstDetectedAt string            `json:"firstDetectedAt"`
+	LastDetectedAt  string            `json:"lastDetectedAt"`
+	Records         []DetectionRecord `json:"records"`
 }
 
 // GroupedMTVariant represents a grouped MT variant in history
@@ -118,7 +117,7 @@ type GroupedMTVariant struct {
 	Ref              string                   `json:"ref"`
 	Alt              string                   `json:"alt"`
 	Gene             string                   `json:"gene"`
-	Pathogenicity    MitochondrialPathogenicity `json:"pathogenicity"`
+	Pathogenicity    string                     `json:"pathogenicity"`
 	AssociatedDisease string                  `json:"associatedDisease"`
 	Haplogroup       string                   `json:"haplogroup,omitempty"`
 	MinHeteroplasmy  float64                  `json:"minHeteroplasmy"`

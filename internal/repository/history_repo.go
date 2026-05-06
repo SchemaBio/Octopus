@@ -344,7 +344,7 @@ func (r *HistoryRepository) GetGroupedSTRs(query *model.HistoryListQuery) ([]mod
 			RepeatUnit:      rw.RepeatUnit,
 			NormalRangeMin:  rw.NormalRangeMin,
 			NormalRangeMax:  rw.NormalRangeMax,
-			Status:          model.STRStatus(rw.Status),
+			Status:          rw.Status,
 			MinRepeatCount:  rw.MinCount,
 			MaxRepeatCount:  rw.MaxCount,
 			DetectionCount:  rw.Count,
@@ -363,20 +363,19 @@ func (r *HistoryRepository) GetGroupedMEIs(query *model.HistoryListQuery) ([]mod
 		Chromosome string
 		Position   int64
 		Gene       string
-		MEIType    string
-		Strand     string
+		TEType     string
+		Direction  string
 		Length     int64
 		Impact     string
-		ACMGClass  string
 		Count      int
 		FirstAt    string
 		LastAt     string
 	}
 
 	base := r.db.Model(&model.MEIVariant{}).Where("reviewed = ?", true).
-		Select(`chromosome, position, gene, mei_type, strand, length, impact, acmg_classification,
+		Select(`chromosome, position, gene, te_type, direction, length, impact,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
-		Group("chromosome, position, gene, mei_type")
+		Group("chromosome, position, gene, te_type")
 
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
@@ -385,7 +384,7 @@ func (r *HistoryRepository) GetGroupedMEIs(query *model.HistoryListQuery) ([]mod
 
 	var total int64
 	r.db.Model(&model.MEIVariant{}).Where("reviewed = ?", true).
-		Select("COUNT(DISTINCT chromosome || '-' || position || '-' || gene || '-' || mei_type)").Count(&total)
+		Select("COUNT(DISTINCT chromosome || '-' || position || '-' || gene || '-' || te_type)").Count(&total)
 
 	page, pageSize := normalizePage(query)
 
@@ -397,20 +396,15 @@ func (r *HistoryRepository) GetGroupedMEIs(query *model.HistoryListQuery) ([]mod
 
 	results := make([]model.GroupedMEI, len(rows))
 	for i, rw := range rows {
-		var acmg model.ACMGClassification
-		if rw.ACMGClass != "" {
-			acmg = model.ACMGClassification(rw.ACMGClass)
-		}
 		results[i] = model.GroupedMEI{
-			GroupID:            fmt.Sprintf("%s-%d-%s-%s", rw.Chromosome, rw.Position, rw.Gene, rw.MEIType),
+			GroupID:            fmt.Sprintf("%s-%d-%s-%s", rw.Chromosome, rw.Position, rw.Gene, rw.TEType),
 			Chromosome:         rw.Chromosome,
 			Position:           rw.Position,
 			Gene:               rw.Gene,
-			MEIType:            model.MEIType(rw.MEIType),
-			Strand:             rw.Strand,
+			TEType:             rw.TEType,
+			Direction:          rw.Direction,
 			Length:             rw.Length,
 			Impact:             rw.Impact,
-			ACMGClassification: acmg,
 			DetectionCount:     rw.Count,
 			FirstDetectedAt:    rw.FirstAt,
 			LastDetectedAt:     rw.LastAt,
@@ -469,7 +463,7 @@ func (r *HistoryRepository) GetGroupedMTVariants(query *model.HistoryListQuery) 
 			Ref:               rw.Ref,
 			Alt:               rw.Alt,
 			Gene:              rw.Gene,
-			Pathogenicity:     model.MitochondrialPathogenicity(rw.Pathogenicity),
+			Pathogenicity:     rw.Pathogenicity,
 			AssociatedDisease: rw.AssociatedDisease,
 			Haplogroup:        rw.Haplogroup,
 			MinHeteroplasmy:   rw.MinHet,

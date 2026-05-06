@@ -1,57 +1,42 @@
 package model
 
-// MEIType represents the MEI type
-type MEIType string
-
-const (
-	MEITypeLINE1   MEIType = "LINE1"
-	MEITypeAlu     MEIType = "Alu"
-	MEITypeSVA     MEIType = "SVA"
-	MEITypeUnknown MEIType = "Unknown"
-)
-
-// MEIInsertionType represents the insertion type
-type MEIInsertionType string
-
-const (
-	MEIInsertionTypeInsertion MEIInsertionType = "insertion"
-	MEIInsertionTypeDeletion  MEIInsertionType = "deletion"
-	MEIInsertionTypeComplex   MEIInsertionType = "complex"
-)
-
-// MEIVariant represents a mobile element insertion
+// MEIVariant represents a mobile element insertion (21 columns from mei.txt)
 type MEIVariant struct {
 	ID                  string             `json:"id" gorm:"primaryKey;size:36"`
 	TaskID              string             `json:"taskId" gorm:"size:36;index"`
 	Chromosome          string             `json:"chromosome" gorm:"size:10"`
 	Position            int64              `json:"position"`
-	MEIType             MEIType            `json:"meiType" gorm:"size:20"`
-	InsertionType       MEIInsertionType   `json:"insertionType" gorm:"size:20"`
-	Strand              string             `json:"strand" gorm:"size:5"` // + or -
-	Length              int64              `json:"length"`
+	MEIID               string             `json:"meiId,omitempty" gorm:"size:100"`
+	TEType              string             `json:"teType" gorm:"size:20"`   // SVA, L1
+	TEFamily            string             `json:"teFamily" gorm:"size:50"` // SVA_F, L1ME3Cz, etc.
+	Direction           string             `json:"direction" gorm:"size:5"` // 5' or 3'
+	Confidence          string             `json:"confidence" gorm:"size:20"`
+	SupportingReads     int                `json:"supportingReads" gorm:"type:integer"`
+	AvgSoftClipLength   float64            `json:"avgSoftClipLength" gorm:"type:numeric"`
 	Gene                string             `json:"gene" gorm:"size:100;index"`
 	Transcript          string             `json:"transcript,omitempty" gorm:"size:100"`
-	Impact              string             `json:"impact,omitempty" gorm:"size:50"`
-	Zygosity            string             `json:"zygosity" gorm:"size:20"`
-	SupportingReads     int                `json:"supportingReads" gorm:"type:smallint"`
-	TotalReads          int                `json:"totalReads" gorm:"type:smallint"`
-	Frequency           *float64           `json:"frequency,omitempty" gorm:"type:numeric"`
-	ACMGClassification  ACMGClassification `json:"acmgClassification,omitempty" gorm:"size:30"`
-	ClinvarID           string             `json:"clinvarId,omitempty" gorm:"size:50"`
-	DiseaseAssociation  string             `json:"diseaseAssociation,omitempty" gorm:"type:text"`
-	Notes               string             `json:"notes,omitempty" gorm:"type:text"`
+	Location            string             `json:"location,omitempty" gorm:"size:200"`
+	Consequence         string             `json:"consequence,omitempty" gorm:"size:200"`
+	Impact              string             `json:"impact,omitempty" gorm:"size:20"`
+	Cytoband            string             `json:"cytoband,omitempty" gorm:"size:50"`
+	ClinvarSig          string             `json:"clinvarSig,omitempty" gorm:"size:500"`
+	ClinvarDN           string             `json:"clinvarDn,omitempty" gorm:"size:500"`
+	ClinvarStar         string             `json:"clinvarStar,omitempty" gorm:"size:50"`
+	GnomadAF            *float64           `json:"gnomadAF,omitempty" gorm:"type:numeric"`
+	HgncID              string             `json:"hgncId,omitempty" gorm:"size:50"`
+	Filter              string             `json:"filter" gorm:"size:50"`
 	VariantReviewStatus `json:"reviewStatus" gorm:"embedded"`
 }
 
 func (MEIVariant) TableName() string {
-	return "result_meis"
+	return "result_mei_variants"
 }
 
 // MEIListQuery query parameters
 type MEIListQuery struct {
 	TaskID   string `form:"taskId" binding:"required"`
 	Search   string `form:"search"`
-	MEIType  string `form:"meiType"`
+	TEType   string `form:"teType"`
 	Page     int    `form:"page" binding:"min=1"`
 	PageSize int    `form:"page_size" binding:"min=1,max=100"`
 }

@@ -62,6 +62,45 @@ func (h *ArchiveHandler) ArchiveStatus(c *gin.Context) {
 	})
 }
 
+// ImportToDatabase godoc
+// @Summary Import archive data to database
+// @Description Parse archived result files and import into the database
+// @Tags archive
+// @Produce json
+// @Param uuid path string true "Task UUID"
+// @Success 200 {object} service.ImportResult
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/v1/archive/{uuid}/import [post]
+func (h *ArchiveHandler) ImportToDatabase(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	archiveDir := h.archiver.GetArchiveDir(uuid)
+	if archiveDir == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "archive directory not configured"})
+		return
+	}
+
+	// Check if archive exists
+	if _, err := os.Stat(archiveDir); os.IsNotExist(err) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "archive not found for UUID: " + uuid})
+		return
+	}
+
+	// Import data
+	importer := service.NewImporter(h.archiver.GetConfig())
+	result, err := importer.ImportFromArchive(uuid, archiveDir)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"uuid":  uuid,
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 // QueryOutput godoc
 // @Summary Query output by key
 // @Description Query an output value by key from archived outputs.json and get the archived file path
@@ -110,12 +149,17 @@ func (h *ArchiveHandler) ListOutputKeys(c *gin.Context) {
 		return
 	}
 
-	// Also read full outputs.json content
+	// Also read full outputs.resolved.json content
 	archiveDir := h.archiver.GetArchiveDir(uuid)
 	outputs := map[string]interface{}{}
 	if archiveDir != "" {
-		outputsPath := archiveDir + "/outputs.json"
+		// Try outputs.resolved.json first, fall back to outputs.json
+		outputsPath := archiveDir + "/outputs.resolved.json"
 		data, err := os.ReadFile(outputsPath)
+		if err != nil {
+			outputsPath = archiveDir + "/outputs.json"
+			data, err = os.ReadFile(outputsPath)
+		}
 		if err == nil {
 			var parsed map[string]interface{}
 			if json.Unmarshal(data, &parsed) == nil {
