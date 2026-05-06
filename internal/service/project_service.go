@@ -72,7 +72,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, query *model.ProjectL
 	}
 
 	return &model.ProjectListResponse{
-		Total: int(total),
+		Total: total,
 		Items: items,
 	}, nil
 }

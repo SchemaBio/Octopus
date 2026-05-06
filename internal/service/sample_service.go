@@ -89,7 +89,7 @@ func (s *SampleService) ListSamples(ctx context.Context, query *model.SampleList
 	}
 
 	return &model.SampleListResponse{
-		Total: int(total),
+		Total: total,
 		Items: items,
 	}, nil
 }

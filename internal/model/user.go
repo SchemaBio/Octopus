@@ -23,8 +23,8 @@ type User struct {
 	SystemRole   SystemRole `json:"system_role" gorm:"size:20;default:USER"`
 	PrimaryOrgID string     `json:"primary_org_id,omitempty" gorm:"size:36;index"`
 	IsActive     bool       `json:"is_active" gorm:"default:true"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	CreatedAt    time.Time  `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt    time.Time  `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // LoginRequest represents login request body (frontend uses email)
@@ -109,7 +109,7 @@ type UserListQuery struct {
 
 // UserListResponse is the response for listing users
 type UserListResponse struct {
-	Total int           `json:"total"`
+	Total int64         `json:"total"`
 	Items []UserResponse `json:"items"`
 }
 

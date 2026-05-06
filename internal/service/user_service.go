@@ -187,7 +187,7 @@ func (s *UserService) ListUsers(query *model.UserListQuery) (*model.UserListResp
 	}
 
 	return &model.UserListResponse{
-		Total: int(total),
+		Total: total,
 		Items: items,
 	}, nil
 }

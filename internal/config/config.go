@@ -74,8 +74,8 @@ func Load() *Config {
 			Mode: getEnv("GIN_MODE", "debug"),
 		},
 		Database: DatabaseConfig{
-			Driver: getEnv("DB_DRIVER", "sqlite"),
-			DSN:    getEnv("DB_DSN", "./data/schema-platform.db"),
+			Driver: getEnv("DB_DRIVER", "postgres"),
+			DSN:    getEnv("DB_DSN", "host=localhost user=octopus password=octopus dbname=octopus port=5432 sslmode=disable TimeZone=Asia/Shanghai"),
 		},
 		Task: TaskConfig{
 			OutputDir:       getEnv("OUTPUT_DIR", "/mnt/data/output"),

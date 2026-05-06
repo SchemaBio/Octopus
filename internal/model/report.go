@@ -27,8 +27,8 @@ type Report struct {
 	ReviewedBy     string       `json:"reviewedBy,omitempty" gorm:"size:100"`
 	ApprovedBy     string       `json:"approvedBy,omitempty" gorm:"size:100"`
 	ReleasedBy     string       `json:"releasedBy,omitempty" gorm:"size:100"`
-	CreatedAt      time.Time    `json:"created_at"`
-	UpdatedAt      time.Time    `json:"updated_at"`
+	CreatedAt      time.Time    `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt      time.Time    `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 func (Report) TableName() string {
@@ -37,14 +37,14 @@ func (Report) TableName() string {
 
 // ReportTemplate represents an available report generation template/API
 type ReportTemplate struct {
-	ID          string `json:"id" gorm:"primaryKey;size:36"`
-	Name        string `json:"name" gorm:"size:200;not null"`
-	Description string `json:"description" gorm:"type:text"`
-	APIEndpoint string `json:"apiEndpoint" gorm:"size:500;not null"` // User's report generation API
-	APIKey      string `json:"apiKey,omitempty" gorm:"size:500"`
-	IsActive    bool   `json:"isActive" gorm:"default:true"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string    `json:"id" gorm:"primaryKey;size:36"`
+	Name        string    `json:"name" gorm:"size:200;not null"`
+	Description string    `json:"description" gorm:"type:text"`
+	APIEndpoint string    `json:"apiEndpoint" gorm:"size:500;not null"` // User's report generation API
+	APIKey      string    `json:"apiKey,omitempty" gorm:"size:500"`
+	IsActive    bool      `json:"isActive" gorm:"default:true"`
+	CreatedAt   time.Time `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 func (ReportTemplate) TableName() string {

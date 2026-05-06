@@ -7,9 +7,9 @@ type VariantReviewStatus struct {
 	Reviewed   bool       `json:"reviewed" gorm:"default:false"`
 	Reported   bool       `json:"reported" gorm:"default:false"`
 	ReviewedBy string     `json:"reviewedBy,omitempty" gorm:"size:100"`
-	ReviewedAt *time.Time `json:"reviewedAt,omitempty"`
+	ReviewedAt *time.Time `json:"reviewedAt,omitempty" gorm:"type:timestamptz"`
 	ReportedBy string     `json:"reportedBy,omitempty" gorm:"size:100"`
-	ReportedAt *time.Time `json:"reportedAt,omitempty"`
+	ReportedAt *time.Time `json:"reportedAt,omitempty" gorm:"type:timestamptz"`
 }
 
 // ACMGClassification represents ACMG variant classification

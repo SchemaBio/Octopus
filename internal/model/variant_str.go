@@ -17,9 +17,9 @@ type STR struct {
 	Transcript          string             `json:"transcript" gorm:"size:100"`
 	Locus               string             `json:"locus" gorm:"size:100"`
 	RepeatUnit          string             `json:"repeatUnit" gorm:"size:50"`
-	RepeatCount         int                `json:"repeatCount"`
-	NormalRangeMin      int                `json:"normalRangeMin"`
-	NormalRangeMax      int                `json:"normalRangeMax"`
+	RepeatCount         int                `json:"repeatCount" gorm:"type:smallint"`
+	NormalRangeMin      int                `json:"normalRangeMin" gorm:"type:smallint"`
+	NormalRangeMax      int                `json:"normalRangeMax" gorm:"type:smallint"`
 	Status              STRStatus          `json:"status" gorm:"size:20"`
 	VariantReviewStatus `json:"reviewStatus" gorm:"embedded"`
 }

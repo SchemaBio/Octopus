@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-- **数据库持久化**：支持 SQLite（开发）和 PostgreSQL（生产），自动迁移表结构
+- **数据库持久化**：PostgreSQL，JSONB/numeric 等原生类型优化，自动迁移表结构
 - **JWT 认证**：无状态认证系统，支持登录、注册、Token 刷新
 - **样本管理**：样本创建、查询、状态追踪，关联项目
 - **项目管理**：项目批次管理，进度汇总统计
@@ -133,8 +133,8 @@ go run cmd/server/main.go
 |------|--------|------|
 | SERVER_PORT | 8080 | 服务端口 |
 | GIN_MODE | debug | 运行模式 |
-| DB_DRIVER | sqlite | 数据库驱动 (sqlite/postgres) |
-| DB_DSN | ./data/schema-platform.db | 数据库连接串 |
+| DB_DRIVER | postgres | 数据库驱动 |
+| DB_DSN | host=localhost user=octopus password=octopus dbname=octopus port=5432 sslmode=disable TimeZone=Asia/Shanghai | 数据库连接串 |
 | OUTPUT_DIR | /mnt/data/output | 输出目录 (UUID 父目录) |
 | TEMPLATE_DIR | /home/ubuntu/schema-germline | WDL 模板目录 |
 | ARCHIVE_DIR | /mnt/data/archive | 归档目录 |

@@ -47,7 +47,7 @@ func (s *PedigreeService) List(query *model.PedigreeListQuery) (*model.PedigreeL
 	}
 
 	return &model.PedigreeListResponse{
-		Total: int(total),
+		Total: total,
 		Items: items,
 	}, nil
 }

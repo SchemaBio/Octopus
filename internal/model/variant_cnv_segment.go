@@ -9,9 +9,9 @@ type CNVSegment struct {
 	EndPosition         int64              `json:"endPosition"`
 	Length              int64              `json:"length"`
 	Type                string             `json:"type" gorm:"size:20"` // Amplification, Deletion
-	CopyNumber          int                `json:"copyNumber"`
-	Genes               string             `json:"genes" gorm:"type:text"` // JSON array
-	Confidence          float64            `json:"confidence"`
+	CopyNumber          int                `json:"copyNumber" gorm:"type:smallint"`
+	Genes               string             `json:"genes" gorm:"type:jsonb"` // JSON array
+	Confidence          float64            `json:"confidence" gorm:"type:numeric"`
 	VariantReviewStatus `json:"reviewStatus" gorm:"embedded"`
 }
 

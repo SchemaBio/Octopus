@@ -159,7 +159,7 @@ func (a *Archiver) ArchiveTask(task *model.Task) (*ArchiveResult, error) {
 func (a *Archiver) extractOutputFiles(outputs map[string]interface{}) []string {
 	var files []string
 
-	for key, value := range outputs {
+	for _, value := range outputs {
 		switch v := value.(type) {
 		case string:
 			// Check if it's a file path (contains / or .gz, .vcf, .bam, etc.)

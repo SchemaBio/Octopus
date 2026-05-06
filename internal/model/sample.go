@@ -45,18 +45,18 @@ type Sample struct {
 	Age                 *int               `json:"age,omitempty"`
 	SampleType          SampleTypeFrontend `json:"sample_type" gorm:"size:20;default:其他"`
 	Batch               string             `json:"batch" gorm:"size:100"`
-	ClinicalDiagnosis   string             `json:"clinical_diagnosis" gorm:"type:text"` // JSON
-	HPOTerms            string             `json:"-" gorm:"type:text"`                  // JSON
-	MatchedPair         string             `json:"-" gorm:"type:text"`                  // JSON
-	SubmissionInfo      string             `json:"-" gorm:"type:text"`                  // JSON
-	ProjectInfo         string             `json:"-" gorm:"type:text"`                  // JSON
-	FamilyHistory       string             `json:"-" gorm:"type:text"`                  // JSON
+	ClinicalDiagnosis   string             `json:"clinical_diagnosis" gorm:"type:jsonb"` // JSON
+	HPOTerms            string             `json:"-" gorm:"type:jsonb"`                  // JSON
+	MatchedPair         string             `json:"-" gorm:"type:jsonb"`                  // JSON
+	SubmissionInfo      string             `json:"-" gorm:"type:jsonb"`                  // JSON
+	ProjectInfo         string             `json:"-" gorm:"type:jsonb"`                  // JSON
+	FamilyHistory       string             `json:"-" gorm:"type:jsonb"`                  // JSON
 	Remark              string             `json:"remark" gorm:"type:text"`
 	Status              SampleStatus       `json:"status" gorm:"size:20;default:pending"`
 	ProjectID           uint               `json:"project_id" gorm:"index"`
 	CreatedBy           uint               `json:"created_by" gorm:"index"`
-	CreatedAt           time.Time          `json:"created_at"`
-	UpdatedAt           time.Time          `json:"updated_at"`
+	CreatedAt           time.Time          `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt           time.Time          `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // HPOTerm represents an HPO term
@@ -197,7 +197,7 @@ type SampleListQuery struct {
 
 // SampleListResponse is the response for listing samples
 type SampleListResponse struct {
-	Total int              `json:"total"`
+	Total int64            `json:"total"`
 	Items []SampleResponse `json:"items"`
 }
 

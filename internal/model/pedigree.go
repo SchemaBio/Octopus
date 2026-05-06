@@ -52,8 +52,8 @@ type Pedigree struct {
 	Note            string    `json:"note" gorm:"type:text"`
 	ProbandMemberID string    `json:"proband_member_id" gorm:"size:36;index"`
 	CreatedBy       uint      `json:"created_by" gorm:"index"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	CreatedAt       time.Time `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt       time.Time `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // PedigreeMember represents a member in a pedigree
@@ -68,14 +68,14 @@ type PedigreeMember struct {
 	DeceasedYear   *int                   `json:"deceased_year,omitempty"`
 	Relation       RelationType           `json:"relation" gorm:"size:30;not null"`
 	AffectedStatus AffectedStatus         `json:"affected_status" gorm:"size:20;default:unknown"`
-	Phenotypes     map[string]interface{} `json:"phenotypes,omitempty" gorm:"type:text"`
+	Phenotypes     map[string]interface{} `json:"phenotypes,omitempty" gorm:"type:jsonb"`
 	FatherID       string                 `json:"father_id,omitempty" gorm:"size:36;index"`
 	MotherID       string                 `json:"mother_id,omitempty" gorm:"size:36;index"`
-	Generation     int                    `json:"generation" gorm:"default:0"`
-	Position       int                    `json:"position" gorm:"default:0"`
+	Generation     int                    `json:"generation" gorm:"type:smallint;default:0"`
+	Position       int                    `json:"position" gorm:"type:smallint;default:0"`
 	HasSample      bool                   `json:"has_sample" gorm:"default:false"`
-	CreatedAt      time.Time              `json:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
+	CreatedAt      time.Time              `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt      time.Time              `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // PedigreeResponse is the API response for a pedigree list item
@@ -179,7 +179,7 @@ type PedigreeListQuery struct {
 
 // PedigreeListResponse is the response for listing pedigrees
 type PedigreeListResponse struct {
-	Total int                 `json:"total"`
+	Total int64               `json:"total"`
 	Items []PedigreeResponse  `json:"items"`
 }
 

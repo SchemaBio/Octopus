@@ -19,12 +19,12 @@ type GeneList struct {
 	ID              string           `json:"id" gorm:"primaryKey;size:36"`
 	Name            string           `json:"name" gorm:"size:200;not null"`
 	Description     string           `json:"description" gorm:"type:text"`
-	GenesJSON       string           `json:"-" gorm:"type:text"` // JSON array stored in DB
+	GenesJSON       string           `json:"-" gorm:"type:jsonb"` // JSON array stored in DB
 	Category        GeneListCategory `json:"category" gorm:"size:20"`
 	DiseaseCategory string           `json:"disease_category" gorm:"size:100"`
 	CreatedBy       uint             `json:"created_by" gorm:"index"`
-	CreatedAt       time.Time        `json:"created_at"`
-	UpdatedAt       time.Time        `json:"updated_at"`
+	CreatedAt       time.Time        `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt       time.Time        `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // GeneListResponse is the API response for a gene list
@@ -67,7 +67,7 @@ type GeneListListQuery struct {
 
 // GeneListListResponse is the response for listing gene lists
 type GeneListListResponse struct {
-	Total int                `json:"total"`
+	Total int64              `json:"total"`
 	Items []GeneListResponse `json:"items"`
 }
 

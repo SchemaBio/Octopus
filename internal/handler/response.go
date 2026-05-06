@@ -9,7 +9,7 @@ import (
 // PaginatedResponse matches the frontend PaginatedResponse<T> interface
 type PaginatedResponse struct {
 	Items      interface{} `json:"items"`
-	Total      int         `json:"total"`
+	Total      int64       `json:"total"`
 	Page       int         `json:"page"`
 	PageSize   int         `json:"page_size"`
 	TotalPages int         `json:"total_pages"`
@@ -27,10 +27,10 @@ func SuccessCreated(c *gin.Context, data interface{}) {
 
 // SuccessList sends a 200 response with paginated data wrapper
 // Format: { "data": { "items": [], "total": N, "page": P, "page_size": S, "total_pages": TP } }
-func SuccessList(c *gin.Context, items interface{}, total, page, pageSize int) {
+func SuccessList(c *gin.Context, items interface{}, total int64, page, pageSize int) {
 	totalPages := 0
 	if pageSize > 0 {
-		totalPages = (total + pageSize - 1) / pageSize
+		totalPages = int((total + int64(pageSize) - 1) / int64(pageSize))
 	}
 
 	c.JSON(http.StatusOK, gin.H{

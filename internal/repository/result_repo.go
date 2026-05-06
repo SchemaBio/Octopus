@@ -52,7 +52,7 @@ func (r *ResultRepository) PaginateSNVIndels(query *model.SNVIndelListQuery) ([]
 	if pageSize < 1 { pageSize = 10 }
 
 	var results []model.SNVIndel
-	err = db.Order("acmg_classification ASC, gene ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
+	err := db.Order("acmg_classification ASC, gene ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
 }
 

@@ -36,20 +36,20 @@ type Task struct {
 	PipelineVersion string       `json:"pipeline_version" gorm:"size:50"`
 	Template        string       `json:"template"`                       // WDL template name (internal)
 	Executor        ExecutorType `json:"executor"`                       // Execution environment (internal)
-	InputJSON       string       `json:"-" gorm:"type:text"`             // Input parameters JSON (internal)
+	InputJSON       string       `json:"-" gorm:"type:jsonb"`            // Input parameters JSON (internal)
 	ConfigFile      string       `json:"-"`                              // Config file path (internal)
 	OutputDir       string       `json:"-"`                              // Output directory (internal)
 	Status          TaskStatus   `json:"status" gorm:"size:30;index"`
-	Progress        int          `json:"progress"`                       // 0-100
+	Progress        int          `json:"progress" gorm:"type:smallint"`  // 0-100
 	PID             int          `json:"-"`                              // Process ID (internal)
 	Remark          string       `json:"remark,omitempty" gorm:"type:text"`
 	SampleIDRef     uint         `json:"-" gorm:"index"`                 // FK to samples.id (internal)
 	ProjectID       uint         `json:"-" gorm:"index"`                 // FK to projects.id (internal)
 	CreatedBy       uint         `json:"created_by" gorm:"index"`
-	StartedAt       *time.Time   `json:"started_at,omitempty"`
-	FinishedAt      *time.Time   `json:"finished_at,omitempty"`
-	CreatedAt       time.Time    `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt       time.Time    `json:"updated_at" gorm:"autoUpdateTime"`
+	StartedAt       *time.Time   `json:"started_at,omitempty" gorm:"type:timestamptz"`
+	FinishedAt      *time.Time   `json:"finished_at,omitempty" gorm:"type:timestamptz"`
+	CreatedAt       time.Time    `json:"created_at" gorm:"autoCreateTime;type:timestamptz"`
+	UpdatedAt       time.Time    `json:"updated_at" gorm:"autoUpdateTime;type:timestamptz"`
 	Error           string       `json:"error,omitempty"`
 	LogPath         string       `json:"-"`                              // Log file path (internal)
 }
@@ -116,7 +116,7 @@ type TaskDetailResponse struct {
 
 // TaskListResponse is the response for listing tasks
 type TaskListResponse struct {
-	Total int            `json:"total"`
+	Total int64          `json:"total"`
 	Items []TaskResponse `json:"items"`
 }
 

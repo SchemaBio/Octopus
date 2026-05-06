@@ -31,8 +31,8 @@ type Pipeline struct {
 	CNVBaseline      string           `json:"cnv_baseline" gorm:"size:500"`
 	Status           PipelineStatus   `json:"status" gorm:"size:20;default:active"`
 	CreatedBy        uint             `json:"created_by" gorm:"index"`
-	CreatedAt        time.Time        `json:"created_at"`
-	UpdatedAt        time.Time        `json:"updated_at"`
+	CreatedAt        time.Time        `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt        time.Time        `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // PipelineResponse is the API response for a pipeline
@@ -82,7 +82,7 @@ type PipelineListQuery struct {
 
 // PipelineListResponse is the response for listing pipelines
 type PipelineListResponse struct {
-	Total int                 `json:"total"`
+	Total int64               `json:"total"`
 	Items []PipelineResponse  `json:"items"`
 }
 

@@ -11,8 +11,8 @@ type SNVIndel struct {
 	Alt                 string             `json:"alt" gorm:"size:1000"`
 	VariantType         string             `json:"variantType" gorm:"size:20"` // SNV, Insertion, Deletion, Complex
 	Zygosity            string             `json:"zygosity" gorm:"size:20"`    // Heterozygous, Homozygous, Hemizygous
-	AlleleFrequency     float64            `json:"alleleFrequency"`
-	Depth               int                `json:"depth"`
+	AlleleFrequency     float64            `json:"alleleFrequency" gorm:"type:numeric"`
+	Depth               int                `json:"depth" gorm:"type:smallint"`
 	ACMGClassification  ACMGClassification `json:"acmgClassification" gorm:"size:30;index"`
 	Transcript          string             `json:"transcript" gorm:"size:100"`
 	HGVSc               string             `json:"hgvsc" gorm:"size:200"`
@@ -21,18 +21,18 @@ type SNVIndel struct {
 	RsID                string             `json:"rsId,omitempty" gorm:"size:50"`
 	ClinvarID           string             `json:"clinvarId,omitempty" gorm:"size:50"`
 	ClinvarSignificance string             `json:"clinvarSignificance,omitempty" gorm:"size:200"`
-	GnomadAF            *float64           `json:"gnomadAF,omitempty"`
-	GnomadEasAF         *float64           `json:"gnomadEasAF,omitempty"`
-	ExacAF              *float64           `json:"exacAF,omitempty"`
-	SiftScore           *float64           `json:"siftScore,omitempty"`
+	GnomadAF            *float64           `json:"gnomadAF,omitempty" gorm:"type:numeric"`
+	GnomadEasAF         *float64           `json:"gnomadEasAF,omitempty" gorm:"type:numeric"`
+	ExacAF              *float64           `json:"exacAF,omitempty" gorm:"type:numeric"`
+	SiftScore           *float64           `json:"siftScore,omitempty" gorm:"type:numeric"`
 	SiftPrediction      string             `json:"siftPrediction,omitempty" gorm:"size:50"`
-	PolyphenScore       *float64           `json:"polyphenScore,omitempty"`
+	PolyphenScore       *float64           `json:"polyphenScore,omitempty" gorm:"type:numeric"`
 	PolyphenPrediction  string             `json:"polyphenPrediction,omitempty" gorm:"size:50"`
-	CaddScore           *float64           `json:"caddScore,omitempty"`
-	RevelScore          *float64           `json:"revelScore,omitempty"`
-	SpliceAI            *float64           `json:"spliceAI,omitempty"`
-	ACMGCriteria        string             `json:"acmgCriteria,omitempty" gorm:"type:text"`  // JSON array
-	PubmedIDs           string             `json:"pubmedIds,omitempty" gorm:"type:text"`     // JSON array
+	CaddScore           *float64           `json:"caddScore,omitempty" gorm:"type:numeric"`
+	RevelScore          *float64           `json:"revelScore,omitempty" gorm:"type:numeric"`
+	SpliceAI            *float64           `json:"spliceAI,omitempty" gorm:"type:numeric"`
+	ACMGCriteria        string             `json:"acmgCriteria,omitempty" gorm:"type:jsonb"`  // JSON array
+	PubmedIDs           string             `json:"pubmedIds,omitempty" gorm:"type:jsonb"`     // JSON array
 	OmimID              string             `json:"omimId,omitempty" gorm:"size:50"`
 	DiseaseAssociation  string             `json:"diseaseAssociation,omitempty" gorm:"type:text"`
 	InheritanceMode     string             `json:"inheritanceMode,omitempty" gorm:"size:50"`

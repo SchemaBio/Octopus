@@ -67,7 +67,7 @@ func (s *PipelineService) ListPipelines(ctx context.Context, query *model.Pipeli
 	}
 
 	return &model.PipelineListResponse{
-		Total: int(total),
+		Total: total,
 		Items: items,
 	}, nil
 }
@@ -117,5 +117,5 @@ func (s *PipelineService) DeletePipeline(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	return s.repo.Delete(pipeline.ID)
+	return s.repo.DeleteByID(pipeline.ID)
 }

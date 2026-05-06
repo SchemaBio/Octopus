@@ -385,7 +385,7 @@ func (s *TaskService) ListTasks(ctx context.Context, query *model.TaskListQuery)
 	}
 
 	return &model.TaskListResponse{
-		Total: int(total),
+		Total: total,
 		Items: items,
 	}, nil
 }

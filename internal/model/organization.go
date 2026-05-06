@@ -8,17 +8,17 @@ type Organization struct {
 	Name        string    `json:"name" gorm:"size:100;not null"`
 	Slug        string    `json:"slug" gorm:"uniqueIndex;size:100;not null"`
 	Description string    `json:"description" gorm:"type:text"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	CreatedAt   time.Time `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // UserOrganization represents the many-to-many relationship between users and organizations
 type UserOrganization struct {
-	ID     uint   `json:"id" gorm:"primaryKey"`
-	UserID uint   `json:"user_id" gorm:"index;not null"`
-	OrgID  string `json:"org_id" gorm:"index;size:36;not null"`
-	Role   string `json:"role" gorm:"size:20;default:viewer"` // owner, admin, doctor, analyst, viewer
-	JoinedAt time.Time `json:"joined_at" gorm:"autoCreateTime"`
+	ID       uint      `json:"id" gorm:"primaryKey"`
+	UserID   uint      `json:"user_id" gorm:"index;not null"`
+	OrgID    string    `json:"org_id" gorm:"index;size:36;not null"`
+	Role     string    `json:"role" gorm:"size:20;default:viewer"` // owner, admin, doctor, analyst, viewer
+	JoinedAt time.Time `json:"joined_at" gorm:"autoCreateTime;type:timestamptz"`
 }
 
 // OrganizationResponse is the API response for an organization

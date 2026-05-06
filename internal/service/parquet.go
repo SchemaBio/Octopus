@@ -12,6 +12,7 @@ import (
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/writer"
 )
 
@@ -327,9 +328,9 @@ func (p *ParquetGenerator) writeCombinedParquet(path string, uuid string, tables
 	}
 
 	// Write using parquet-go
-	fw, err := os.Create(path)
+	fw, err := local.NewLocalFileWriter(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create parquet file: %w", err)
 	}
 	defer fw.Close()
 

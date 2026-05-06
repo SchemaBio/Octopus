@@ -36,7 +36,7 @@ func (s *GeneListService) List(query *model.GeneListListQuery) (*model.GeneListL
 	}
 
 	return &model.GeneListListResponse{
-		Total: int(total),
+		Total: total,
 		Items: items,
 	}, nil
 }

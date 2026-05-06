@@ -33,9 +33,9 @@ type MEIVariant struct {
 	Transcript          string             `json:"transcript,omitempty" gorm:"size:100"`
 	Impact              string             `json:"impact,omitempty" gorm:"size:50"`
 	Zygosity            string             `json:"zygosity" gorm:"size:20"`
-	SupportingReads     int                `json:"supportingReads"`
-	TotalReads          int                `json:"totalReads"`
-	Frequency           *float64           `json:"frequency,omitempty"`
+	SupportingReads     int                `json:"supportingReads" gorm:"type:smallint"`
+	TotalReads          int                `json:"totalReads" gorm:"type:smallint"`
+	Frequency           *float64           `json:"frequency,omitempty" gorm:"type:numeric"`
 	ACMGClassification  ACMGClassification `json:"acmgClassification,omitempty" gorm:"size:30"`
 	ClinvarID           string             `json:"clinvarId,omitempty" gorm:"size:50"`
 	DiseaseAssociation  string             `json:"diseaseAssociation,omitempty" gorm:"type:text"`

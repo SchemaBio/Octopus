@@ -26,7 +26,7 @@ type UPDRegion struct {
 	EndPosition         int64              `json:"endPosition"`
 	Length              int64              `json:"length"`
 	Type                UPDType            `json:"type" gorm:"size:20"`
-	Genes               string             `json:"genes" gorm:"type:text"` // JSON array
+	Genes               string             `json:"genes" gorm:"type:jsonb"` // JSON array
 	ParentOfOrigin      ParentOfOrigin     `json:"parentOfOrigin,omitempty" gorm:"size:20"`
 	VariantReviewStatus `json:"reviewStatus" gorm:"embedded"`
 }

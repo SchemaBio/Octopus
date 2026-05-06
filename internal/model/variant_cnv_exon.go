@@ -11,9 +11,9 @@ type CNVExon struct {
 	StartPosition       int64              `json:"startPosition"`
 	EndPosition         int64              `json:"endPosition"`
 	Type                string             `json:"type" gorm:"size:20"` // Amplification, Deletion
-	CopyNumber          int                `json:"copyNumber"`
-	Ratio               float64            `json:"ratio"`
-	Confidence          float64            `json:"confidence"`
+	CopyNumber          int                `json:"copyNumber" gorm:"type:smallint"`
+	Ratio               float64            `json:"ratio" gorm:"type:numeric"`
+	Confidence          float64            `json:"confidence" gorm:"type:numeric"`
 	VariantReviewStatus `json:"reviewStatus" gorm:"embedded"`
 }
 

@@ -86,3 +86,31 @@ func (r *SampleRepository) PaginateByQuery(query *model.SampleListQuery) ([]mode
 func (r *SampleRepository) AssignProject(sampleIDs []uint, projectID uint) error {
 	return r.db.Model(&model.Sample{}).Where("id IN ?", sampleIDs).Update("project_id", projectID).Error
 }
+
+// CountByStatusAndProject counts samples by status for a project
+func (r *SampleRepository) CountByStatusAndProject(projectID uint) (map[model.SampleStatus]int64, error) {
+	type result struct {
+		Status model.SampleStatus
+		Count  int64
+	}
+	var results []result
+	err := r.db.Model(&model.Sample{}).
+		Where("project_id = ?", projectID).
+		Select("status, COUNT(*) as count").
+		Group("status").
+		Scan(&results).Error
+	if err != nil {
+		return nil, err
+	}
+
+	counts := map[model.SampleStatus]int64{
+		model.SampleStatusPending:    0,
+		model.SampleStatusProcessing: 0,
+		model.SampleStatusCompleted:  0,
+		model.SampleStatusFailed:     0,
+	}
+	for _, r := range results {
+		counts[r.Status] = r.Count
+	}
+	return counts, nil
+}

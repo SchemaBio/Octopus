@@ -13,16 +13,16 @@ const (
 
 // MitochondrialVariant represents a mitochondrial variant
 type MitochondrialVariant struct {
-	ID                  string                  `json:"id" gorm:"primaryKey;size:36"`
-	TaskID              string                  `json:"taskId" gorm:"size:36;index"`
-	Position            int64                   `json:"position"`
-	Ref                 string                  `json:"ref" gorm:"size:1000"`
-	Alt                 string                  `json:"alt" gorm:"size:1000"`
-	Gene                string                  `json:"gene" gorm:"size:100;index"`
-	Heteroplasmy        float64                 `json:"heteroplasmy"`
+	ID                  string                     `json:"id" gorm:"primaryKey;size:36"`
+	TaskID              string                     `json:"taskId" gorm:"size:36;index"`
+	Position            int64                      `json:"position"`
+	Ref                 string                     `json:"ref" gorm:"size:1000"`
+	Alt                 string                     `json:"alt" gorm:"size:1000"`
+	Gene                string                     `json:"gene" gorm:"size:100;index"`
+	Heteroplasmy        float64                    `json:"heteroplasmy" gorm:"type:numeric"`
 	Pathogenicity       MitochondrialPathogenicity `json:"pathogenicity" gorm:"size:30"`
-	AssociatedDisease   string                  `json:"associatedDisease" gorm:"type:text"`
-	Haplogroup          string                  `json:"haplogroup,omitempty" gorm:"size:50"`
+	AssociatedDisease   string                     `json:"associatedDisease" gorm:"type:text"`
+	Haplogroup          string                     `json:"haplogroup,omitempty" gorm:"size:50"`
 	VariantReviewStatus `json:"reviewStatus" gorm:"embedded"`
 }
 

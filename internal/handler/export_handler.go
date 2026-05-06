@@ -2,7 +2,6 @@ package handler
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 

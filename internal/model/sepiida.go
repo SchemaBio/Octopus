@@ -68,15 +68,3 @@ type SepiidaTasksResponse struct {
 	Tasks []SepiidaTask `json:"tasks"`
 	Total int           `json:"total"`
 }
-
-// TaskProgressResponse combines Octopus task with Sepiida progress
-type TaskProgressResponse struct {
-	ID         string           `json:"id"`
-	UUID       string           `json:"uuid"`       // Workflow UUID
-	Name       string           `json:"name"`
-	Template   string           `json:"template"`
-	Status     TaskStatus       `json:"status"`     // Octopus status
-	Sepiida    *SepiidaWorkflow `json:"sepiida,omitempty"` // Sepiida status
-	Tasks      []SepiidaTask    `json:"tasks,omitempty"`   // Workflow tasks
-	CreatedAt  time.Time        `json:"created_at"`
-}

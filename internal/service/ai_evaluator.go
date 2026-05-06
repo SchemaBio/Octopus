@@ -179,12 +179,7 @@ func filterVariants(snvs []model.SNVIndel, filter AIFilter, geneSet map[string]b
 	}
 
 	// Classify and filter in priority order
-	type scored struct {
-		variant model.SNVIndel
-		score   int // lower = higher priority
-	}
-
-	var candidates []scored
+	var candidates []scoredVariant
 
 	for _, v := range snvs {
 		isPLP := v.ACMGClassification == model.ACMGPathogenic || v.ACMGClassification == model.ACMGLikelyPathogenic
@@ -218,7 +213,7 @@ func filterVariants(snvs []model.SNVIndel, filter AIFilter, geneSet map[string]b
 			} else {
 				priority = 1
 			}
-			candidates = append(candidates, scored{v, priority})
+			candidates = append(candidates, scoredVariant{v, priority})
 		} else if isVUS {
 			// VUS: much stricter filtering
 			if af >= maxVUSAF {
@@ -238,7 +233,7 @@ func filterVariants(snvs []model.SNVIndel, filter AIFilter, geneSet map[string]b
 			default:
 				priority = 10
 			}
-			candidates = append(candidates, scored{v, priority})
+			candidates = append(candidates, scoredVariant{v, priority})
 		}
 	}
 
@@ -265,11 +260,14 @@ func filterVariants(snvs []model.SNVIndel, filter AIFilter, geneSet map[string]b
 	return result
 }
 
-// sortVariants sorts by priority score then by gene name
-func sortVariants(variants []struct {
+// scoredVariant wraps a variant with a priority score
+type scoredVariant struct {
 	variant model.SNVIndel
 	score   int
-}) {
+}
+
+// sortVariants sorts by priority score then by gene name
+func sortVariants(variants []scoredVariant) {
 	for i := 1; i < len(variants); i++ {
 		for j := i; j > 0; j-- {
 			if variants[j].score < variants[j-1].score ||
@@ -418,8 +416,8 @@ func formatSampleForPrompt(s *model.Sample) string {
 		b.WriteString("- HPO 表型: ")
 		terms := make([]string, len(hpo))
 		for i, h := range hpo {
-			if h.Term != "" {
-				terms[i] = fmt.Sprintf("%s(%s)", h.Term, h.ID)
+			if h.Name != "" {
+				terms[i] = fmt.Sprintf("%s(%s)", h.Name, h.ID)
 			} else {
 				terms[i] = h.ID
 			}

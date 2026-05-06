@@ -21,8 +21,8 @@ type Project struct {
 	Panel       string        `json:"panel" gorm:"size:50"`                              // 分析 Panel (e.g., germline-wes, somatic-panel)
 	Status      ProjectStatus `json:"status" gorm:"size:20;default:active"`              // 项目状态
 	CreatedBy   uint          `json:"created_by" gorm:"index"`                           // 创建人ID
-	CreatedAt   time.Time     `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time     `json:"updated_at" gorm:"autoUpdateTime"`
+	CreatedAt   time.Time     `json:"created_at" gorm:"autoCreateTime;type:timestamptz"`
+	UpdatedAt   time.Time     `json:"updated_at" gorm:"autoUpdateTime;type:timestamptz"`
 }
 
 // ProjectCreateRequest is the request body for creating a project
@@ -64,7 +64,7 @@ type ProjectResponse struct {
 
 // ProjectListResponse is the response for listing projects
 type ProjectListResponse struct {
-	Total int               `json:"total"`
+	Total int64              `json:"total"`
 	Items []ProjectResponse `json:"items"`
 }
 
