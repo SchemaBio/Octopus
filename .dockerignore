@@ -1,0 +1,24 @@
+# Go build cache and binaries
+bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*
+
+# Docs
+README.md
+docs/
