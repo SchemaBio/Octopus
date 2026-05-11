@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/bioinfo/schema-platform/internal/config"
@@ -36,6 +37,93 @@ func NewTaskService(cfg *config.Config) *TaskService {
 		sepiida: sepClient,
 		repo:    repository.NewTaskRepository(),
 		running: make(map[string]*exec.Cmd),
+	}
+}
+
+// StartSepiidaSync begins periodic syncing of task status from Sepiida.
+// Should be called once at server startup.
+func (s *TaskService) StartSepiidaSync(ctx context.Context, interval time.Duration) {
+	if s.sepiida == nil {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.syncRunningTaskStatuses()
+			}
+		}
+	}()
+}
+
+// syncRunningTaskStatuses queries Sepiida for all "running" tasks in Octopus DB
+// and updates their status based on Sepiida's authoritative workflow state.
+func (s *TaskService) syncRunningTaskStatuses() {
+	tasks, err := s.repo.FindByStatus(model.TaskStatusRunning)
+	if err != nil {
+		return
+	}
+
+	for _, task := range tasks {
+		s.syncTaskFromSepiida(&task)
+	}
+}
+
+func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
+	if s.sepiida == nil || task.UUID == "" {
+		return
+	}
+
+	workflow, _, err := s.sepiida.GetWorkflowWithTasks(task.UUID)
+	if err != nil || workflow == nil {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	changed := false
+	switch workflow.Status {
+	case model.SepiidaStatusRunning:
+		if task.Status != model.TaskStatusRunning {
+			task.Status = model.TaskStatusRunning
+			changed = true
+		}
+	case model.SepiidaStatusSuccess:
+		if task.Status != model.TaskStatusCompleted {
+			task.Status = model.TaskStatusCompleted
+			task.Progress = 100
+			task.Error = ""
+			now := time.Now()
+			task.FinishedAt = &now
+			changed = true
+		}
+	case model.SepiidaStatusFailed:
+		if task.Status != model.TaskStatusFailed {
+			task.Status = model.TaskStatusFailed
+			task.Error = "Workflow failed (reported by Sepiida)"
+			now := time.Now()
+			task.FinishedAt = &now
+			changed = true
+		}
+	case model.SepiidaStatusCancelled:
+		if task.Status != model.TaskStatusCancelled {
+			task.Status = model.TaskStatusCancelled
+			now := time.Now()
+			task.FinishedAt = &now
+			changed = true
+		}
+	}
+
+	if changed {
+		task.UpdatedAt = time.Now()
+		s.repo.Update(task)
 	}
 }
 
@@ -70,21 +158,16 @@ func (s *TaskService) getConfigFile(executor model.ExecutorType, customConfig st
 	return filepath.Join(s.cfg.Task.TemplateDir, "conf", cfgName)
 }
 
-// CreateTask creates a new task (initially queued)
+// CreateTask creates a new task (status: queued)
 func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateRequest, userID uint) (*model.Task, error) {
-	// Determine executor (use request or default from config)
 	executor := req.Executor
 	if executor == "" {
 		executor = model.ExecutorType(s.cfg.Task.DefaultExecutor)
 	}
 
-	// Generate workflow UUID
 	workflowUUID := uuid.New().String()
-
-	// Generate short task ID from first 8 chars of UUID
 	taskID := workflowUUID[:8]
 
-	// Prepare input JSON if provided
 	var inputJSONStr string
 	if req.Inputs != nil {
 		inputJSON, err := json.Marshal(req.Inputs)
@@ -94,16 +177,13 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		inputJSONStr = string(inputJSON)
 	}
 
-	// Output directory
 	outputDir := req.OutputDir
 	if outputDir == "" {
 		outputDir = filepath.Join(s.cfg.Task.OutputDir, workflowUUID)
 	}
 
-	// Determine config file based on executor
 	configFile := s.getConfigFile(executor, req.ConfigFile)
 
-	// Create task record
 	now := time.Now()
 	task := &model.Task{
 		ID:              taskID,
@@ -126,7 +206,6 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		UpdatedAt:       now,
 	}
 
-	// Save task to database
 	if err := s.repo.Create(task); err != nil {
 		return nil, fmt.Errorf("failed to save task: %w", err)
 	}
@@ -156,8 +235,8 @@ func (s *TaskService) StartTask(ctx context.Context, id string) (*model.Task, er
 		return nil, err
 	}
 
-	// Start execution in background
-	go s.executeTask(task)
+	// Fire-and-forget: launch miniwdl in background, Sepiida Agent monitors it
+	go s.launchTask(task)
 
 	return task, nil
 }
@@ -176,11 +255,8 @@ func (s *TaskService) StopTask(ctx context.Context, id string) (*model.Task, err
 		return nil, fmt.Errorf("task is not running")
 	}
 
-	// Kill process if running
 	if cmd, ok := s.running[id]; ok {
-		if err := cmd.Process.Kill(); err != nil {
-			return nil, fmt.Errorf("failed to kill process: %w", err)
-		}
+		cmd.Process.Kill()
 		delete(s.running, id)
 	}
 
@@ -218,40 +294,31 @@ func (s *TaskService) RetryTask(ctx context.Context, id string) (*model.Task, er
 		return nil, err
 	}
 
-	// Start execution in background
-	go s.executeTask(task)
+	go s.launchTask(task)
 
 	return task, nil
 }
 
-// executeTask executes the miniwdl command
-func (s *TaskService) executeTask(task *model.Task) {
-	s.mu.Lock()
-	task.Status = model.TaskStatusRunning
-	now := time.Now()
-	task.StartedAt = &now
-	task.Progress = 0
-	s.repo.Update(task)
-	s.mu.Unlock()
-
-	// Get executor path based on executor type
+// launchTask starts miniwdl as a detached process and returns immediately.
+// Sepiida Agent monitors the filesystem and reports progress to Sepiida Server.
+// The syncLoop periodically updates Octopus DB from Sepiida Server.
+func (s *TaskService) launchTask(task *model.Task) {
 	executorPath := s.getExecutorPath(task.Executor)
-
-	// Prepare WDL path
 	wdlPath := filepath.Join(s.cfg.Task.TemplateDir, task.Template+".wdl")
 
-	// Write input JSON to temp file
+	// Write input JSON
 	inputFile := filepath.Join(s.cfg.Task.OutputDir, task.ID+"_inputs.json")
 	if err := os.WriteFile(inputFile, []byte(task.InputJSON), 0644); err != nil {
 		s.updateTaskError(task, fmt.Sprintf("Failed to write input file: %v", err))
 		return
 	}
 
-	// Create log file for Octopus
+	// Create log directory
 	logPath := filepath.Join(s.cfg.Task.OutputDir, task.UUID, "octopus.log")
+	os.MkdirAll(filepath.Dir(logPath), 0755)
 
-	// Build miniwdl command with -d uuid mode
-	cmd := exec.CommandContext(context.Background(),
+	// Build command
+	cmd := exec.Command(
 		executorPath, "run",
 		wdlPath,
 		"-p", s.cfg.Task.TemplateDir,
@@ -260,53 +327,60 @@ func (s *TaskService) executeTask(task *model.Task) {
 		"-d", task.UUID,
 	)
 
-	// Create parent directory for log
-	os.MkdirAll(filepath.Dir(logPath), 0755)
+	// Detach from parent process
+	cmd.SysProcAttr = &syscall.SysProcAttr{}
+
 	logFile, err := os.Create(logPath)
-	if err != nil {
-		logFile = os.Stdout
-	} else {
-		defer logFile.Close()
+	if err == nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
+
+	// Start (non-blocking) — returns immediately
+	if err := cmd.Start(); err != nil {
+		s.updateTaskError(task, fmt.Sprintf("Failed to start miniwdl: %v", err))
+		return
 	}
 
 	task.LogPath = logPath
 	s.repo.Update(task)
 
-	// Setup log output
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-
-	// Store command for cancellation
 	s.mu.Lock()
 	s.running[task.ID] = cmd
 	s.mu.Unlock()
 
-	// Execute command
-	err = cmd.Run()
+	// Background wait: reap the process when it exits.
+	// This is a fallback — Sepiida Agent is the authoritative status source.
+	go func() {
+		err := cmd.Wait()
 
-	// Cleanup input file
-	os.Remove(inputFile)
+		os.Remove(inputFile)
 
-	// Cleanup running map
-	s.mu.Lock()
-	delete(s.running, task.ID)
-	s.mu.Unlock()
+		s.mu.Lock()
+		delete(s.running, task.ID)
+		s.mu.Unlock()
 
-	// Update status
-	finishedAt := time.Now()
-	task.FinishedAt = &finishedAt
-	task.UpdatedAt = finishedAt
+		// Only update status if Sepiida hasn't already done so via sync loop.
+		// Check current DB status first.
+		current, dbErr := s.repo.FindByUUID(task.UUID)
+		if dbErr == nil && (current.Status == model.TaskStatusCompleted ||
+			current.Status == model.TaskStatusFailed ||
+			current.Status == model.TaskStatusCancelled) {
+			return // Sepiida already handled it
+		}
 
-	if err != nil {
-		task.Status = model.TaskStatusFailed
-		task.Error = err.Error()
-	} else {
-		task.Status = model.TaskStatusCompleted
-		task.Progress = 100
-		// Note: archiving and parquet generation are handled by Sepiida Agent
-	}
-
-	s.repo.Update(task)
+		finishedAt := time.Now()
+		if err != nil {
+			task.Status = model.TaskStatusFailed
+			task.Error = err.Error()
+		} else {
+			task.Status = model.TaskStatusCompleted
+			task.Progress = 100
+		}
+		task.FinishedAt = &finishedAt
+		task.UpdatedAt = finishedAt
+		s.repo.Update(task)
+	}()
 }
 
 func (s *TaskService) updateTaskError(task *model.Task, errMsg string) {
@@ -346,30 +420,11 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 		if err == nil && workflow != nil {
 			resp.Sepiida = workflow
 			resp.Tasks = tasks
-			s.updateStatusFromSepiida(task, workflow)
+			s.syncTaskFromSepiida(task)
 		}
 	}
 
 	return resp, nil
-}
-
-// updateStatusFromSepiida updates task status based on Sepiida workflow status
-func (s *TaskService) updateStatusFromSepiida(task *model.Task, workflow *model.SepiidaWorkflow) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	switch workflow.Status {
-	case model.SepiidaStatusRunning:
-		task.Status = model.TaskStatusRunning
-	case model.SepiidaStatusSuccess:
-		task.Status = model.TaskStatusCompleted
-	case model.SepiidaStatusFailed:
-		task.Status = model.TaskStatusFailed
-	case model.SepiidaStatusCancelled:
-		task.Status = model.TaskStatusCancelled
-	}
-	task.UpdatedAt = time.Now()
-	s.repo.Update(task)
 }
 
 // ListTasks lists tasks with optional filtering
@@ -405,9 +460,7 @@ func (s *TaskService) CancelTask(ctx context.Context, id string) error {
 	}
 
 	if cmd, ok := s.running[id]; ok {
-		if err := cmd.Process.Kill(); err != nil {
-			return fmt.Errorf("failed to kill process: %w", err)
-		}
+		cmd.Process.Kill()
 	}
 
 	task.Status = model.TaskStatusCancelled
