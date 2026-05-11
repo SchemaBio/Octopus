@@ -1,11 +1,15 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -153,4 +157,79 @@ func HashPassword(password string) (string, error) {
 func CheckPassword(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
+}
+
+// SHA256Hash computes SHA-256 hex digest of a string
+func SHA256Hash(input string) string {
+	h := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(h[:])
+}
+
+// PreparePassword applies client-side hash if enabled, returns the password for bcrypt
+// When CLIENT_PASSWORD_HASH_ENABLED=true, the frontend sends SHA256(password+email)
+// and we pass it through directly (bcrypt will hash it again)
+func PreparePassword(rawPassword, email string, enabled bool) string {
+	if enabled {
+		return SHA256Hash(rawPassword + email)
+	}
+	return rawPassword
+}
+
+// SetTokenCookies sets httpOnly cookies for access and refresh tokens
+func SetTokenCookies(c *gin.Context, cfg *config.JWTConfig, accessToken, refreshToken string) {
+	accessMaxAge := int(cfg.ExpireDuration.Seconds())
+	refreshMaxAge := int(cfg.RefreshDuration.Seconds())
+
+	accessCookie := &http.Cookie{
+		Name:     "access_token",
+		Value:    accessToken,
+		Path:     "/",
+		Domain:   cfg.CookieDomain,
+		MaxAge:   accessMaxAge,
+		HttpOnly: true,
+		Secure:   cfg.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	refreshCookie := &http.Cookie{
+		Name:     "refresh_token",
+		Value:    refreshToken,
+		Path:     "/",
+		Domain:   cfg.CookieDomain,
+		MaxAge:   refreshMaxAge,
+		HttpOnly: true,
+		Secure:   cfg.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	http.SetCookie(c.Writer, accessCookie)
+	http.SetCookie(c.Writer, refreshCookie)
+}
+
+// ClearTokenCookies clears the token cookies (logout)
+func ClearTokenCookies(c *gin.Context, cfg *config.JWTConfig) {
+	accessCookie := &http.Cookie{
+		Name:     "access_token",
+		Value:    "",
+		Path:     "/",
+		Domain:   cfg.CookieDomain,
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   cfg.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	refreshCookie := &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Path:     "/",
+		Domain:   cfg.CookieDomain,
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   cfg.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	http.SetCookie(c.Writer, accessCookie)
+	http.SetCookie(c.Writer, refreshCookie)
 }

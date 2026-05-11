@@ -14,7 +14,7 @@ func New(cfg *config.Config) *gin.Engine {
 	r := gin.New()
 	r.Use(middleware.Logger())
 	r.Use(middleware.Recovery())
-	r.Use(middleware.CORS())
+	r.Use(middleware.CORS(&cfg.Server))
 
 	// Health check (public)
 	r.GET("/health", handler.HealthCheck)

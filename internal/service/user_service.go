@@ -32,8 +32,9 @@ func (s *UserService) Login(email, password string) (*model.LoginResponse, error
 		return nil, errors.New("invalid email or password")
 	}
 
-	// Check password
-	if !CheckPassword(password, user.Password) {
+	// Check password (with optional client-side hash)
+	preparedPassword := PreparePassword(password, email, s.cfg.JWT.ClientPasswordHashEnabled)
+	if !CheckPassword(preparedPassword, user.Password) {
 		return nil, errors.New("invalid email or password")
 	}
 
@@ -85,8 +86,9 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.LoginResponse
 		return nil, errors.New("email already exists")
 	}
 
-	// Hash password
-	hashedPassword, err := HashPassword(req.Password)
+	// Hash password (with optional client-side hash)
+	preparedPassword := PreparePassword(req.Password, req.Email, s.cfg.JWT.ClientPasswordHashEnabled)
+	hashedPassword, err := HashPassword(preparedPassword)
 	if err != nil {
 		return nil, errors.New("failed to hash password")
 	}
@@ -153,7 +155,8 @@ func (s *UserService) CreateDefaultAdmin(email, password, name string) (*model.U
 		return s.repo.FindByEmail(email)
 	}
 
-	hashedPassword, err := HashPassword(password)
+	preparedPassword := PreparePassword(password, email, s.cfg.JWT.ClientPasswordHashEnabled)
+	hashedPassword, err := HashPassword(preparedPassword)
 	if err != nil {
 		return nil, err
 	}
@@ -228,11 +231,13 @@ func (s *UserService) ChangePassword(id uint, oldPassword, newPassword string) e
 		return err
 	}
 
-	if !CheckPassword(oldPassword, user.Password) {
+	preparedOld := PreparePassword(oldPassword, user.Email, s.cfg.JWT.ClientPasswordHashEnabled)
+	if !CheckPassword(preparedOld, user.Password) {
 		return errors.New("invalid old password")
 	}
 
-	hashedPassword, err := HashPassword(newPassword)
+	preparedNew := PreparePassword(newPassword, user.Email, s.cfg.JWT.ClientPasswordHashEnabled)
+	hashedPassword, err := HashPassword(preparedNew)
 	if err != nil {
 		return err
 	}

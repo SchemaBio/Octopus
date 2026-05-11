@@ -9,32 +9,37 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// JWTAuth middleware validates JWT token
+// JWTAuth middleware validates JWT token (from header or cookie)
 func JWTAuth(cfg *config.Config) gin.HandlerFunc {
 	jwtService := service.NewJWTService(cfg)
 
 	return func(c *gin.Context) {
-		// Get token from Authorization header
+		tokenString := ""
+
+		// Try Authorization header first
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				tokenString = parts[1]
+			}
+		}
+
+		// Fall back to cookie
+		if tokenString == "" {
+			cookie, err := c.Cookie("access_token")
+			if err == nil && cookie != "" {
+				tokenString = cookie
+			}
+		}
+
+		if tokenString == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Authorization header is required",
+				"error": "Authorization token is required",
 			})
 			c.Abort()
 			return
 		}
-
-		// Extract token from "Bearer <token>"
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid authorization header format",
-			})
-			c.Abort()
-			return
-		}
-
-		tokenString := parts[1]
 
 		// Validate token
 		claims, err := jwtService.ValidateToken(tokenString)
@@ -60,24 +65,32 @@ func OptionalJWTAuth(cfg *config.Config) gin.HandlerFunc {
 	jwtService := service.NewJWTService(cfg)
 
 	return func(c *gin.Context) {
+		tokenString := ""
+
+		// Try Authorization header first
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			// No token, continue as anonymous
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				tokenString = parts[1]
+			}
+		}
+
+		// Fall back to cookie
+		if tokenString == "" {
+			cookie, err := c.Cookie("access_token")
+			if err == nil && cookie != "" {
+				tokenString = cookie
+			}
+		}
+
+		if tokenString == "" {
 			c.Next()
 			return
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			// Invalid format, continue as anonymous
-			c.Next()
-			return
-		}
-
-		tokenString := parts[1]
 		claims, err := jwtService.ValidateToken(tokenString)
 		if err != nil {
-			// Invalid token, continue as anonymous
 			c.Next()
 			return
 		}

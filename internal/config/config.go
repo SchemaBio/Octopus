@@ -17,8 +17,9 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port string
-	Mode string
+	Port           string
+	Mode           string
+	AllowedOrigins string // comma-separated CORS allowed origins
 }
 
 type DatabaseConfig struct {
@@ -53,10 +54,13 @@ type ParquetConfig struct {
 }
 
 type JWTConfig struct {
-	Secret          string        // JWT signing secret
-	Issuer          string        // JWT issuer
-	ExpireDuration  time.Duration // Access token expiry
-	RefreshDuration time.Duration // Refresh token expiry
+	Secret                   string        // JWT signing secret
+	Issuer                   string        // JWT issuer
+	ExpireDuration           time.Duration // Access token expiry
+	RefreshDuration          time.Duration // Refresh token expiry
+	CookieDomain             string        // Domain for Set-Cookie (empty = current domain)
+	CookieSecure             bool          // Secure flag for cookies (requires HTTPS)
+	ClientPasswordHashEnabled bool        // Enable SHA-256 client-side password hash compatibility
 }
 
 type LLMConfig struct {
@@ -70,8 +74,9 @@ type LLMConfig struct {
 func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port: getEnv("SERVER_PORT", "8080"),
-			Mode: getEnv("GIN_MODE", "debug"),
+			Port:           getEnv("SERVER_PORT", "8080"),
+			Mode:           getEnv("GIN_MODE", "debug"),
+			AllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:3002"),
 		},
 		Database: DatabaseConfig{
 			Driver: getEnv("DB_DRIVER", "postgres"),
@@ -100,10 +105,13 @@ func Load() *Config {
 			FilePatterns: []string{"*.csv", "*.tsv", "*.txt"}, // default patterns
 		},
 		JWT: JWTConfig{
-			Secret:          getEnv("JWT_SECRET", "octopus-secret-key-change-in-production"),
-			Issuer:          getEnv("JWT_ISSUER", "octopus"),
-			ExpireDuration:  parseDuration(getEnv("JWT_EXPIRE", "24h")),
-			RefreshDuration: parseDuration(getEnv("JWT_REFRESH", "168h")),
+			Secret:                   getEnv("JWT_SECRET", "octopus-secret-key-change-in-production"),
+			Issuer:                   getEnv("JWT_ISSUER", "octopus"),
+			ExpireDuration:           parseDuration(getEnv("JWT_EXPIRE", "24h")),
+			RefreshDuration:          parseDuration(getEnv("JWT_REFRESH", "168h")),
+			CookieDomain:             getEnv("JWT_COOKIE_DOMAIN", ""),
+			CookieSecure:             getEnv("JWT_COOKIE_SECURE", "false") == "true",
+			ClientPasswordHashEnabled: getEnv("CLIENT_PASSWORD_HASH_ENABLED", "false") == "true",
 		},
 		LLM: LLMConfig{
 			BaseURL: getEnv("LLM_BASE_URL", ""),

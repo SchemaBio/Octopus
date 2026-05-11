@@ -37,6 +37,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	service.SetTokenCookies(c, &h.cfg.JWT, resp.AccessToken, resp.RefreshToken)
 	Success(c, resp)
 }
 
@@ -58,6 +59,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	service.SetTokenCookies(c, &h.cfg.JWT, resp.AccessToken, resp.RefreshToken)
 	SuccessCreated(c, resp)
 }
 
@@ -75,6 +77,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
+	service.SetTokenCookies(c, &h.cfg.JWT, resp.AccessToken, resp.RefreshToken)
 	Success(c, resp)
 }
 
@@ -97,6 +100,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 
 // Logout handles user logout (stateless - client discards tokens)
 func (h *AuthHandler) Logout(c *gin.Context) {
+	service.ClearTokenCookies(c, &h.cfg.JWT)
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
 
