@@ -214,6 +214,15 @@ func New(cfg *config.Config) *gin.Engine {
 			pipelines.DELETE("/:id", pipelineHandler.DeletePipeline)
 		}
 
+		// ========== Parquet data API (protected) ==========
+		parquetHandler := handler.NewParquetHandler(cfg)
+		parquet := v1.Group("/tasks/:id/parquet")
+		parquet.Use(middleware.JWTAuth(cfg))
+		{
+			parquet.GET("", parquetHandler.ListTables)
+			parquet.GET("/:table/rows", parquetHandler.GetTableRows)
+		}
+
 		// ========== History (protected) ==========
 		historyHandler := handler.NewHistoryHandler(cfg)
 		history := v1.Group("/history")
