@@ -96,6 +96,13 @@ func New(cfg *config.Config) *gin.Engine {
 			tasks.POST("/:id/stop", taskHandler.StopTask)
 			tasks.POST("/:id/retry", taskHandler.RetryTask)
 			tasks.POST("/:id/ai-evaluate", aiHandler.Evaluate)
+
+			// AI proxy for frontend page-agent (forwards LLM calls)
+			aiProxy := v1.Group("/ai/proxy")
+			aiProxy.Use(middleware.JWTAuth(cfg))
+			{
+				aiProxy.Any("/*path", aiHandler.ProxyAgent)
+			}
 			// Export
 			tasks.GET("/:id/export/excel", exportHandler.ExportExcel)
 			tasks.GET("/:id/export/parquet", exportHandler.ExportParquet)
