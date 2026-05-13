@@ -44,6 +44,9 @@ func main() {
 	taskSvc.StartSepiidaSync(ctx, 30*time.Second)
 	fmt.Println("Sepiida status sync started (interval: 30s)")
 
+	taskSvc.StartDataWaitSync(ctx, 30*time.Second)
+	fmt.Println("Data wait sync started (interval: 30s)")
+
 	fmt.Printf("Starting schema-platform server on port %s...\n", cfg.Server.Port)
 
 	// Graceful shutdown

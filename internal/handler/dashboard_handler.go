@@ -23,7 +23,10 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 	db.Model(&model.Sample{}).Count(&totalSamples)
 
 	var pendingTasks int64
-	db.Model(&model.Task{}).Where("status IN ?", []string{"queued", "pending"}).Count(&pendingTasks)
+	db.Model(&model.Task{}).Where("status IN ?", []string{"queued", "waiting_for_data"}).Count(&pendingTasks)
+
+	var waitingDataTasks int64
+	db.Model(&model.Task{}).Where("status = ?", "waiting_for_data").Count(&waitingDataTasks)
 
 	var runningTasks int64
 	db.Model(&model.Task{}).Where("status = ?", "running").Count(&runningTasks)
@@ -31,10 +34,15 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 	var completedTasks int64
 	db.Model(&model.Task{}).Where("status = ?", "completed").Count(&completedTasks)
 
+	var failedTasks int64
+	db.Model(&model.Task{}).Where("status = ?", "failed").Count(&failedTasks)
+
 	Success(c, model.DashboardStats{
-		TotalSamples:   int(totalSamples),
-		PendingTasks:   int(pendingTasks),
-		RunningTasks:   int(runningTasks),
-		CompletedTasks: int(completedTasks),
+		TotalSamples:     int(totalSamples),
+		PendingTasks:     int(pendingTasks),
+		WaitingDataTasks: int(waitingDataTasks),
+		RunningTasks:     int(runningTasks),
+		CompletedTasks:   int(completedTasks),
+		FailedTasks:      int(failedTasks),
 	})
 }

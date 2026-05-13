@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,11 +21,16 @@ import (
 )
 
 type TaskService struct {
-	cfg     *config.Config
-	sepiida *sepiida.Client
-	repo    *repository.TaskRepository
-	mu      sync.RWMutex
-	running map[string]*exec.Cmd
+	cfg            *config.Config
+	sepiida        *sepiida.Client
+	repo           *repository.TaskRepository
+	uploadJobRepo  *repository.UploadJobRepository
+	uploadFileRepo *repository.UploadFileRepository
+	sampleRepo     *repository.SampleRepository
+	pipelineRepo   *repository.PipelineRepository
+	cosClient      *COSClient
+	mu             sync.RWMutex
+	running        map[string]*exec.Cmd
 }
 
 func NewTaskService(cfg *config.Config) *TaskService {
@@ -32,12 +39,25 @@ func NewTaskService(cfg *config.Config) *TaskService {
 		sepClient = sepiida.NewClient(cfg.Sepiida.ServerURL, cfg.Sepiida.QueryKey)
 	}
 
-	return &TaskService{
-		cfg:     cfg,
-		sepiida: sepClient,
-		repo:    repository.NewTaskRepository(),
-		running: make(map[string]*exec.Cmd),
+	svc := &TaskService{
+		cfg:            cfg,
+		sepiida:        sepClient,
+		repo:           repository.NewTaskRepository(),
+		uploadJobRepo:  repository.NewUploadJobRepository(),
+		uploadFileRepo: repository.NewUploadFileRepository(),
+		sampleRepo:     repository.NewSampleRepository(),
+		pipelineRepo:   repository.NewPipelineRepository(),
+		running:        make(map[string]*exec.Cmd),
 	}
+
+	if cfg.Storage.Provider == "cos" && cfg.Storage.COSSecretID != "" {
+		client, err := NewCOSClient(&cfg.Storage)
+		if err == nil {
+			svc.cosClient = client
+		}
+	}
+
+	return svc
 }
 
 // StartSepiidaSync begins periodic syncing of task status from Sepiida.
@@ -158,7 +178,9 @@ func (s *TaskService) getConfigFile(executor model.ExecutorType, customConfig st
 	return filepath.Join(s.cfg.Task.TemplateDir, "conf", cfgName)
 }
 
-// CreateTask creates a new task (status: queued)
+// CreateTask creates a new task. It resolves data file paths from the linked Sample,
+// UploadJob, and Pipeline configuration, injecting them into WDL inputs.
+// If the upload job is not yet completed, the task enters waiting_for_data status.
 func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateRequest, userID uint) (*model.Task, error) {
 	executor := req.Executor
 	if executor == "" {
@@ -168,14 +190,82 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	workflowUUID := uuid.New().String()
 	taskID := workflowUUID[:8]
 
-	var inputJSONStr string
-	if req.Inputs != nil {
-		inputJSON, err := json.Marshal(req.Inputs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal inputs: %w", err)
-		}
-		inputJSONStr = string(inputJSON)
+	inputs := req.Inputs
+	if inputs == nil {
+		inputs = make(map[string]interface{})
 	}
+
+	var sampleIDRef uint
+
+	if req.SampleID != "" {
+		sample, err := s.sampleRepo.FindByUUID(req.SampleID)
+		if err == nil {
+			sampleIDRef = sample.ID
+
+			if matchedPair := sample.GetMatchedPair(); matchedPair != nil {
+				if _, exists := inputs["fastq_r1"]; !exists && matchedPair.R1Path != "" {
+					inputs["fastq_r1"] = matchedPair.R1Path
+				}
+				if _, exists := inputs["fastq_r2"]; !exists && matchedPair.R2Path != "" {
+					inputs["fastq_r2"] = matchedPair.R2Path
+				}
+			}
+		}
+	}
+
+	if req.PipelineID != "" {
+		pipeline, err := s.pipelineRepo.FindByStringID(req.PipelineID)
+		if err == nil {
+			if pipeline.BEDFile != "" {
+				if _, exists := inputs["bed_file"]; !exists {
+					inputs["bed_file"] = pipeline.BEDFile
+				}
+			}
+			if pipeline.ReferenceGenome != "" {
+				if _, exists := inputs["reference_genome"]; !exists {
+					inputs["reference_genome"] = pipeline.ReferenceGenome
+				}
+			}
+			if pipeline.CNVBaseline != "" {
+				if _, exists := inputs["cnv_baseline"]; !exists {
+					inputs["cnv_baseline"] = pipeline.CNVBaseline
+				}
+			}
+		}
+	}
+
+	if req.UploadJobID != "" {
+		uploadJob, err := s.uploadJobRepo.FindByUUID(req.UploadJobID)
+		if err == nil {
+			files, _ := s.uploadFileRepo.FindByJobID(uploadJob.ID)
+			for _, f := range files {
+				switch f.ReadType {
+				case model.ReadTypeRead1:
+					if _, exists := inputs["fastq_r1"]; !exists {
+						inputs["fastq_r1"] = f.StorageKey
+					}
+				case model.ReadTypeRead2:
+					if _, exists := inputs["fastq_r2"]; !exists {
+						inputs["fastq_r2"] = f.StorageKey
+					}
+				case model.ReadTypeSingle:
+					if _, exists := inputs["fastq_r1"]; !exists {
+						inputs["fastq_r1"] = f.StorageKey
+					}
+				case model.ReadTypeBed:
+					if _, exists := inputs["bed_file"]; !exists {
+						inputs["bed_file"] = f.StorageKey
+					}
+				}
+			}
+		}
+	}
+
+	inputJSON, err := json.Marshal(inputs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal inputs: %w", err)
+	}
+	inputJSONStr := string(inputJSON)
 
 	outputDir := req.OutputDir
 	if outputDir == "" {
@@ -184,6 +274,14 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 
 	configFile := s.getConfigFile(executor, req.ConfigFile)
 
+	taskStatus := model.TaskStatusQueued
+	if req.UploadJobID != "" {
+		uploadJob, err := s.uploadJobRepo.FindByUUID(req.UploadJobID)
+		if err == nil && uploadJob.Status != model.UploadJobStatusCompleted {
+			taskStatus = model.TaskStatusWaitingData
+		}
+	}
+
 	now := time.Now()
 	task := &model.Task{
 		ID:              taskID,
@@ -191,6 +289,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		Name:            req.PipelineName,
 		SampleID:        req.SampleID,
 		InternalID:      req.InternalID,
+		UploadJobID:     req.UploadJobID,
 		Pipeline:        req.PipelineName,
 		PipelineVersion: req.PipelineVersion,
 		Template:        req.Template,
@@ -198,8 +297,9 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		InputJSON:       inputJSONStr,
 		ConfigFile:      configFile,
 		OutputDir:       outputDir,
-		Status:          model.TaskStatusQueued,
+		Status:          taskStatus,
 		Progress:        0,
+		SampleIDRef:     sampleIDRef,
 		Remark:          req.Remark,
 		CreatedBy:       userID,
 		CreatedAt:       now,
@@ -213,15 +313,30 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	return task, nil
 }
 
-// StartTask starts a queued or failed task
+// StartTask starts a queued, waiting_for_data, or failed task.
+// Before launching, it verifies that all input data files are accessible.
+// For COS-stored files, it downloads them to the local work directory first.
 func (s *TaskService) StartTask(ctx context.Context, id string) (*model.Task, error) {
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
 	}
 
-	if task.Status != model.TaskStatusQueued && task.Status != model.TaskStatusFailed {
+	if task.Status != model.TaskStatusQueued &&
+		task.Status != model.TaskStatusFailed &&
+		task.Status != model.TaskStatusWaitingData {
 		return nil, fmt.Errorf("task cannot be started from status: %s", task.Status)
+	}
+
+	if task.Status == model.TaskStatusWaitingData {
+		ready, reason := s.checkDataReady(task)
+		if !ready {
+			return nil, fmt.Errorf("data not ready: %s", reason)
+		}
+	}
+
+	if err := s.stageDataFiles(task); err != nil {
+		return nil, fmt.Errorf("failed to stage data files: %w", err)
 	}
 
 	task.Status = model.TaskStatusRunning
@@ -235,7 +350,6 @@ func (s *TaskService) StartTask(ctx context.Context, id string) (*model.Task, er
 		return nil, err
 	}
 
-	// Fire-and-forget: launch miniwdl in background, Sepiida Agent monitors it
 	go s.launchTask(task)
 
 	return task, nil
@@ -272,15 +386,28 @@ func (s *TaskService) StopTask(ctx context.Context, id string) (*model.Task, err
 	return task, nil
 }
 
-// RetryTask retries a failed task
+// RetryTask retries a failed, cancelled, or waiting_for_data task
 func (s *TaskService) RetryTask(ctx context.Context, id string) (*model.Task, error) {
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
 	}
 
-	if task.Status != model.TaskStatusFailed {
-		return nil, fmt.Errorf("only failed tasks can be retried")
+	if task.Status != model.TaskStatusFailed &&
+		task.Status != model.TaskStatusCancelled &&
+		task.Status != model.TaskStatusWaitingData {
+		return nil, fmt.Errorf("task cannot be retried from status: %s", task.Status)
+	}
+
+	if task.Status == model.TaskStatusWaitingData {
+		ready, reason := s.checkDataReady(task)
+		if !ready {
+			return nil, fmt.Errorf("data still not ready: %s", reason)
+		}
+	}
+
+	if err := s.stageDataFiles(task); err != nil {
+		return nil, fmt.Errorf("failed to stage data files: %w", err)
 	}
 
 	task.Status = model.TaskStatusRunning
@@ -455,7 +582,7 @@ func (s *TaskService) CancelTask(ctx context.Context, id string) error {
 		return fmt.Errorf("task not found: %s", id)
 	}
 
-	if task.Status != model.TaskStatusRunning && task.Status != model.TaskStatusQueued {
+	if task.Status != model.TaskStatusRunning && task.Status != model.TaskStatusQueued && task.Status != model.TaskStatusWaitingData {
 		return fmt.Errorf("task is not running or queued")
 	}
 
@@ -526,4 +653,222 @@ func (s *TaskService) GetTaskLogs(ctx context.Context, id string) (string, error
 	}
 
 	return "", fmt.Errorf("no log file available")
+}
+
+// StartDataWaitSync starts a background goroutine that periodically checks tasks
+// in waiting_for_data status. When their upload job is completed and data files are
+// accessible, the task transitions to queued automatically.
+func (s *TaskService) StartDataWaitSync(ctx context.Context, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.checkWaitingDataTasks()
+			}
+		}
+	}()
+}
+
+func (s *TaskService) checkWaitingDataTasks() {
+	tasks, err := s.repo.FindByStatuses([]model.TaskStatus{model.TaskStatusWaitingData})
+	if err != nil {
+		return
+	}
+
+	for _, task := range tasks {
+		ready, _ := s.checkDataReady(&task)
+		if ready {
+			task.Status = model.TaskStatusQueued
+			task.UpdatedAt = time.Now()
+			s.repo.Update(&task)
+		}
+	}
+}
+
+func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason string) {
+	var inputs map[string]interface{}
+	if task.InputJSON != "" {
+		if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
+			return false, "failed to parse input JSON"
+		}
+	}
+
+	if task.UploadJobID != "" {
+		uploadJob, err := s.uploadJobRepo.FindByUUID(task.UploadJobID)
+		if err != nil {
+			return false, "upload job not found"
+		}
+		if uploadJob.Status != model.UploadJobStatusCompleted {
+			return false, fmt.Sprintf("upload job status is %s", uploadJob.Status)
+		}
+	}
+
+	for key, val := range inputs {
+		path, ok := val.(string)
+		if !ok || path == "" {
+			continue
+		}
+		if !containsAny(key, "fastq", "file", "bed", "reference") {
+			continue
+		}
+
+		if hasPrefix(path, "cos://", "https://") {
+			if s.cosClient != nil {
+				cosKey := path
+				if hasPrefix(path, "cos://") {
+					cosKey = path[6:]
+				}
+				if hasPrefix(path, "https://") {
+					cosKey = s.extractCOSKeyFromURL(path)
+				}
+				if cosKey == "" {
+					continue
+				}
+				exists, _ := s.cosClient.ObjectExists(context.Background(), cosKey)
+				if !exists {
+					return false, fmt.Sprintf("COS file not found: %s", path)
+				}
+			}
+			continue
+		}
+
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return false, fmt.Sprintf("file not found: %s", path)
+		}
+	}
+
+	return true, ""
+}
+
+func (s *TaskService) stageDataFiles(task *model.Task) error {
+	var inputs map[string]interface{}
+	if task.InputJSON == "" {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
+		return err
+	}
+
+	dataDir := filepath.Join(task.OutputDir, "data")
+	changed := false
+
+	for key, val := range inputs {
+		path, ok := val.(string)
+		if !ok || path == "" {
+			continue
+		}
+
+		if s.cosClient != nil {
+			var cosKey string
+			if hasPrefix(path, "cos://") {
+				cosKey = path[6:]
+			}
+
+			if cosKey != "" {
+				localPath := filepath.Join(dataDir, filepath.Base(cosKey))
+				if err := s.downloadCOSFile(cosKey, localPath); err != nil {
+					return fmt.Errorf("failed to download %s: %w", cosKey, err)
+				}
+				inputs[key] = localPath
+				changed = true
+			}
+		}
+	}
+
+	if changed {
+		inputJSON, err := json.Marshal(inputs)
+		if err != nil {
+			return err
+		}
+		task.InputJSON = string(inputJSON)
+		s.repo.Update(task)
+	}
+
+	return nil
+}
+
+func (s *TaskService) downloadCOSFile(cosKey, localPath string) error {
+	if s.cosClient == nil {
+		return fmt.Errorf("COS client not configured")
+	}
+
+	presignedURL, err := s.cosClient.GeneratePresignedGetURL(context.Background(), cosKey)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.Get(presignedURL)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("COS download returned status %d", resp.StatusCode)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+		return err
+	}
+
+	f, err := os.Create(localPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = io.Copy(f, resp.Body)
+	return err
+}
+
+func (s *TaskService) extractCOSKeyFromURL(urlStr string) string {
+	prefix := s.cfg.Storage.COSEndpoint + "/"
+	if len(urlStr) > len(prefix) && urlStr[:len(prefix)] == prefix {
+		return urlStr[len(prefix):]
+	}
+	return ""
+}
+
+func hasPrefix(s string, prefixes ...string) bool {
+	for _, prefix := range prefixes {
+		if len(s) >= len(prefix) && s[:len(prefix)] == prefix {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAny(s string, substrs ...string) bool {
+	for _, sub := range substrs {
+		for i := 0; i < len(s); i++ {
+			end := i + len(sub)
+			if end > len(s) {
+				break
+			}
+			match := true
+			for j := 0; j < len(sub); j++ {
+				c1 := s[i+j]
+				c2 := sub[j]
+				if c1 >= 'A' && c1 <= 'Z' {
+					c1 += 32
+				}
+				if c2 >= 'A' && c2 <= 'Z' {
+					c2 += 32
+				}
+				if c1 != c2 {
+					match = false
+					break
+				}
+			}
+			if match {
+				return true
+			}
+		}
+	}
+	return false
 }

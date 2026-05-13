@@ -146,8 +146,10 @@ type GroupedUPDRegion struct {
 
 // DashboardStats represents dashboard statistics
 type DashboardStats struct {
-	TotalSamples    int `json:"totalSamples"`
-	PendingTasks    int `json:"pendingTasks"`
-	RunningTasks    int `json:"runningTasks"`
-	CompletedTasks  int `json:"completedTasks"`
+	TotalSamples     int `json:"totalSamples"`
+	PendingTasks     int `json:"pendingTasks"`
+	WaitingDataTasks int `json:"waitingDataTasks"`
+	RunningTasks     int `json:"runningTasks"`
+	CompletedTasks   int `json:"completedTasks"`
+	FailedTasks      int `json:"failedTasks"`
 }

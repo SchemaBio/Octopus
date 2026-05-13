@@ -9,6 +9,7 @@ type TaskStatus string
 
 const (
 	TaskStatusQueued               TaskStatus = "queued"
+	TaskStatusWaitingData          TaskStatus = "waiting_for_data"
 	TaskStatusRunning              TaskStatus = "running"
 	TaskStatusCompleted            TaskStatus = "completed"
 	TaskStatusFailed               TaskStatus = "failed"
@@ -32,6 +33,7 @@ type Task struct {
 	Name            string       `json:"name"`
 	SampleID        string       `json:"sample_id" gorm:"size:36;index"` // Sample UUID
 	InternalID      string       `json:"internal_id" gorm:"size:100"`    // Sample internal_id for display
+	UploadJobID     string       `json:"upload_job_id" gorm:"size:36;index"` // UploadJob UUID
 	Pipeline        string       `json:"pipeline" gorm:"size:200"`       // Pipeline name
 	PipelineVersion string       `json:"pipeline_version" gorm:"size:50"`
 	Template        string       `json:"template"`                       // WDL template name (internal)
@@ -58,6 +60,7 @@ type Task struct {
 type TaskCreateRequest struct {
 	SampleID        string `json:"sampleId" binding:"required"`
 	InternalID      string `json:"internalId"`
+	UploadJobID     string `json:"uploadJobId"`
 	PipelineID      string `json:"pipelineId"`
 	PipelineName    string `json:"pipelineName" binding:"required"`
 	PipelineVersion string `json:"pipelineVersion"`

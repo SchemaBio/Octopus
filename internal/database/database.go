@@ -68,6 +68,9 @@ func AutoMigrate() error {
 		// Report models
 		&model.Report{},
 		&model.ReportTemplate{},
+		// Upload models
+		&model.UploadJob{},
+		&model.UploadFile{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)

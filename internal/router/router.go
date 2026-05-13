@@ -251,6 +251,20 @@ func New(cfg *config.Config) *gin.Engine {
 		{
 			dashboard.GET("/stats", dashboardHandler.GetStats)
 		}
+
+		// ========== Data Upload (protected) ==========
+		uploadHandler := handler.NewUploadHandler(cfg)
+		uploads := v1.Group("/upload")
+		uploads.Use(middleware.JWTAuth(cfg))
+		{
+			uploads.POST("/jobs", uploadHandler.CreateJob)
+			uploads.GET("/jobs", uploadHandler.ListJobs)
+			uploads.GET("/jobs/:uuid", uploadHandler.GetJob)
+			uploads.DELETE("/jobs/:uuid", uploadHandler.DeleteJob)
+			uploads.POST("/local/:file_uuid", uploadHandler.UploadLocal)
+			uploads.POST("/jobs/:uuid/files/:file_uuid/complete", uploadHandler.CompleteCOSFile)
+			uploads.GET("/files/:file_uuid/download", uploadHandler.GetDownloadURL)
+		}
 	}
 
 	return r

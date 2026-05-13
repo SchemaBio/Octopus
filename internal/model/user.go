@@ -15,16 +15,17 @@ const (
 
 // User represents a user account
 type User struct {
-	ID           uint       `json:"id" gorm:"primaryKey"`
-	Username     string     `json:"-" gorm:"uniqueIndex;size:50;not null"` // internal use only, not exposed in API
-	Password     string     `json:"-" gorm:"size:255;not null"`
-	Email        string     `json:"email" gorm:"uniqueIndex;size:100;not null"`
-	Name         string     `json:"name" gorm:"size:100;not null"`
-	SystemRole   SystemRole `json:"system_role" gorm:"size:20;default:USER"`
-	PrimaryOrgID string     `json:"primary_org_id,omitempty" gorm:"size:36;index"`
-	IsActive     bool       `json:"is_active" gorm:"default:true"`
-	CreatedAt    time.Time  `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt    time.Time  `json:"updated_at" gorm:"type:timestamptz"`
+	ID            uint       `json:"id" gorm:"primaryKey"`
+	Username      string     `json:"-" gorm:"uniqueIndex;size:50;not null"` // internal use only, not exposed in API
+	Password      string     `json:"-" gorm:"size:255;not null"`
+	Email         string     `json:"email" gorm:"uniqueIndex;size:100;not null"`
+	Name          string     `json:"name" gorm:"size:100;not null"`
+	SystemRole    SystemRole `json:"system_role" gorm:"size:20;default:USER"`
+	PrimaryOrgID  string     `json:"primary_org_id,omitempty" gorm:"size:36;index"`
+	StorageFolder string     `json:"-" gorm:"size:36;index"`
+	IsActive      bool       `json:"is_active" gorm:"default:true"`
+	CreatedAt     time.Time  `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt     time.Time  `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // LoginRequest represents login request body (frontend uses email)

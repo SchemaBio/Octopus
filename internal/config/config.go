@@ -14,6 +14,7 @@ type Config struct {
 	Parquet  ParquetConfig
 	JWT      JWTConfig
 	LLM      LLMConfig
+	Storage  StorageConfig
 }
 
 type ServerConfig struct {
@@ -70,6 +71,18 @@ type LLMConfig struct {
 	Enabled bool   // Enable AI evaluation
 }
 
+type StorageConfig struct {
+	Provider  string // "local" or "cos"
+	LocalDir  string // local upload root directory
+	COSSecretID  string
+	COSSecretKey string
+	COSRegion    string
+	COSBucket    string
+	COSEndpoint  string // e.g. https://bucket.cos.ap-guangzhou.myqcloud.com
+	COSPrefix    string // key prefix inside bucket, e.g. "uploads/"
+	PresignTTL   int    // pre-signed URL TTL in seconds, default 3600
+}
+
 // Load loads configuration from environment and files
 func Load() *Config {
 	return &Config{
@@ -119,6 +132,17 @@ func Load() *Config {
 			Model:   getEnv("LLM_MODEL", "gpt-4o"),
 			Enabled: getEnv("LLM_ENABLED", "false") == "true",
 		},
+		Storage: StorageConfig{
+			Provider:     getEnv("STORAGE_PROVIDER", "local"),
+			LocalDir:     getEnv("STORAGE_LOCAL_DIR", "/mnt/data/uploads"),
+			COSSecretID:  getEnv("COS_SECRET_ID", ""),
+			COSSecretKey: getEnv("COS_SECRET_KEY", ""),
+			COSRegion:    getEnv("COS_REGION", "ap-guangzhou"),
+			COSBucket:    getEnv("COS_BUCKET", ""),
+			COSEndpoint:  getEnv("COS_ENDPOINT", ""),
+			COSPrefix:    getEnv("COS_PREFIX", "uploads/"),
+			PresignTTL:   parseIntEnv("STORAGE_PRESIGN_TTL", 3600),
+		},
 	}
 }
 
@@ -146,4 +170,16 @@ func parseDuration(s string) time.Duration {
 
 	// Default fallback: 24 hours
 	return 24 * time.Hour
+}
+
+func parseIntEnv(key string, defaultValue int) int {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultValue
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return defaultValue
+	}
+	return n
 }

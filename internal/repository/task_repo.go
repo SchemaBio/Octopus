@@ -41,11 +41,24 @@ func (r *TaskRepository) UpdateStatus(id string, status model.TaskStatus) error 
 	return r.db.Model(&model.Task{}).Where("id = ?", id).Update("status", status).Error
 }
 
+// FindByStatuses finds tasks by multiple statuses
+func (r *TaskRepository) FindByStatuses(statuses []model.TaskStatus) ([]model.Task, error) {
+	var tasks []model.Task
+	err := r.db.Where("status IN ?", statuses).Find(&tasks).Error
+	return tasks, err
+}
+
+// FindByUploadJobID finds tasks by upload job UUID
+func (r *TaskRepository) FindByUploadJobID(uploadJobID string) ([]model.Task, error) {
+	return r.FindByCondition(map[string]interface{}{"upload_job_id": uploadJobID})
+}
+
 // CountByStatus counts tasks by status
 func (r *TaskRepository) CountByStatus() (map[model.TaskStatus]int64, error) {
 	counts := make(map[model.TaskStatus]int64)
 	statuses := []model.TaskStatus{
 		model.TaskStatusQueued,
+		model.TaskStatusWaitingData,
 		model.TaskStatusRunning,
 		model.TaskStatusCompleted,
 		model.TaskStatusFailed,
@@ -72,6 +85,7 @@ func (r *TaskRepository) CountByStatusAndProject(projectID uint) (map[model.Task
 	counts := make(map[model.TaskStatus]int64)
 	statuses := []model.TaskStatus{
 		model.TaskStatusQueued,
+		model.TaskStatusWaitingData,
 		model.TaskStatusRunning,
 		model.TaskStatusCompleted,
 		model.TaskStatusFailed,
