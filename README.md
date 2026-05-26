@@ -1,6 +1,6 @@
 # Schema Platform (Octopus)
 
-生物信息云分析平台后端服务
+生物信息本地分析平台后端服务。Octopus 面向用户自部署场景，不包含云实例调度、对象存储归档、积分计费或组织隔离功能。
 
 ## 功能特性
 
@@ -8,7 +8,7 @@
 - **JWT 认证**：无状态认证系统，支持登录、注册、Token 刷新
 - **样本管理**：样本创建、查询、状态追踪，关联项目
 - **项目管理**：项目批次管理，进度汇总统计
-- **任务执行**：支持 local/slurm/lsf 多种执行环境
+- **任务执行**：使用本地 `miniwdl` 执行 WDL 流程
 - **Sepiida 集成**：实时查询任务进度和状态
 - **自动归档**：任务完成后自动将结果归档到指定目录，读取 `outputs.resolved.json`
 - **数据导入**：从归档的 parquet/TSV 文件解析并导入数据库，支持 7 种变异类型 + QC
@@ -29,14 +29,14 @@ MiniWDL 使用 `-d uuid` 模式执行，符合 Sepiida 目录规范：
 │   ├── 20260428_094955_SingleWES/           # 执行目录
 │   │   ├── workflow.log          # MiniWDL日志
 │   │   ├── outputs.json          # 最终输出 (扁平 key)
-│   │   ├── outputs.resolved.json # 解析后的输出 (内联 QC + 文件 URL)
+│   │   ├── outputs.resolved.json # 解析后的输出 (内联 QC + 本地文件路径)
 │   │   └── call-*/               # Task 输出目录 (含 TSV 结果文件)
 │   └── octopus.log               # Octopus 日志
 
 /mnt/data/archive/                           # 归档目录
 ├── a1b2c3d4-e5f6-7890-abcd-ef1234567890/    # 归档UUID目录
 │   ├── outputs.json              # 输出定义 (原始)
-│   ├── outputs.resolved.json     # 解析后输出 (含 QC + COS URL)
+│   ├── outputs.resolved.json     # 解析后输出 (含 QC + 本地文件路径)
 │   ├── workflow.log              # 执行日志
 │   ├── snv_indel.txt             # SNV/Indel 结果
 │   ├── region.cnvanno.txt        # CNV Segment 结果
@@ -45,7 +45,7 @@ MiniWDL 使用 `-d uuid` 模式执行，符合 Sepiida 目录规范：
 │   ├── mei.txt                   # MEI 结果
 │   ├── mt_report.txt             # 线粒体变异结果
 │   ├── roh.anno.txt              # ROH 结果
-│   └── *.bam / *.bai             # 比对文件 (保留 URL 引用)
+│   └── *.bam / *.bai             # 比对文件
 ```
 
 ## 快速开始
@@ -154,10 +154,11 @@ go run cmd/server/main.go
 | TEMPLATE_DIR | /home/ubuntu/schema-germline | WDL 模板目录 |
 | ARCHIVE_DIR | /mnt/data/archive | 归档目录 |
 | ARCHIVE_CLEANUP | false | 归档后删除运行目录 |
-| DEFAULT_EXECUTOR | local | 默认执行环境 (local/slurm/lsf) |
+| DEFAULT_EXECUTOR | local | 默认执行环境；Octopus 开源版会强制使用 local |
 | MINIWDL_PATH | miniwdl | miniwdl 可执行文件 |
-| MINIWDL_SLURM_PATH | miniwdl-slurm | miniwdl-slurm 可执行文件 |
-| MINIWDL_LSF_PATH | miniwdl-lsf | miniwdl-lsf 可执行文件 |
+| STORAGE_PROVIDER | local | 本地开源版固定为 local |
+| STORAGE_LOCAL_DIR | /mnt/data/uploads | 本地上传目录 |
+| UPLOAD_MAX_SIZE_MB | 0 | 上传文件大小限制，0 表示不限制 |
 | SEPIIDA_URL | http://localhost:9090 | Sepiida Server URL |
 | SEPIIDA_QUERY_KEY | | Sepiida Query Key |
 | SEPIIDA_ENABLED | true | 启用 Sepiida 集成 |
@@ -289,42 +290,6 @@ curl -X POST http://localhost:8080/api/v1/tasks \
   }'
 ```
 
-### Slurm 集群执行
-
-```bash
-curl -X POST http://localhost:8080/api/v1/tasks \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "germline-analysis-002",
-    "template": "single",
-    "executor": "slurm",
-    "inputs": {
-      "sample_name": "sample002",
-      "fastq1": "/data/samples/sample002_R1.fastq.gz",
-      "fastq2": "/data/samples/sample002_R2.fastq.gz"
-    }
-  }'
-```
-
-### LSF 集群执行
-
-```bash
-curl -X POST http://localhost:8080/api/v1/tasks \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "germline-analysis-003",
-    "template": "single",
-    "executor": "lsf",
-    "inputs": {
-      "sample_name": "sample003",
-      "fastq1": "/data/samples/sample003_R1.fastq.gz",
-      "fastq2": "/data/samples/sample003_R2.fastq.gz"
-    }
-  }'
-```
-
 响应示例：
 
 ```json
@@ -333,7 +298,7 @@ curl -X POST http://localhost:8080/api/v1/tasks \
   "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "name": "germline-analysis-001",
   "template": "single",
-  "executor": "slurm",
+  "executor": "local",
   "status": "pending",
   "created_at": "2026-04-28T15:10:00Z"
 }
@@ -344,10 +309,8 @@ curl -X POST http://localhost:8080/api/v1/tasks \
 | Executor | 可执行文件 | 配置文件 | 说明 |
 |----------|-----------|---------|------|
 | local | miniwdl | local.cfg | 本地直接执行 |
-| slurm | miniwdl-slurm | slurm.cfg | Slurm 集群调度 |
-| lsf | miniwdl-lsf | lsf.cfg | LSF 集群调度 |
 
-配置文件路径：`{TEMPLATE_DIR}/conf/{executor}.cfg`
+配置文件路径：`{TEMPLATE_DIR}/conf/local.cfg`。即使客户端传入 executor/config/outputDir，Octopus 也会忽略这些内部字段并使用服务端本地配置。
 
 ## 查询任务进度
 
@@ -439,9 +402,9 @@ curl http://localhost:8080/api/v1/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890/o
   "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "keys": ["SingleWES.summary.snp_indel", "SingleWES.summary.cnv_region", "SingleWES.summary.aligned_bam", "SingleWES.summary.qc_result"],
   "outputs": {
-    "SingleWES.summary.snp_indel": "https://cos.example.com/xxx/snv_indel.txt",
-    "SingleWES.summary.cnv_region": "https://cos.example.com/xxx/region.cnvanno.txt",
-    "SingleWES.summary.aligned_bam": "https://cos.example.com/xxx/aligned.bam",
+    "SingleWES.summary.snp_indel": "/mnt/data/archive/{uuid}/snv_indel.txt",
+    "SingleWES.summary.cnv_region": "/mnt/data/archive/{uuid}/region.cnvanno.txt",
+    "SingleWES.summary.aligned_bam": "/mnt/data/archive/{uuid}/aligned.bam",
     "SingleWES.summary.qc_result": "(inline object)"
   }
 }
@@ -460,7 +423,7 @@ curl http://localhost:8080/api/v1/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890/o
 {
   "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "key": "SingleWES.summary.snv_indel",
-  "value": "https://cos.example.com/xxx/snv_indel.txt",
+  "value": "/mnt/data/archive/{uuid}/snv_indel.txt",
   "archived": true,
   "archive_path": "/mnt/data/archive/a1b2c3d4-e5f6-7890-abcd-ef1234567890/snv_indel.txt",
   "exists": true
@@ -481,14 +444,14 @@ curl http://localhost:8080/api/v1/archive/{uuid}/output/SingleWES.summary.snv_in
 ```json
 {
   "SingleWES.summary": {
-    "snp_indel": "https://cos.example.com/xxx/snv_indel.txt",
-    "cnv_region": "https://cos.example.com/xxx/region.cnvanno.txt",
-    "cnv_gene": "https://cos.example.com/xxx/gene.cnvanno.txt",
-    "str": "https://cos.example.com/xxx/str.txt",
-    "mei": "https://cos.example.com/xxx/mei.txt",
-    "mt_report": "https://cos.example.com/xxx/mt_report.txt",
-    "roh": "https://cos.example.com/xxx/roh.anno.txt",
-    "aligned_bam": "https://cos.example.com/xxx/aligned.bam",
+    "snp_indel": "/mnt/data/archive/{uuid}/snv_indel.txt",
+    "cnv_region": "/mnt/data/archive/{uuid}/region.cnvanno.txt",
+    "cnv_gene": "/mnt/data/archive/{uuid}/gene.cnvanno.txt",
+    "str": "/mnt/data/archive/{uuid}/str.txt",
+    "mei": "/mnt/data/archive/{uuid}/mei.txt",
+    "mt_report": "/mnt/data/archive/{uuid}/mt_report.txt",
+    "roh": "/mnt/data/archive/{uuid}/roh.anno.txt",
+    "aligned_bam": "/mnt/data/archive/{uuid}/aligned.bam",
     "qc_result": {
       "sample_id": "sample001",
       "fastp": { "total_reads": 1000000, "q30_rate": 0.92, "gc_content": 0.41 },
@@ -502,9 +465,9 @@ curl http://localhost:8080/api/v1/archive/{uuid}/output/SingleWES.summary.snv_in
 ```
 
 可用查询的 keys (通过 dot path)：
-- `SingleWES.summary.snp_indel` → snv_indel.txt 的 COS URL
-- `SingleWES.summary.cnv_region` → region.cnvanno.txt 的 COS URL
-- `SingleWES.summary.aligned_bam` → aligned.bam 的 COS URL
+- `SingleWES.summary.snp_indel` → snv_indel.txt 的本地路径
+- `SingleWES.summary.cnv_region` → region.cnvanno.txt 的本地路径
+- `SingleWES.summary.aligned_bam` → aligned.bam 的本地路径
 - `SingleWES.summary.qc_result` → QC 数据 (内联对象)
 
 ## 与 Sepiida 集成

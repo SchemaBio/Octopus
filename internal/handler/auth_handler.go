@@ -66,8 +66,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // Refresh handles token refresh
 func (h *AuthHandler) Refresh(c *gin.Context) {
 	var req model.RefreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		ErrorBadRequest(c, err.Error())
+	if c.Request.Body != nil {
+		_ = c.ShouldBindJSON(&req)
+	}
+	if req.RefreshToken == "" {
+		if cookie, err := c.Cookie("refresh_token"); err == nil {
+			req.RefreshToken = cookie
+		}
+	}
+	if req.RefreshToken == "" {
+		ErrorBadRequest(c, "refresh token is required")
 		return
 	}
 
@@ -185,12 +193,8 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		user, _ := h.svc.GetUserByEmail(req.Email)
 		if user != nil {
 			user.SystemRole = req.SystemRole
-			if req.PrimaryOrgID != "" {
-				user.PrimaryOrgID = req.PrimaryOrgID
-			}
 			h.svc.UpdateUser(user.ID, &model.UserUpdateRequest{
-				SystemRole:   req.SystemRole,
-				PrimaryOrgID: req.PrimaryOrgID,
+				SystemRole: req.SystemRole,
 			})
 		}
 	}

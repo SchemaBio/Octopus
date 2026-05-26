@@ -1,7 +1,9 @@
 package service
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"net/http"
@@ -26,9 +28,9 @@ func NewJWTService(cfg *config.Config) *JWTService {
 
 // Claims represents JWT claims
 type Claims struct {
-	UserID     uint   `json:"user_id"`
-	Email      string `json:"email"`
-	Role       string `json:"role"`
+	UserID uint   `json:"user_id"`
+	Email  string `json:"email"`
+	Role   string `json:"role"`
 	jwt.RegisteredClaims
 }
 
@@ -179,6 +181,7 @@ func PreparePassword(rawPassword, email string, enabled bool) string {
 func SetTokenCookies(c *gin.Context, cfg *config.JWTConfig, accessToken, refreshToken string) {
 	accessMaxAge := int(cfg.ExpireDuration.Seconds())
 	refreshMaxAge := int(cfg.RefreshDuration.Seconds())
+	csrfToken := randomToken()
 
 	accessCookie := &http.Cookie{
 		Name:     "access_token",
@@ -201,9 +204,20 @@ func SetTokenCookies(c *gin.Context, cfg *config.JWTConfig, accessToken, refresh
 		Secure:   cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	}
+	csrfCookie := &http.Cookie{
+		Name:     "csrf_token",
+		Value:    csrfToken,
+		Path:     "/",
+		Domain:   cfg.CookieDomain,
+		MaxAge:   refreshMaxAge,
+		HttpOnly: false,
+		Secure:   cfg.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	}
 
 	http.SetCookie(c.Writer, accessCookie)
 	http.SetCookie(c.Writer, refreshCookie)
+	http.SetCookie(c.Writer, csrfCookie)
 }
 
 // ClearTokenCookies clears the token cookies (logout)
@@ -229,7 +243,26 @@ func ClearTokenCookies(c *gin.Context, cfg *config.JWTConfig) {
 		Secure:   cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	}
+	csrfCookie := &http.Cookie{
+		Name:     "csrf_token",
+		Value:    "",
+		Path:     "/",
+		Domain:   cfg.CookieDomain,
+		MaxAge:   -1,
+		HttpOnly: false,
+		Secure:   cfg.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	}
 
 	http.SetCookie(c.Writer, accessCookie)
 	http.SetCookie(c.Writer, refreshCookie)
+	http.SetCookie(c.Writer, csrfCookie)
+}
+
+func randomToken() string {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return SHA256Hash(time.Now().String())
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)
 }

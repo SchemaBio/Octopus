@@ -21,7 +21,6 @@ type User struct {
 	Email         string     `json:"email" gorm:"uniqueIndex;size:100;not null"`
 	Name          string     `json:"name" gorm:"size:100;not null"`
 	SystemRole    SystemRole `json:"system_role" gorm:"size:20;default:USER"`
-	PrimaryOrgID  string     `json:"primary_org_id,omitempty" gorm:"size:36;index"`
 	StorageFolder string     `json:"-" gorm:"size:36;index"`
 	IsActive      bool       `json:"is_active" gorm:"default:true"`
 	CreatedAt     time.Time  `json:"created_at" gorm:"type:timestamptz"`
@@ -36,17 +35,16 @@ type LoginRequest struct {
 
 // UserResponse is the user object returned in API responses
 type UserResponse struct {
-	ID           string     `json:"id"`
-	Email        string     `json:"email"`
-	Name         string     `json:"name"`
-	SystemRole   SystemRole `json:"system_role"`
-	PrimaryOrgID string     `json:"primary_org_id,omitempty"`
-	IsActive     bool       `json:"is_active"`
-	CreatedAt    string     `json:"created_at"`
-	UpdatedAt    string     `json:"updated_at"`
+	ID         string     `json:"id"`
+	Email      string     `json:"email"`
+	Name       string     `json:"name"`
+	SystemRole SystemRole `json:"system_role"`
+	IsActive   bool       `json:"is_active"`
+	CreatedAt  string     `json:"created_at"`
+	UpdatedAt  string     `json:"updated_at"`
 }
 
-// OrganizationInfo is a minimal org representation for auth responses
+// OrganizationInfo is kept only for frontend response compatibility.
 type OrganizationInfo struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -87,18 +85,16 @@ type RefreshResponse struct {
 
 // UserCreateRequest is the request body for creating a user (admin)
 type UserCreateRequest struct {
-	Email        string     `json:"email" binding:"required,email"`
-	Name         string     `json:"name" binding:"required"`
-	Password     string     `json:"password" binding:"required,min=6"`
-	SystemRole   SystemRole `json:"system_role"`
-	PrimaryOrgID string     `json:"primary_org_id"`
+	Email      string     `json:"email" binding:"required,email"`
+	Name       string     `json:"name" binding:"required"`
+	Password   string     `json:"password" binding:"required,min=6"`
+	SystemRole SystemRole `json:"system_role"`
 }
 
 // UserUpdateRequest is the request body for updating a user
 type UserUpdateRequest struct {
-	Name         string     `json:"name"`
-	SystemRole   SystemRole `json:"system_role"`
-	PrimaryOrgID string     `json:"primary_org_id"`
+	Name       string     `json:"name"`
+	SystemRole SystemRole `json:"system_role"`
 }
 
 // UserListQuery is the query parameters for listing users
@@ -110,21 +106,20 @@ type UserListQuery struct {
 
 // UserListResponse is the response for listing users
 type UserListResponse struct {
-	Total int64         `json:"total"`
+	Total int64          `json:"total"`
 	Items []UserResponse `json:"items"`
 }
 
 // UserToResponse converts a User model to UserResponse
 func UserToResponse(u *User) UserResponse {
 	return UserResponse{
-		ID:           formatID(u.ID),
-		Email:        u.Email,
-		Name:         u.Name,
-		SystemRole:   u.SystemRole,
-		PrimaryOrgID: u.PrimaryOrgID,
-		IsActive:     u.IsActive,
-		CreatedAt:    u.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:    u.UpdatedAt.Format(time.RFC3339),
+		ID:         formatID(u.ID),
+		Email:      u.Email,
+		Name:       u.Name,
+		SystemRole: u.SystemRole,
+		IsActive:   u.IsActive,
+		CreatedAt:  u.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:  u.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

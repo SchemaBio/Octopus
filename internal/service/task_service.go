@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -28,7 +27,6 @@ type TaskService struct {
 	uploadFileRepo *repository.UploadFileRepository
 	sampleRepo     *repository.SampleRepository
 	pipelineRepo   *repository.PipelineRepository
-	cosClient      *COSClient
 	mu             sync.RWMutex
 	running        map[string]*exec.Cmd
 }
@@ -48,13 +46,6 @@ func NewTaskService(cfg *config.Config) *TaskService {
 		sampleRepo:     repository.NewSampleRepository(),
 		pipelineRepo:   repository.NewPipelineRepository(),
 		running:        make(map[string]*exec.Cmd),
-	}
-
-	if cfg.Storage.Provider == "cos" && cfg.Storage.COSSecretID != "" {
-		client, err := NewCOSClient(&cfg.Storage)
-		if err == nil {
-			svc.cosClient = client
-		}
 	}
 
 	return svc
@@ -161,10 +152,6 @@ func (s *TaskService) getExecutorPath(executor model.ExecutorType) string {
 
 // getConfigFile returns the config file path based on executor type
 func (s *TaskService) getConfigFile(executor model.ExecutorType, customConfig string) string {
-	if customConfig != "" {
-		return customConfig
-	}
-
 	var cfgName string
 	switch executor {
 	case model.ExecutorSlurm:
@@ -178,13 +165,52 @@ func (s *TaskService) getConfigFile(executor model.ExecutorType, customConfig st
 	return filepath.Join(s.cfg.Task.TemplateDir, "conf", cfgName)
 }
 
+func validateTemplateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("template is required")
+	}
+	if name != filepath.Base(name) || strings.Contains(name, `\`) || name == "." || name == ".." {
+		return fmt.Errorf("invalid template name")
+	}
+	return nil
+}
+
+func ensurePathInsideBase(base, path string) error {
+	baseAbs, err := filepath.Abs(base)
+	if err != nil {
+		return err
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(baseAbs, pathAbs)
+	if err != nil {
+		return err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("path escapes base directory")
+	}
+	return nil
+}
+
 // CreateTask creates a new task. It resolves data file paths from the linked Sample,
 // UploadJob, and Pipeline configuration, injecting them into WDL inputs.
 // If the upload job is not yet completed, the task enters waiting_for_data status.
 func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateRequest, userID uint) (*model.Task, error) {
-	executor := req.Executor
-	if executor == "" {
-		executor = model.ExecutorType(s.cfg.Task.DefaultExecutor)
+	executor := model.ExecutorType(s.cfg.Task.DefaultExecutor)
+	if executor != model.ExecutorLocal {
+		executor = model.ExecutorLocal
+	}
+	if err := validateTemplateName(req.Template); err != nil {
+		return nil, err
+	}
+	templatePath := filepath.Join(s.cfg.Task.TemplateDir, req.Template+".wdl")
+	if err := ensurePathInsideBase(s.cfg.Task.TemplateDir, templatePath); err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(templatePath); err != nil {
+		return nil, fmt.Errorf("template not found: %s", req.Template)
 	}
 
 	workflowUUID := uuid.New().String()
@@ -267,12 +293,12 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	}
 	inputJSONStr := string(inputJSON)
 
-	outputDir := req.OutputDir
-	if outputDir == "" {
-		outputDir = filepath.Join(s.cfg.Task.OutputDir, workflowUUID)
+	outputDir := filepath.Join(s.cfg.Task.OutputDir, workflowUUID)
+	if err := ensurePathInsideBase(s.cfg.Task.OutputDir, outputDir); err != nil {
+		return nil, err
 	}
 
-	configFile := s.getConfigFile(executor, req.ConfigFile)
+	configFile := s.getConfigFile(executor, "")
 
 	taskStatus := model.TaskStatusQueued
 	if req.UploadJobID != "" {
@@ -315,7 +341,6 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 
 // StartTask starts a queued, waiting_for_data, or failed task.
 // Before launching, it verifies that all input data files are accessible.
-// For COS-stored files, it downloads them to the local work directory first.
 func (s *TaskService) StartTask(ctx context.Context, id string) (*model.Task, error) {
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
@@ -717,24 +742,8 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 			continue
 		}
 
-		if hasPrefix(path, "cos://", "https://") {
-			if s.cosClient != nil {
-				cosKey := path
-				if hasPrefix(path, "cos://") {
-					cosKey = path[6:]
-				}
-				if hasPrefix(path, "https://") {
-					cosKey = s.extractCOSKeyFromURL(path)
-				}
-				if cosKey == "" {
-					continue
-				}
-				exists, _ := s.cosClient.ObjectExists(context.Background(), cosKey)
-				if !exists {
-					return false, fmt.Sprintf("COS file not found: %s", path)
-				}
-			}
-			continue
+		if strings.HasPrefix(path, "cos://") || strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+			return false, fmt.Sprintf("remote file paths are not supported in local Octopus: %s", path)
 		}
 
 		if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -746,101 +755,7 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 }
 
 func (s *TaskService) stageDataFiles(task *model.Task) error {
-	var inputs map[string]interface{}
-	if task.InputJSON == "" {
-		return nil
-	}
-	if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
-		return err
-	}
-
-	dataDir := filepath.Join(task.OutputDir, "data")
-	changed := false
-
-	for key, val := range inputs {
-		path, ok := val.(string)
-		if !ok || path == "" {
-			continue
-		}
-
-		if s.cosClient != nil {
-			var cosKey string
-			if hasPrefix(path, "cos://") {
-				cosKey = path[6:]
-			}
-
-			if cosKey != "" {
-				localPath := filepath.Join(dataDir, filepath.Base(cosKey))
-				if err := s.downloadCOSFile(cosKey, localPath); err != nil {
-					return fmt.Errorf("failed to download %s: %w", cosKey, err)
-				}
-				inputs[key] = localPath
-				changed = true
-			}
-		}
-	}
-
-	if changed {
-		inputJSON, err := json.Marshal(inputs)
-		if err != nil {
-			return err
-		}
-		task.InputJSON = string(inputJSON)
-		s.repo.Update(task)
-	}
-
 	return nil
-}
-
-func (s *TaskService) downloadCOSFile(cosKey, localPath string) error {
-	if s.cosClient == nil {
-		return fmt.Errorf("COS client not configured")
-	}
-
-	presignedURL, err := s.cosClient.GeneratePresignedGetURL(context.Background(), cosKey)
-	if err != nil {
-		return err
-	}
-
-	resp, err := http.Get(presignedURL)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("COS download returned status %d", resp.StatusCode)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
-		return err
-	}
-
-	f, err := os.Create(localPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	_, err = io.Copy(f, resp.Body)
-	return err
-}
-
-func (s *TaskService) extractCOSKeyFromURL(urlStr string) string {
-	prefix := s.cfg.Storage.COSEndpoint + "/"
-	if len(urlStr) > len(prefix) && urlStr[:len(prefix)] == prefix {
-		return urlStr[len(prefix):]
-	}
-	return ""
-}
-
-func hasPrefix(s string, prefixes ...string) bool {
-	for _, prefix := range prefixes {
-		if len(s) >= len(prefix) && s[:len(prefix)] == prefix {
-			return true
-		}
-	}
-	return false
 }
 
 func containsAny(s string, substrs ...string) bool {

@@ -52,27 +52,9 @@ func (s *UserService) Login(email, password string) (*model.LoginResponse, error
 	// Build response
 	userResp := model.UserToResponse(user)
 
-	// Default organization (empty list for now, will be populated when org module is ready)
-	orgs := []model.OrganizationInfo{}
-	var currentOrg *model.OrganizationInfo
-
-	// If user has a primary org, include it
-	if user.PrimaryOrgID != "" {
-		org := model.OrganizationInfo{
-			ID:       user.PrimaryOrgID,
-			Name:     "Default",
-			Slug:     "default",
-			OrgRole:  "OWNER",
-			JoinedAt: user.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		}
-		orgs = append(orgs, org)
-		currentOrg = &org
-	}
-
 	return &model.LoginResponse{
 		User:          userResp,
-		Organizations: orgs,
-		CurrentOrg:    currentOrg,
+		Organizations: []model.OrganizationInfo{},
 		AccessToken:   accessToken,
 		RefreshToken:  refreshToken,
 		ExpiresAt:     expiresAt,
@@ -207,9 +189,6 @@ func (s *UserService) UpdateUser(id uint, req *model.UserUpdateRequest) (*model.
 	}
 	if req.SystemRole != "" {
 		user.SystemRole = req.SystemRole
-	}
-	if req.PrimaryOrgID != "" {
-		user.PrimaryOrgID = req.PrimaryOrgID
 	}
 
 	if err := s.repo.Update(user); err != nil {

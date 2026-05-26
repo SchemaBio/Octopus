@@ -17,16 +17,15 @@ type UploadProvider string
 
 const (
 	UploadProviderLocal UploadProvider = "local"
-	UploadProviderCOS   UploadProvider = "cos"
 )
 
 type UploadJobStatus string
 
 const (
-	UploadJobStatusPending    UploadJobStatus = "pending"
-	UploadJobStatusUploading  UploadJobStatus = "uploading"
-	UploadJobStatusCompleted  UploadJobStatus = "completed"
-	UploadJobStatusFailed     UploadJobStatus = "failed"
+	UploadJobStatusPending   UploadJobStatus = "pending"
+	UploadJobStatusUploading UploadJobStatus = "uploading"
+	UploadJobStatusCompleted UploadJobStatus = "completed"
+	UploadJobStatusFailed    UploadJobStatus = "failed"
 )
 
 type ReadType string
@@ -78,7 +77,7 @@ type UploadJobCreateRequest struct {
 	SampleID string                 `json:"sample_id"`
 	Name     string                 `json:"name" binding:"required"`
 	FileType UploadFileType         `json:"file_type" binding:"required"`
-	Provider UploadProvider         `json:"provider" binding:"required"`
+	Provider UploadProvider         `json:"provider"`
 	Files    []UploadFileCreateItem `json:"files" binding:"required,min=1,dive"`
 }
 
@@ -102,22 +101,22 @@ type UploadJobResponse struct {
 }
 
 type UploadFileResponse struct {
-	ID          string     `json:"id"`
-	JobID       string     `json:"job_id"`
-	FileName    string     `json:"file_name"`
-	StorageKey  string     `json:"storage_key"`
-	FileSize    int64      `json:"file_size"`
-	ReadType    ReadType   `json:"read_type"`
-	Status      FileStatus `json:"status"`
-	PresignedURL string    `json:"presigned_url,omitempty"`
-	CreatedAt   string     `json:"created_at"`
+	ID           string     `json:"id"`
+	JobID        string     `json:"job_id"`
+	FileName     string     `json:"file_name"`
+	StorageKey   string     `json:"storage_key"`
+	FileSize     int64      `json:"file_size"`
+	ReadType     ReadType   `json:"read_type"`
+	Status       FileStatus `json:"status"`
+	PresignedURL string     `json:"presigned_url,omitempty"`
+	CreatedAt    string     `json:"created_at"`
 }
 
 type UploadJobListQuery struct {
-	Page     int              `form:"page" binding:"min=1"`
-	PageSize int              `form:"page_size" binding:"min=1,max=100"`
-	Status   UploadJobStatus  `form:"status"`
-	FileType UploadFileType   `form:"file_type"`
+	Page     int             `form:"page" binding:"min=1"`
+	PageSize int             `form:"page_size" binding:"min=1,max=100"`
+	Status   UploadJobStatus `form:"status"`
+	FileType UploadFileType  `form:"file_type"`
 }
 
 type UploadJobListResponse struct {

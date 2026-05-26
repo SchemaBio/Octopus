@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -29,11 +30,11 @@ type DatabaseConfig struct {
 }
 
 type TaskConfig struct {
-	OutputDir       string // default output directory (UUID directories parent)
-	TemplateDir     string // WDL templates directory
-	ArchiveDir      string // archive directory for completed results
-	ArchiveCleanup  bool   // delete output directory after archiving
-	MaxConcurrent   int    // max concurrent tasks
+	OutputDir      string // default output directory (UUID directories parent)
+	TemplateDir    string // WDL templates directory
+	ArchiveDir     string // archive directory for completed results
+	ArchiveCleanup bool   // delete output directory after archiving
+	MaxConcurrent  int    // max concurrent tasks
 
 	// Executor configurations
 	DefaultExecutor  string // default executor: local, slurm, lsf
@@ -55,13 +56,13 @@ type ParquetConfig struct {
 }
 
 type JWTConfig struct {
-	Secret                   string        // JWT signing secret
-	Issuer                   string        // JWT issuer
-	ExpireDuration           time.Duration // Access token expiry
-	RefreshDuration          time.Duration // Refresh token expiry
-	CookieDomain             string        // Domain for Set-Cookie (empty = current domain)
-	CookieSecure             bool          // Secure flag for cookies (requires HTTPS)
-	ClientPasswordHashEnabled bool        // Enable SHA-256 client-side password hash compatibility
+	Secret                    string        // JWT signing secret
+	Issuer                    string        // JWT issuer
+	ExpireDuration            time.Duration // Access token expiry
+	RefreshDuration           time.Duration // Refresh token expiry
+	CookieDomain              string        // Domain for Set-Cookie (empty = current domain)
+	CookieSecure              bool          // Secure flag for cookies (requires HTTPS)
+	ClientPasswordHashEnabled bool          // Enable SHA-256 client-side password hash compatibility
 }
 
 type LLMConfig struct {
@@ -72,15 +73,9 @@ type LLMConfig struct {
 }
 
 type StorageConfig struct {
-	Provider  string // "local" or "cos"
+	Provider  string // local only for the open-source Octopus backend
 	LocalDir  string // local upload root directory
-	COSSecretID  string
-	COSSecretKey string
-	COSRegion    string
-	COSBucket    string
-	COSEndpoint  string // e.g. https://bucket.cos.ap-guangzhou.myqcloud.com
-	COSPrefix    string // key prefix inside bucket, e.g. "uploads/"
-	PresignTTL   int    // pre-signed URL TTL in seconds, default 3600
+	MaxSizeMB int    // maximum upload file size in MB, 0 means unlimited
 }
 
 // Load loads configuration from environment and files
@@ -96,11 +91,11 @@ func Load() *Config {
 			DSN:    getEnv("DB_DSN", "host=localhost user=octopus password=octopus dbname=octopus port=5432 sslmode=disable TimeZone=Asia/Shanghai"),
 		},
 		Task: TaskConfig{
-			OutputDir:       getEnv("OUTPUT_DIR", "/mnt/data/output"),
-			TemplateDir:     getEnv("TEMPLATE_DIR", "/home/ubuntu/schema-germline"),
-			ArchiveDir:      getEnv("ARCHIVE_DIR", "/mnt/data/archive"),
-			ArchiveCleanup:  getEnv("ARCHIVE_CLEANUP", "false") == "true",
-			MaxConcurrent:   10,
+			OutputDir:      getEnv("OUTPUT_DIR", "/mnt/data/output"),
+			TemplateDir:    getEnv("TEMPLATE_DIR", "/home/ubuntu/schema-germline"),
+			ArchiveDir:     getEnv("ARCHIVE_DIR", "/mnt/data/archive"),
+			ArchiveCleanup: getEnv("ARCHIVE_CLEANUP", "false") == "true",
+			MaxConcurrent:  10,
 
 			DefaultExecutor:  getEnv("DEFAULT_EXECUTOR", "local"),
 			MiniWDLPath:      getEnv("MINIWDL_PATH", "miniwdl"),
@@ -114,16 +109,16 @@ func Load() *Config {
 		},
 		Parquet: ParquetConfig{
 			Enabled:      getEnv("PARQUET_ENABLED", "true") == "true",
-			OutputDir:    getEnv("PARQUET_DIR", ""), // empty means same as archive
+			OutputDir:    getEnv("PARQUET_DIR", ""),           // empty means same as archive
 			FilePatterns: []string{"*.csv", "*.tsv", "*.txt"}, // default patterns
 		},
 		JWT: JWTConfig{
-			Secret:                   getEnv("JWT_SECRET", "octopus-secret-key-change-in-production"),
-			Issuer:                   getEnv("JWT_ISSUER", "octopus"),
-			ExpireDuration:           parseDuration(getEnv("JWT_EXPIRE", "24h")),
-			RefreshDuration:          parseDuration(getEnv("JWT_REFRESH", "168h")),
-			CookieDomain:             getEnv("JWT_COOKIE_DOMAIN", ""),
-			CookieSecure:             getEnv("JWT_COOKIE_SECURE", "false") == "true",
+			Secret:                    getEnv("JWT_SECRET", "octopus-secret-key-change-in-production"),
+			Issuer:                    getEnv("JWT_ISSUER", "octopus"),
+			ExpireDuration:            parseDuration(getEnv("JWT_EXPIRE", "24h")),
+			RefreshDuration:           parseDuration(getEnv("JWT_REFRESH", "168h")),
+			CookieDomain:              getEnv("JWT_COOKIE_DOMAIN", ""),
+			CookieSecure:              getEnv("JWT_COOKIE_SECURE", "false") == "true",
 			ClientPasswordHashEnabled: getEnv("CLIENT_PASSWORD_HASH_ENABLED", "false") == "true",
 		},
 		LLM: LLMConfig{
@@ -133,15 +128,9 @@ func Load() *Config {
 			Enabled: getEnv("LLM_ENABLED", "false") == "true",
 		},
 		Storage: StorageConfig{
-			Provider:     getEnv("STORAGE_PROVIDER", "local"),
-			LocalDir:     getEnv("STORAGE_LOCAL_DIR", "/mnt/data/uploads"),
-			COSSecretID:  getEnv("COS_SECRET_ID", ""),
-			COSSecretKey: getEnv("COS_SECRET_KEY", ""),
-			COSRegion:    getEnv("COS_REGION", "ap-guangzhou"),
-			COSBucket:    getEnv("COS_BUCKET", ""),
-			COSEndpoint:  getEnv("COS_ENDPOINT", ""),
-			COSPrefix:    getEnv("COS_PREFIX", "uploads/"),
-			PresignTTL:   parseIntEnv("STORAGE_PRESIGN_TTL", 3600),
+			Provider:  normalizeStorageProvider(getEnv("STORAGE_PROVIDER", "local")),
+			LocalDir:  getEnv("STORAGE_LOCAL_DIR", "/mnt/data/uploads"),
+			MaxSizeMB: parseIntEnv("UPLOAD_MAX_SIZE_MB", 0),
 		},
 	}
 }
@@ -182,4 +171,15 @@ func parseIntEnv(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return n
+}
+
+func normalizeStorageProvider(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider == "" {
+		return "local"
+	}
+	if provider != "local" {
+		return "local"
+	}
+	return provider
 }

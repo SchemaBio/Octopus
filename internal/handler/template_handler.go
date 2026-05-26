@@ -17,6 +17,26 @@ func initTemplates() {
 	templateDir = config.GetEnv("TEMPLATE_DIR", "/home/ubuntu/schema-germline")
 }
 
+func safeTemplatePath(name string) (string, bool) {
+	if name == "" || name != filepath.Base(name) || strings.Contains(name, `\`) || name == "." || name == ".." {
+		return "", false
+	}
+	wdlPath := filepath.Join(templateDir, name+".wdl")
+	baseAbs, err := filepath.Abs(templateDir)
+	if err != nil {
+		return "", false
+	}
+	pathAbs, err := filepath.Abs(wdlPath)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(baseAbs, pathAbs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return "", false
+	}
+	return wdlPath, true
+}
+
 // ListTemplates godoc
 // @Summary List available WDL templates
 // @Description Get a list of available WDL workflow templates
@@ -62,7 +82,11 @@ func GetTemplate(c *gin.Context) {
 	initTemplates()
 
 	name := c.Param("name")
-	wdlPath := filepath.Join(templateDir, name+".wdl")
+	wdlPath, ok := safeTemplatePath(name)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template name"})
+		return
+	}
 
 	// Check if file exists
 	if _, err := os.Stat(wdlPath); os.IsNotExist(err) {
@@ -78,8 +102,8 @@ func GetTemplate(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, model.Template{
-		Name: name,
-		Path: wdlPath,
+		Name:        name,
+		Path:        wdlPath,
 		Description: "WDL workflow template",
 		InputFields: parseWDLInputs(string(content)),
 	})

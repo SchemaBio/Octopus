@@ -17,6 +17,18 @@ import (
 func main() {
 	cfg := config.Load()
 
+	if cfg.Server.Mode == "release" {
+		weakSecrets := map[string]bool{
+			"": true,
+			"octopus-secret-key-change-in-production": true,
+			"change-me-to-a-long-random-string":       true,
+		}
+		if weakSecrets[cfg.JWT.Secret] || len(cfg.JWT.Secret) < 32 {
+			fmt.Fprintf(os.Stderr, "FATAL: JWT_SECRET must be a non-default random string of at least 32 characters in release mode\n")
+			os.Exit(1)
+		}
+	}
+
 	fmt.Printf("Initializing database (%s)...\n", cfg.Database.Driver)
 	if err := database.InitDB(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize database: %v\n", err)
@@ -29,12 +41,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	userSvc := service.NewUserService(cfg)
-	adminUser, err := userSvc.CreateDefaultAdmin("admin@schema.bio", "admin123", "Administrator")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to create default admin: %v\n", err)
-	} else {
-		fmt.Printf("Default admin user ready: %s (ID: %d)\n", adminUser.Email, adminUser.ID)
+	if cfg.Server.Mode != "release" || os.Getenv("CREATE_DEFAULT_ADMIN") == "true" {
+		adminEmail := os.Getenv("DEFAULT_ADMIN_EMAIL")
+		if adminEmail == "" {
+			adminEmail = "admin@octopus.local"
+		}
+		adminPassword := os.Getenv("DEFAULT_ADMIN_PASSWORD")
+		if adminPassword == "" {
+			adminPassword = "admin123"
+		}
+		if cfg.Server.Mode == "release" && adminPassword == "admin123" {
+			fmt.Fprintf(os.Stderr, "FATAL: DEFAULT_ADMIN_PASSWORD must be set to a strong value when CREATE_DEFAULT_ADMIN=true in release mode\n")
+			os.Exit(1)
+		}
+
+		userSvc := service.NewUserService(cfg)
+		adminUser, err := userSvc.CreateDefaultAdmin(adminEmail, adminPassword, "Administrator")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to create default admin: %v\n", err)
+		} else {
+			fmt.Printf("Default admin user ready: %s (ID: %d)\n", adminUser.Email, adminUser.ID)
+		}
 	}
 
 	// Start Sepiida status sync for running tasks (every 30s)

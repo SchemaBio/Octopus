@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/bioinfo/schema-platform/internal/config"
@@ -91,9 +92,15 @@ func (h *UploadHandler) ListJobs(c *gin.Context) {
 }
 
 func (h *UploadHandler) GetJob(c *gin.Context) {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+
 	uuid := c.Param("uuid")
 
-	job, files, err := h.svc.GetJob(c.Request.Context(), uuid)
+	job, files, err := h.svc.GetJob(c.Request.Context(), userID, uuid)
 	if err != nil {
 		ErrorNotFound(c, "Upload job not found")
 		return
@@ -109,9 +116,15 @@ func (h *UploadHandler) GetJob(c *gin.Context) {
 }
 
 func (h *UploadHandler) DeleteJob(c *gin.Context) {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+
 	uuid := c.Param("uuid")
 
-	if err := h.svc.DeleteJob(c.Request.Context(), uuid); err != nil {
+	if err := h.svc.DeleteJob(c.Request.Context(), userID, uuid); err != nil {
 		ErrorNotFound(c, err.Error())
 		return
 	}
@@ -127,6 +140,9 @@ func (h *UploadHandler) UploadLocal(c *gin.Context) {
 	}
 
 	fileUUID := c.Param("file_uuid")
+	if h.svc.Config().Storage.MaxSizeMB > 0 {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, int64(h.svc.Config().Storage.MaxSizeMB)*1024*1024)
+	}
 
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -140,6 +156,10 @@ func (h *UploadHandler) UploadLocal(c *gin.Context) {
 		return
 	}
 	defer f.Close()
+	if h.svc.Config().Storage.MaxSizeMB > 0 && fileHeader.Size > int64(h.svc.Config().Storage.MaxSizeMB)*1024*1024 {
+		ErrorBadRequest(c, fmt.Sprintf("file exceeds maximum size of %d MB", h.svc.Config().Storage.MaxSizeMB))
+		return
+	}
 
 	uploadFile, err := h.svc.SaveLocalFile(
 		c.Request.Context(),
@@ -156,32 +176,20 @@ func (h *UploadHandler) UploadLocal(c *gin.Context) {
 	SuccessCreated(c, model.UploadFileToResponse(uploadFile))
 }
 
-func (h *UploadHandler) CompleteCOSFile(c *gin.Context) {
-	jobUUID := c.Param("uuid")
-	fileUUID := c.Param("file_uuid")
-
-	var req model.UploadFileCompleteRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		req.FileSize = 0
-	}
-
-	file, err := h.svc.CompleteCOSFile(c.Request.Context(), jobUUID, fileUUID, req.FileSize)
-	if err != nil {
-		ErrorInternal(c, err.Error())
-		return
-	}
-
-	Success(c, model.UploadFileToResponse(file))
-}
-
 func (h *UploadHandler) GetDownloadURL(c *gin.Context) {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+
 	fileUUID := c.Param("file_uuid")
 
-	url, err := h.svc.GetFilePresignedGetURL(c.Request.Context(), fileUUID)
+	path, err := h.svc.GetLocalFilePath(c.Request.Context(), userID, fileUUID)
 	if err != nil {
 		ErrorInternal(c, err.Error())
 		return
 	}
 
-	Success(c, gin.H{"url": url})
+	Success(c, gin.H{"path": path})
 }

@@ -15,6 +15,7 @@ func New(cfg *config.Config) *gin.Engine {
 	r.Use(middleware.Logger())
 	r.Use(middleware.Recovery())
 	r.Use(middleware.CORS(&cfg.Server))
+	r.Use(middleware.CSRF())
 
 	// Health check (public)
 	r.GET("/health", handler.HealthCheck)
@@ -49,15 +50,6 @@ func New(cfg *config.Config) *gin.Engine {
 			users.POST("", userHandler.CreateUser)
 			users.PUT("/:id", userHandler.UpdateUser)
 			users.DELETE("/:id", userHandler.DeleteUser)
-		}
-
-		// ========== Organization management (protected) ==========
-		orgHandler := handler.NewOrgHandler(cfg)
-		orgs := v1.Group("/orgs")
-		orgs.Use(middleware.JWTAuth(cfg))
-		{
-			orgs.GET("", orgHandler.ListOrganizations)
-			orgs.POST("/switch", orgHandler.SwitchOrganization)
 		}
 
 		// ========== WDL templates (public read) ==========
@@ -134,7 +126,7 @@ func New(cfg *config.Config) *gin.Engine {
 			results.GET("/mei", resultHandler.ListMEIs)
 			results.GET("/mt", resultHandler.ListMTVariants)
 			results.GET("/upd", resultHandler.ListUPDRegions)
-				results.GET("/roh", resultHandler.ListROHRegions)
+			results.GET("/roh", resultHandler.ListROHRegions)
 			results.PUT("/:type/:vid/review", resultHandler.ReviewVariant)
 			results.PUT("/:type/:vid/report", resultHandler.ReportVariant)
 		}
@@ -151,7 +143,7 @@ func New(cfg *config.Config) *gin.Engine {
 			archive.PUT("/:uuid/status", archiveHandler.UpdateStatus)
 			archive.GET("/:uuid/parquet", archiveHandler.GetParquet)
 			archive.GET("/:uuid/data", archiveHandler.GetCombinedData)
-				archive.POST("/:uuid/import", archiveHandler.ImportToDatabase)
+			archive.POST("/:uuid/import", archiveHandler.ImportToDatabase)
 		}
 
 		// ========== Sample management (protected) ==========
@@ -262,7 +254,6 @@ func New(cfg *config.Config) *gin.Engine {
 			uploads.GET("/jobs/:uuid", uploadHandler.GetJob)
 			uploads.DELETE("/jobs/:uuid", uploadHandler.DeleteJob)
 			uploads.POST("/local/:file_uuid", uploadHandler.UploadLocal)
-			uploads.POST("/jobs/:uuid/files/:file_uuid/complete", uploadHandler.CompleteCOSFile)
 			uploads.GET("/files/:file_uuid/download", uploadHandler.GetDownloadURL)
 		}
 	}

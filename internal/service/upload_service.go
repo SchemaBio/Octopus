@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/model"
@@ -14,29 +16,38 @@ import (
 )
 
 type UploadService struct {
-	cfg       *config.Config
-	jobRepo   *repository.UploadJobRepository
-	fileRepo  *repository.UploadFileRepository
-	userRepo  *repository.UserRepository
-	cosClient *COSClient
+	cfg      *config.Config
+	jobRepo  *repository.UploadJobRepository
+	fileRepo *repository.UploadFileRepository
+	userRepo *repository.UserRepository
+}
+
+var safeUploadFilename = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+=-]{0,254}$`)
+
+func validateUploadFilename(filename string) error {
+	if filename == "" {
+		return fmt.Errorf("filename is required")
+	}
+	if filename != filepath.Base(filename) || strings.Contains(filename, `\`) {
+		return fmt.Errorf("filename must not contain path separators")
+	}
+	if filename == "." || filename == ".." || !safeUploadFilename.MatchString(filename) {
+		return fmt.Errorf("filename contains unsupported characters")
+	}
+	return nil
 }
 
 func NewUploadService(cfg *config.Config) *UploadService {
-	svc := &UploadService{
+	return &UploadService{
 		cfg:      cfg,
 		jobRepo:  repository.NewUploadJobRepository(),
 		fileRepo: repository.NewUploadFileRepository(),
 		userRepo: repository.NewUserRepository(),
 	}
+}
 
-	if cfg.Storage.Provider == "cos" && cfg.Storage.COSSecretID != "" {
-		client, err := NewCOSClient(&cfg.Storage)
-		if err == nil {
-			svc.cosClient = client
-		}
-	}
-
-	return svc
+func (s *UploadService) Config() *config.Config {
+	return s.cfg
 }
 
 func (s *UploadService) getUserStorageFolder(ctx context.Context, userID uint) (string, error) {
@@ -56,6 +67,22 @@ func (s *UploadService) getUserStorageFolder(ctx context.Context, userID uint) (
 }
 
 func (s *UploadService) CreateJob(ctx context.Context, userID uint, req *model.UploadJobCreateRequest) (*model.UploadJob, []*model.UploadFile, []string, error) {
+	if len(req.Files) == 0 {
+		return nil, nil, nil, fmt.Errorf("at least one file is required")
+	}
+
+	for _, f := range req.Files {
+		if err := validateUploadFilename(f.FileName); err != nil {
+			return nil, nil, nil, err
+		}
+		if f.FileSize <= 0 {
+			return nil, nil, nil, fmt.Errorf("file size must be positive")
+		}
+		if s.cfg.Storage.MaxSizeMB > 0 && f.FileSize > int64(s.cfg.Storage.MaxSizeMB)*1024*1024 {
+			return nil, nil, nil, fmt.Errorf("file %s exceeds maximum size of %d MB", f.FileName, s.cfg.Storage.MaxSizeMB)
+		}
+	}
+
 	jobUUID := uuid.New().String()
 	job := &model.UploadJob{
 		UUID:     jobUUID,
@@ -63,7 +90,7 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, req *model.U
 		SampleID: req.SampleID,
 		Name:     req.Name,
 		FileType: req.FileType,
-		Provider: req.Provider,
+		Provider: model.UploadProviderLocal,
 		Status:   model.UploadJobStatusPending,
 	}
 
@@ -100,22 +127,14 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, req *model.U
 
 		files = append(files, uploadFile)
 
-		if req.Provider == model.UploadProviderCOS && s.cosClient != nil {
-			presignedURL, err := s.cosClient.GeneratePresignedPutURL(ctx, storageKey)
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to generate presigned URL for %s: %w", f.FileName, err)
-			}
-			presignedURLs = append(presignedURLs, presignedURL)
-		} else {
-			presignedURLs = append(presignedURLs, "")
-		}
+		presignedURLs = append(presignedURLs, "")
 	}
 
 	return job, files, presignedURLs, nil
 }
 
 func (s *UploadService) buildStorageKey(storageFolder, jobUUID, fileName string) string {
-	return s.cfg.Storage.COSPrefix + storageFolder + "/" + jobUUID + "/" + fileName
+	return filepath.Join(storageFolder, jobUUID, fileName)
 }
 
 func (s *UploadService) SaveLocalFile(ctx context.Context, userID uint, fileUUID string, reader io.Reader, fileSize int64) (*model.UploadFile, error) {
@@ -132,6 +151,12 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, userID uint, fileUUID
 	job, err := s.jobRepo.FindByUUID(existingFile.JobUUID)
 	if err != nil {
 		return nil, fmt.Errorf("upload job not found: %w", err)
+	}
+	if job.UserID != userID {
+		return nil, fmt.Errorf("upload file does not belong to current user")
+	}
+	if err := validateUploadFilename(existingFile.FileName); err != nil {
+		return nil, err
 	}
 
 	dir := filepath.Join(s.cfg.Storage.LocalDir, storageFolder, job.UUID)
@@ -150,6 +175,10 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, userID uint, fileUUID
 	if err != nil {
 		os.Remove(filePath)
 		return nil, fmt.Errorf("failed to write file: %w", err)
+	}
+	if s.cfg.Storage.MaxSizeMB > 0 && written > int64(s.cfg.Storage.MaxSizeMB)*1024*1024 {
+		os.Remove(filePath)
+		return nil, fmt.Errorf("file exceeds maximum size of %d MB", s.cfg.Storage.MaxSizeMB)
 	}
 
 	existingFile.StorageKey = filePath
@@ -182,52 +211,13 @@ func (s *UploadService) syncJobStatus(job *model.UploadJob) {
 	s.jobRepo.Update(job)
 }
 
-func (s *UploadService) CompleteCOSFile(ctx context.Context, jobUUID, fileUUID string, fileSize int64) (*model.UploadFile, error) {
-	file, err := s.fileRepo.FindByUUID(fileUUID)
-	if err != nil {
-		return nil, fmt.Errorf("upload file not found: %w", err)
-	}
-
-	if file.JobUUID != jobUUID {
-		return nil, fmt.Errorf("file does not belong to the specified job")
-	}
-
-	exists, err := s.cosClient.ObjectExists(ctx, file.StorageKey)
-	if err != nil || !exists {
-		return nil, fmt.Errorf("file not found in COS storage")
-	}
-
-	file.FileSize = fileSize
-	file.Status = model.FileStatusCompleted
-	if err := s.fileRepo.Update(file); err != nil {
-		return nil, fmt.Errorf("failed to update file record: %w", err)
-	}
-
-	job, err := s.jobRepo.FindByUUID(jobUUID)
-	if err == nil {
-		allFiles, _ := s.fileRepo.FindByJobID(job.ID)
-		allComplete := true
-		for _, f := range allFiles {
-			if f.Status != model.FileStatusCompleted {
-				allComplete = false
-				break
-			}
-		}
-		if allComplete {
-			job.Status = model.UploadJobStatusCompleted
-		} else {
-			job.Status = model.UploadJobStatusUploading
-		}
-		s.jobRepo.Update(job)
-	}
-
-	return file, nil
-}
-
-func (s *UploadService) GetJob(ctx context.Context, uuid string) (*model.UploadJob, []model.UploadFile, error) {
+func (s *UploadService) GetJob(ctx context.Context, userID uint, uuid string) (*model.UploadJob, []model.UploadFile, error) {
 	job, err := s.jobRepo.FindByUUID(uuid)
 	if err != nil {
 		return nil, nil, fmt.Errorf("upload job not found: %w", err)
+	}
+	if job.UserID != userID {
+		return nil, nil, fmt.Errorf("upload job not found")
 	}
 
 	files, err := s.fileRepo.FindByJobID(job.ID)
@@ -247,10 +237,13 @@ func (s *UploadService) ListJobs(ctx context.Context, userID uint, query *model.
 	return jobs, total, nil
 }
 
-func (s *UploadService) DeleteJob(ctx context.Context, uuid string) error {
+func (s *UploadService) DeleteJob(ctx context.Context, userID uint, uuid string) error {
 	job, err := s.jobRepo.FindByUUID(uuid)
 	if err != nil {
 		return fmt.Errorf("upload job not found: %w", err)
+	}
+	if job.UserID != userID {
+		return fmt.Errorf("upload job not found")
 	}
 
 	files, err := s.fileRepo.FindByJobID(job.ID)
@@ -259,11 +252,7 @@ func (s *UploadService) DeleteJob(ctx context.Context, uuid string) error {
 	}
 
 	for _, file := range files {
-		if job.Provider == model.UploadProviderLocal {
-			os.Remove(file.StorageKey)
-		} else if job.Provider == model.UploadProviderCOS && s.cosClient != nil {
-			s.cosClient.DeleteObject(ctx, file.StorageKey)
-		}
+		os.Remove(file.StorageKey)
 	}
 
 	if err := s.fileRepo.DeleteByJobID(job.ID); err != nil {
@@ -277,15 +266,18 @@ func (s *UploadService) GetJobFiles(ctx context.Context, jobID uint) ([]model.Up
 	return s.fileRepo.FindByJobID(jobID)
 }
 
-func (s *UploadService) GetFilePresignedGetURL(ctx context.Context, fileUUID string) (string, error) {
-	if s.cosClient == nil {
-		return "", fmt.Errorf("COS client not configured")
-	}
-
+func (s *UploadService) GetLocalFilePath(ctx context.Context, userID uint, fileUUID string) (string, error) {
 	file, err := s.fileRepo.FindByUUID(fileUUID)
 	if err != nil {
 		return "", fmt.Errorf("upload file not found: %w", err)
 	}
+	job, err := s.jobRepo.FindByUUID(file.JobUUID)
+	if err != nil || job.UserID != userID {
+		return "", fmt.Errorf("upload file not found")
+	}
+	if file.Status != model.FileStatusCompleted {
+		return "", fmt.Errorf("upload file is not completed")
+	}
 
-	return s.cosClient.GeneratePresignedGetURL(ctx, file.StorageKey)
+	return file.StorageKey, nil
 }

@@ -45,9 +45,6 @@ func AutoMigrate() error {
 		&model.Task{},
 		&model.Sample{},
 		&model.Project{},
-		// Organization models
-		&model.Organization{},
-		&model.UserOrganization{},
 		// Pedigree models
 		&model.Pedigree{},
 		&model.PedigreeMember{},
