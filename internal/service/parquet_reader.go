@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 )
+
+const MaxParquetPageLimit = 1000
 
 // ParquetPageResult holds a page of rows from a parquet file
 type ParquetPageResult struct {
@@ -63,7 +66,7 @@ func (pr *ParquetReader) ReadPage(filePath string, offset, limit int64) (*Parque
 	if offset >= totalRows {
 		offset = 0
 	}
-	if limit <= 0 || limit > 10000 {
+	if limit <= 0 || limit > MaxParquetPageLimit {
 		limit = 100
 	}
 	if offset+limit > totalRows {
@@ -204,13 +207,15 @@ func (pr *ParquetReader) ListParquetTables(outputDir string) ([]ParquetTableInfo
 	tables := make([]ParquetTableInfo, 0, len(files))
 	for _, f := range files {
 		tableName := strings.TrimSuffix(filepath.Base(f), ".parquet")
+		if !IsSafeParquetTableName(tableName) {
+			continue
+		}
 		totalRows, err := pr.getRowCount(f)
 		if err != nil {
 			totalRows = -1
 		}
 		tables = append(tables, ParquetTableInfo{
 			Name:      tableName,
-			Path:      f,
 			TotalRows: totalRows,
 		})
 	}
@@ -238,6 +243,20 @@ func (pr *ParquetReader) getRowCount(filePath string) (int64, error) {
 // ParquetTableInfo describes a parquet table available in a task directory
 type ParquetTableInfo struct {
 	Name      string `json:"name"`
-	Path      string `json:"path"`
 	TotalRows int64  `json:"total_rows"`
+}
+
+// safeTableNameRe matches valid table names (alphanumeric, underscore, hyphen, dot).
+var safeTableNameRe = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+// IsSafeParquetTableName validates that a table name is safe for use in queries.
+// Rejects empty names, path traversal attempts, and names with special characters.
+func IsSafeParquetTableName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		return false
+	}
+	return safeTableNameRe.MatchString(name)
 }

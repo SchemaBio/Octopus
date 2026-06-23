@@ -39,6 +39,9 @@ func AutoMigrate() error {
 		return fmt.Errorf("database not initialized")
 	}
 
+	// Initialize token_version for existing users (NULL or 0 → 1)
+	DB.Exec("UPDATE users SET token_version = 1 WHERE token_version IS NULL OR token_version = 0")
+
 	err := DB.AutoMigrate(
 		// Core models
 		&model.User{},

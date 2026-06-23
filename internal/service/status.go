@@ -52,11 +52,16 @@ func (s *StatusManager) GetStatusFilePath(uuid string) string {
 	return filepath.Join(archiveDir, "status.json")
 }
 
-// GetStatus retrieves status data for a UUID
+// GetStatus retrieves status data for a UUID (public, acquires read lock)
 func (s *StatusManager) GetStatus(uuid string) (*StatusData, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	return s.readStatus(uuid)
+}
+
+// readStatus reads status data without acquiring the lock (private, for use by locked methods)
+func (s *StatusManager) readStatus(uuid string) (*StatusData, error) {
 	statusPath := s.GetStatusFilePath(uuid)
 
 	// If status file doesn't exist, return empty structure
@@ -85,8 +90,8 @@ func (s *StatusManager) UpdateStatus(uuid string, updates []StatusUpdate) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Load existing status or create new
-	status, err := s.GetStatus(uuid)
+	// Load existing status or create new (use readStatus to avoid deadlock)
+	status, err := s.readStatus(uuid)
 	if err != nil {
 		return err
 	}

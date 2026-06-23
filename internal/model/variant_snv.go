@@ -60,7 +60,7 @@ func (SNVIndel) TableName() string {
 
 // SNVIndelListQuery query parameters
 type SNVIndelListQuery struct {
-	TaskID         string `form:"taskId" binding:"required"`
+	TaskID         string `form:"taskId"`
 	Search         string `form:"search"`
 	Gene           string `form:"gene"`
 	Classification string `form:"classification"`

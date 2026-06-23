@@ -40,16 +40,22 @@ func New(cfg *config.Config) *gin.Engine {
 			authProtected.GET("/me", authHandler.Me)
 		}
 
-		// ========== User management (protected) ==========
+		// ========== User management ==========
 		userHandler := handler.NewUserHandler(cfg)
 		users := v1.Group("/users")
 		users.Use(middleware.JWTAuth(cfg))
 		{
 			users.GET("", userHandler.ListUsers)
 			users.GET("/:id", userHandler.GetUser)
-			users.POST("", userHandler.CreateUser)
-			users.PUT("/:id", userHandler.UpdateUser)
-			users.DELETE("/:id", userHandler.DeleteUser)
+		}
+		// Admin-only user management
+		usersAdmin := v1.Group("/users")
+		usersAdmin.Use(middleware.JWTAuth(cfg))
+		usersAdmin.Use(middleware.RequireAdmin())
+		{
+			usersAdmin.POST("", userHandler.CreateUser)
+			usersAdmin.PUT("/:id", userHandler.UpdateUser)
+			usersAdmin.DELETE("/:id", userHandler.DeleteUser)
 		}
 
 		// ========== WDL templates (public read) ==========
@@ -57,15 +63,22 @@ func New(cfg *config.Config) *gin.Engine {
 		{
 			templates.GET("", handler.ListTemplates)
 			templates.GET("/:name", handler.GetTemplate)
+			templates.GET("/:name/inputs", handler.GetTemplateInputs)
 		}
 
-		// ========== Sepiida integration (protected) ==========
+		// ========== Sepiida integration ==========
 		sepiidaHandler := handler.NewSepiidaHandler(cfg)
 		sepiida := v1.Group("/sepiida")
 		sepiida.Use(middleware.JWTAuth(cfg))
 		{
 			sepiida.GET("/health", sepiidaHandler.HealthCheck)
-			sepiida.GET("/workflows", sepiidaHandler.ListWorkflows)
+		}
+		// Admin-only sepiida workflows
+		sepiidaAdmin := v1.Group("/sepiida")
+		sepiidaAdmin.Use(middleware.JWTAuth(cfg))
+		sepiidaAdmin.Use(middleware.RequireAdmin())
+		{
+			sepiidaAdmin.GET("/workflows", sepiidaHandler.ListWorkflows)
 		}
 
 		// ========== Task management (protected) ==========
@@ -89,11 +102,11 @@ func New(cfg *config.Config) *gin.Engine {
 			tasks.POST("/:id/retry", taskHandler.RetryTask)
 			tasks.POST("/:id/ai-evaluate", aiHandler.Evaluate)
 
-			// AI proxy for frontend page-agent (forwards LLM calls)
+			// AI proxy for frontend page-agent (forwards LLM calls, POST only)
 			aiProxy := v1.Group("/ai/proxy")
 			aiProxy.Use(middleware.JWTAuth(cfg))
 			{
-				aiProxy.Any("/*path", aiHandler.ProxyAgent)
+				aiProxy.POST("/*path", aiHandler.ProxyAgent)
 			}
 			// Export
 			tasks.GET("/:id/export/excel", exportHandler.ExportExcel)
@@ -105,12 +118,18 @@ func New(cfg *config.Config) *gin.Engine {
 			tasks.POST("/:id/reports", reportHandler.CreateReport)
 		}
 
-		// ========== Report templates (protected) ==========
+		// ========== Report templates ==========
 		reportTemplates := v1.Group("/report-templates")
 		reportTemplates.Use(middleware.JWTAuth(cfg))
 		{
 			reportTemplates.GET("", reportHandler.ListTemplates)
-			reportTemplates.POST("", reportHandler.CreateTemplate)
+		}
+		// Admin-only report template management
+		reportTemplatesAdmin := v1.Group("/report-templates")
+		reportTemplatesAdmin.Use(middleware.JWTAuth(cfg))
+		reportTemplatesAdmin.Use(middleware.RequireAdmin())
+		{
+			reportTemplatesAdmin.POST("", reportHandler.CreateTemplate)
 		}
 
 		// ========== Result management (protected) ==========

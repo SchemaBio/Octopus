@@ -46,9 +46,8 @@ func (h *ExportHandler) ExportMTVCF(c *gin.Context) {
 func (h *ExportHandler) serveFile(c *gin.Context, fileType, contentType string) {
 	taskID := c.Param("id")
 
-	task, err := h.taskRepo.FindByUUID(taskID)
-	if err != nil {
-		ErrorNotFound(c, "Task not found")
+	task, ok := requireTaskAccess(c, h.taskRepo, taskID)
+	if !ok {
 		return
 	}
 

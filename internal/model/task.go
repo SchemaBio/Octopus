@@ -138,10 +138,14 @@ type TaskProgressResponse struct {
 
 // Template represents a WDL template
 type Template struct {
-	Name        string   `json:"name"`
-	Path        string   `json:"path"`
-	Description string   `json:"description"`
-	InputFields []string `json:"input_fields,omitempty"`
+	Name          string                 `json:"name"`
+	ShortName     string                 `json:"shortName,omitempty"`
+	Domain        string                 `json:"domain,omitempty"`
+	Workflow      string                 `json:"workflow,omitempty"`
+	Path          string                 `json:"path"`
+	Description   string                 `json:"description"`
+	InputFields   []string               `json:"input_fields,omitempty"`
+	DefaultInputs map[string]interface{} `json:"default_inputs,omitempty"`
 }
 
 // ToResponse converts Task to TaskResponse

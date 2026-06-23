@@ -66,10 +66,12 @@ type JWTConfig struct {
 }
 
 type LLMConfig struct {
-	BaseURL string // OpenAI-compatible API base URL (e.g. https://api.openai.com/v1)
-	APIKey  string // API key
-	Model   string // Model name (e.g. gpt-4o)
-	Enabled bool   // Enable AI evaluation
+	BaseURL         string   // OpenAI-compatible API base URL (e.g. https://api.openai.com/v1)
+	APIKey          string   // API key
+	Model           string   // Model name (e.g. gpt-4o)
+	Enabled         bool     // Enable AI evaluation
+	AllowedModels   []string // AI proxy allowed model list, comma-separated, "*" means no restriction
+	ProxyMaxBodyBytes int64  // AI proxy max request body size in bytes
 }
 
 type StorageConfig struct {
@@ -122,10 +124,12 @@ func Load() *Config {
 			ClientPasswordHashEnabled: getEnv("CLIENT_PASSWORD_HASH_ENABLED", "false") == "true",
 		},
 		LLM: LLMConfig{
-			BaseURL: getEnv("LLM_BASE_URL", ""),
-			APIKey:  getEnv("LLM_API_KEY", ""),
-			Model:   getEnv("LLM_MODEL", "gpt-4o"),
-			Enabled: getEnv("LLM_ENABLED", "false") == "true",
+			BaseURL:           getEnv("LLM_BASE_URL", ""),
+			APIKey:            getEnv("LLM_API_KEY", ""),
+			Model:             getEnv("LLM_MODEL", "gpt-4o"),
+			Enabled:           getEnv("LLM_ENABLED", "false") == "true",
+			AllowedModels:     loadAllowedModels(getEnv("LLM_MODEL", "gpt-4o")),
+			ProxyMaxBodyBytes: int64(parseIntEnv("LLM_PROXY_MAX_BODY_MB", 2)) << 20,
 		},
 		Storage: StorageConfig{
 			Provider:  normalizeStorageProvider(getEnv("STORAGE_PROVIDER", "local")),
@@ -182,4 +186,73 @@ func normalizeStorageProvider(provider string) string {
 		return "local"
 	}
 	return provider
+}
+
+// splitComma splits a comma-separated string, trimming whitespace and filtering empty values.
+func splitComma(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// loadAllowedModels returns the allowed models list for AI proxy.
+// Defaults to []string{model} (only the configured model).
+func loadAllowedModels(model string) []string {
+	env := os.Getenv("LLM_ALLOWED_MODELS")
+	if env == "" {
+		return []string{model}
+	}
+	return splitComma(env)
+}
+
+// getEnvFloat gets a float64 environment variable with default value.
+func getEnvFloat(key string, defaultValue float64) float64 {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultValue
+	}
+	f, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return defaultValue
+	}
+	return f
+}
+
+// getEnvOrFile reads a secret from env var first, falling back to a file path.
+// This supports Docker-style secrets mounted as files.
+func getEnvOrFile(envKey, defaultValue string) string {
+	if value := os.Getenv(envKey); value != "" {
+		return value
+	}
+	filePath := os.Getenv(envKey + "_FILE")
+	if filePath != "" {
+		data, err := os.ReadFile(filePath)
+		if err == nil {
+			// Strip comment lines and trim whitespace
+			lines := strings.Split(string(data), "\n")
+			var result []string
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line != "" && !strings.HasPrefix(line, "#") {
+					result = append(result, line)
+				}
+			}
+			if len(result) > 0 {
+				return strings.Join(result, "\n")
+			}
+		}
+	}
+	return defaultValue
 }

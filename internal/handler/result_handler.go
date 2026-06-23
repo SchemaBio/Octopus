@@ -4,17 +4,20 @@ import (
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/middleware"
 	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/bioinfo/schema-platform/internal/repository"
 	"github.com/bioinfo/schema-platform/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
 type ResultHandler struct {
-	svc *service.ResultService
+	svc      *service.ResultService
+	taskRepo *repository.TaskRepository
 }
 
 func NewResultHandler(cfg *config.Config) *ResultHandler {
 	return &ResultHandler{
-		svc: service.NewResultService(cfg),
+		svc:      service.NewResultService(cfg),
+		taskRepo: repository.NewTaskRepository(),
 	}
 }
 
@@ -189,12 +192,15 @@ func (h *ResultHandler) ReviewVariant(c *gin.Context) {
 	variantType := c.Param("type")
 	vid := c.Param("vid")
 
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
+
 	_, _, email, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
-	_ = taskID
 
 	if err := h.svc.ReviewVariant(c.Request.Context(), variantType, vid, email); err != nil {
 		ErrorBadRequest(c, err.Error())
@@ -210,12 +216,15 @@ func (h *ResultHandler) ReportVariant(c *gin.Context) {
 	variantType := c.Param("type")
 	vid := c.Param("vid")
 
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
+
 	_, _, email, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
-	_ = taskID
 
 	if err := h.svc.ReportVariant(c.Request.Context(), variantType, vid, email); err != nil {
 		ErrorBadRequest(c, err.Error())

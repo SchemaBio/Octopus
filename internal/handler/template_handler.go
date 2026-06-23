@@ -8,6 +8,7 @@ import (
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/bioinfo/schema-platform/internal/workflow"
 	"github.com/gin-gonic/gin"
 )
 
@@ -39,7 +40,7 @@ func safeTemplatePath(name string) (string, bool) {
 
 // ListTemplates godoc
 // @Summary List available WDL templates
-// @Description Get a list of available WDL workflow templates
+// @Description Get a list of available WDL workflow templates (from catalog and filesystem)
 // @Tags templates
 // @Produce json
 // @Success 200 {array} model.Template
@@ -49,20 +50,26 @@ func ListTemplates(c *gin.Context) {
 
 	var templates []model.Template
 
-	// Read WDL files from template directory
-	files, err := os.ReadDir(templateDir)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read template directory"})
-		return
+	// Add catalog definitions
+	for _, def := range workflow.ListDefinitions() {
+		templates = append(templates, workflow.ToTemplate(templateDir, def, false))
 	}
 
-	for _, file := range files {
-		if !file.IsDir() && strings.HasSuffix(file.Name(), ".wdl") {
-			name := strings.TrimSuffix(file.Name(), ".wdl")
-			templates = append(templates, model.Template{
-				Name: name,
-				Path: filepath.Join(templateDir, file.Name()),
-			})
+	// Add filesystem WDL files not already in catalog
+	files, err := os.ReadDir(templateDir)
+	if err == nil {
+		for _, file := range files {
+			if !file.IsDir() && strings.HasSuffix(file.Name(), ".wdl") {
+				name := strings.TrimSuffix(file.Name(), ".wdl")
+				// Skip if already in catalog
+				if workflow.IsSupported(name) {
+					continue
+				}
+				templates = append(templates, model.Template{
+					Name: name,
+					Path: filepath.Join(templateDir, file.Name()),
+				})
+			}
 		}
 	}
 
@@ -82,6 +89,14 @@ func GetTemplate(c *gin.Context) {
 	initTemplates()
 
 	name := c.Param("name")
+
+	// Check catalog first
+	if def, ok := workflow.GetDefinition(name); ok {
+		c.JSON(http.StatusOK, workflow.ToTemplate(templateDir, def, false))
+		return
+	}
+
+	// Fall back to filesystem
 	wdlPath, ok := safeTemplatePath(name)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template name"})
@@ -107,6 +122,32 @@ func GetTemplate(c *gin.Context) {
 		Description: "WDL workflow template",
 		InputFields: parseWDLInputs(string(content)),
 	})
+}
+
+// GetTemplateInputs godoc
+// @Summary Get template default inputs
+// @Description Get default input values for a specific template
+// @Tags templates
+// @Produce json
+// @Param name path string true "Template name"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Router /api/v1/templates/{name}/inputs [get]
+func GetTemplateInputs(c *gin.Context) {
+	initTemplates()
+
+	name := c.Param("name")
+
+	// Check catalog
+	if def, ok := workflow.GetDefinition(name); ok {
+		c.JSON(http.StatusOK, gin.H{
+			"name":   def.Name,
+			"inputs": workflow.CloneInputs(def.Inputs),
+		})
+		return
+	}
+
+	c.JSON(http.StatusNotFound, gin.H{"error": "template not found or has no default inputs"})
 }
 
 // parseWDLInputs extracts input field names from WDL content

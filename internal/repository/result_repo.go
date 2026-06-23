@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"fmt"
+
 	"github.com/bioinfo/schema-platform/internal/database"
 	"github.com/bioinfo/schema-platform/internal/model"
 	"gorm.io/gorm"
@@ -474,5 +476,43 @@ func (r *ResultRepository) UpdateROHRegionReview(id string, reviewed bool, revie
 func (r *ResultRepository) UpdateROHRegionReport(id string, reported bool, reporter string) error {
 	return r.db.Model(&model.ROHRegion{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"reported": reported, "reported_by": reporter,
+	}).Error
+}
+
+// ========== Generic variant operations ==========
+
+// variantModel maps variant type string to its GORM model for generic operations.
+var variantModel = map[string]interface{}{
+	"snv-indel":   &model.SNVIndel{},
+	"cnv-segment": &model.CNVSegment{},
+	"cnv-exon":    &model.CNVExon{},
+	"str":         &model.STR{},
+	"mei":         &model.MEIVariant{},
+	"mt":          &model.MitochondrialVariant{},
+	"upd":         &model.UPDRegion{},
+	"roh":         &model.ROHRegion{},
+}
+
+// UpdateVariantReview generically updates the review status of any variant type.
+func (r *ResultRepository) UpdateVariantReview(variantType, id string, reviewed bool, reviewer string) error {
+	m, ok := variantModel[variantType]
+	if !ok {
+		return fmt.Errorf("unknown variant type: %s", variantType)
+	}
+	return r.db.Model(m).Where("id = ?", id).Updates(map[string]interface{}{
+		"reviewed":    reviewed,
+		"reviewed_by": reviewer,
+	}).Error
+}
+
+// UpdateVariantReport generically updates the report status of any variant type.
+func (r *ResultRepository) UpdateVariantReport(variantType, id string, reported bool, reporter string) error {
+	m, ok := variantModel[variantType]
+	if !ok {
+		return fmt.Errorf("unknown variant type: %s", variantType)
+	}
+	return r.db.Model(m).Where("id = ?", id).Updates(map[string]interface{}{
+		"reported":    reported,
+		"reported_by": reporter,
 	}).Error
 }

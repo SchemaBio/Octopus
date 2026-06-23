@@ -21,6 +21,11 @@ type JWTService struct {
 	cfg *config.Config
 }
 
+const (
+	TokenTypeAccess  = "access"
+	TokenTypeRefresh = "refresh"
+)
+
 // NewJWTService creates a new JWT service
 func NewJWTService(cfg *config.Config) *JWTService {
 	return &JWTService{cfg: cfg}
@@ -28,10 +33,20 @@ func NewJWTService(cfg *config.Config) *JWTService {
 
 // Claims represents JWT claims
 type Claims struct {
-	UserID uint   `json:"user_id"`
-	Email  string `json:"email"`
-	Role   string `json:"role"`
+	UserID       uint   `json:"user_id"`
+	Email        string `json:"email"`
+	Role         string `json:"role"`
+	Type         string `json:"typ"`
+	TokenVersion int    `json:"token_version"`
 	jwt.RegisteredClaims
+}
+
+// EffectiveTokenVersion normalizes legacy zero values to the first valid version.
+func EffectiveTokenVersion(version int) int {
+	if version <= 0 {
+		return 1
+	}
+	return version
 }
 
 // GenerateToken generates a JWT token for a user
@@ -40,9 +55,11 @@ func (j *JWTService) GenerateToken(user *model.User) (string, string, string, er
 	expiresAt := time.Now().Add(j.cfg.JWT.ExpireDuration)
 
 	claims := Claims{
-		UserID: user.ID,
-		Email:  user.Email,
-		Role:   string(user.SystemRole),
+		UserID:       user.ID,
+		Email:        user.Email,
+		Role:         string(user.SystemRole),
+		Type:         TokenTypeAccess,
+		TokenVersion: EffectiveTokenVersion(user.TokenVersion),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -60,9 +77,11 @@ func (j *JWTService) GenerateToken(user *model.User) (string, string, string, er
 	// Generate refresh token (longer expiry)
 	refreshExpiresAt := time.Now().Add(j.cfg.JWT.RefreshDuration)
 	refreshClaims := Claims{
-		UserID: user.ID,
-		Email:  user.Email,
-		Role:   string(user.SystemRole),
+		UserID:       user.ID,
+		Email:        user.Email,
+		Role:         string(user.SystemRole),
+		Type:         TokenTypeRefresh,
+		TokenVersion: EffectiveTokenVersion(user.TokenVersion),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(refreshExpiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -99,10 +118,34 @@ func (j *JWTService) ValidateToken(tokenString string) (*Claims, error) {
 	return nil, errors.New("invalid token")
 }
 
+// ValidateAccessToken validates a JWT access token and returns claims.
+func (j *JWTService) ValidateAccessToken(tokenString string) (*Claims, error) {
+	claims, err := j.ValidateToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+	if claims.Type != TokenTypeAccess {
+		return nil, errors.New("invalid token type")
+	}
+	return claims, nil
+}
+
+// ValidateRefreshToken validates a JWT refresh token and returns claims.
+func (j *JWTService) ValidateRefreshToken(tokenString string) (*Claims, error) {
+	claims, err := j.ValidateToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+	if claims.Type != TokenTypeRefresh {
+		return nil, errors.New("invalid token type")
+	}
+	return claims, nil
+}
+
 // RefreshToken refreshes an access token using refresh token
 // Returns: accessToken, refreshToken, expiresAt (RFC3339 string), error
 func (j *JWTService) RefreshToken(refreshTokenString string) (string, string, string, error) {
-	claims, err := j.ValidateToken(refreshTokenString)
+	claims, err := j.ValidateRefreshToken(refreshTokenString)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -110,9 +153,11 @@ func (j *JWTService) RefreshToken(refreshTokenString string) (string, string, st
 	// Generate new access token
 	expiresAt := time.Now().Add(j.cfg.JWT.ExpireDuration)
 	newClaims := Claims{
-		UserID: claims.UserID,
-		Email:  claims.Email,
-		Role:   claims.Role,
+		UserID:       claims.UserID,
+		Email:        claims.Email,
+		Role:         claims.Role,
+		Type:         TokenTypeAccess,
+		TokenVersion: EffectiveTokenVersion(claims.TokenVersion),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -130,9 +175,11 @@ func (j *JWTService) RefreshToken(refreshTokenString string) (string, string, st
 	// Generate new refresh token
 	refreshExpiresAt := time.Now().Add(j.cfg.JWT.RefreshDuration)
 	refreshClaims := Claims{
-		UserID: claims.UserID,
-		Email:  claims.Email,
-		Role:   claims.Role,
+		UserID:       claims.UserID,
+		Email:        claims.Email,
+		Role:         claims.Role,
+		Type:         TokenTypeRefresh,
+		TokenVersion: EffectiveTokenVersion(claims.TokenVersion),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(refreshExpiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

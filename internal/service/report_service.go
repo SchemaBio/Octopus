@@ -2,9 +2,13 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/bioinfo/schema-platform/internal/config"
@@ -83,6 +87,12 @@ func (s *ReportService) CreateReport(taskID string, req *model.ReportCreateReque
 
 // callExternalAPI calls the user's configured report generation API
 func (s *ReportService) callExternalAPI(tmpl *model.ReportTemplate, task *model.Task, report *model.Report) {
+	// Validate endpoint for SSRF protection
+	if err := validateReportAPIEndpoint(tmpl.APIEndpoint); err != nil {
+		s.updateReportStatus(report.ID, model.ReportStatusDraft, "")
+		return
+	}
+
 	payload := map[string]interface{}{
 		"reportId":   report.ID,
 		"taskId":     task.UUID,
@@ -104,7 +114,7 @@ func (s *ReportService) callExternalAPI(tmpl *model.ReportTemplate, task *model.
 		req.Header.Set("Authorization", "Bearer "+tmpl.APIKey)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := reportHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		s.updateReportStatus(report.ID, model.ReportStatusDraft, "")
@@ -138,9 +148,17 @@ func (s *ReportService) updateReportStatus(reportID string, status model.ReportS
 	s.repo.Update(report)
 }
 
-// ListActiveTemplates returns all active report templates
-func (s *ReportService) ListActiveTemplates() ([]model.ReportTemplate, error) {
-	return s.templateRepo.FindActive()
+// ListActiveTemplates returns all active report templates (public-safe, no sensitive fields)
+func (s *ReportService) ListActiveTemplates() ([]model.ReportTemplateResponse, error) {
+	templates, err := s.templateRepo.FindActive()
+	if err != nil {
+		return nil, err
+	}
+	results := make([]model.ReportTemplateResponse, len(templates))
+	for i, t := range templates {
+		results[i] = t.ToResponse()
+	}
+	return results, nil
 }
 
 // CreateTemplate creates a new report template
@@ -160,3 +178,92 @@ func (s *ReportService) CreateTemplate(req *model.ReportTemplateCreateRequest) (
 	return tmpl, nil
 }
 
+// validateReportAPIEndpoint validates a report API endpoint for SSRF protection.
+func validateReportAPIEndpoint(rawURL string) error {
+	return validateReportEndpointWithResolver(rawURL, net.LookupIP)
+}
+
+func validateReportEndpointWithResolver(rawURL string, lookup func(string) ([]net.IP, error)) error {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("invalid report API endpoint")
+	}
+	if u.User != nil {
+		return fmt.Errorf("report API endpoint must not include user info")
+	}
+	if !strings.EqualFold(u.Scheme, "https") {
+		return fmt.Errorf("report API endpoint must use https")
+	}
+
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") || strings.EqualFold(host, "127.0.0.1") {
+		return fmt.Errorf("report API endpoint host is not allowed")
+	}
+
+	ips, err := lookup(host)
+	if err != nil {
+		return fmt.Errorf("failed to resolve report API endpoint host: %w", err)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("report API endpoint host did not resolve")
+	}
+	for _, ip := range ips {
+		if !isPublicReportIP(ip) {
+			return fmt.Errorf("report API endpoint must resolve to public IP addresses")
+		}
+	}
+	return nil
+}
+
+func isPublicReportIP(ip net.IP) bool {
+	if ip == nil || ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() ||
+		ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return false
+	}
+	return true
+}
+
+func reportHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: reportHTTPTransport(),
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return http.ErrUseLastResponse
+			}
+			return validateReportAPIEndpoint(req.URL.String())
+		},
+	}
+}
+
+func reportHTTPTransport() *http.Transport {
+	return &http.Transport{
+		DialContext: reportDialContext,
+	}
+}
+
+func reportDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("report API endpoint host did not resolve")
+	}
+	for _, ip := range ips {
+		if !isPublicReportIP(ip.IP) {
+			return nil, fmt.Errorf("report API endpoint must resolve to public IP addresses")
+		}
+	}
+
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	for _, ip := range ips {
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
+	}
+	return nil, fmt.Errorf("report API endpoint must resolve to public IP addresses")
+}

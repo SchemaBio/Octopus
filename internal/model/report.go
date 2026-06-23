@@ -99,3 +99,21 @@ type ReportTemplateCreateRequest struct {
 	APIEndpoint string `json:"apiEndpoint" binding:"required"`
 	APIKey      string `json:"apiKey"`
 }
+
+// ReportTemplateResponse is the public-safe template payload (omits APIEndpoint and APIKey)
+type ReportTemplateResponse struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	IsActive    bool   `json:"isActive"`
+}
+
+// ToResponse converts a ReportTemplate to a public-safe response (omits sensitive fields)
+func (t *ReportTemplate) ToResponse() ReportTemplateResponse {
+	return ReportTemplateResponse{
+		ID:          t.ID,
+		Name:        t.Name,
+		Description: t.Description,
+		IsActive:    t.IsActive,
+	}
+}

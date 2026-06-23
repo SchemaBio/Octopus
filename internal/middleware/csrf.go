@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -15,8 +16,10 @@ func CSRF() gin.HandlerFunc {
 		}
 
 		if _, err := c.Cookie("access_token"); err != nil {
-			c.Next()
-			return
+			if _, refreshErr := c.Cookie("refresh_token"); refreshErr != nil {
+				c.Next()
+				return
+			}
 		}
 
 		cookieToken, err := c.Cookie("csrf_token")
@@ -27,7 +30,7 @@ func CSRF() gin.HandlerFunc {
 		}
 
 		headerToken := c.GetHeader("X-CSRF-Token")
-		if headerToken == "" || headerToken != cookieToken {
+		if headerToken == "" || subtle.ConstantTimeCompare([]byte(headerToken), []byte(cookieToken)) != 1 {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid CSRF token"})
 			c.Abort()
 			return
@@ -42,5 +45,10 @@ func isSafeMethod(method string) bool {
 }
 
 func isAuthEndpoint(path string) bool {
-	return strings.HasPrefix(path, "/api/v1/auth/")
+	switch strings.TrimPrefix(path, "/api/v1/auth/") {
+	case "login", "register":
+		return true
+	default:
+		return false
+	}
 }

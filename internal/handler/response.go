@@ -69,6 +69,11 @@ func ErrorConflict(c *gin.Context, message string) {
 	Error(c, http.StatusConflict, message)
 }
 
+// ErrorGone sends a 410 error
+func ErrorGone(c *gin.Context, message string) {
+	Error(c, http.StatusGone, message)
+}
+
 // ErrorInternal sends a 500 error
 func ErrorInternal(c *gin.Context, message string) {
 	Error(c, http.StatusInternalServerError, message)

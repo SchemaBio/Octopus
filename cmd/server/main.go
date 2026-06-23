@@ -17,16 +17,9 @@ import (
 func main() {
 	cfg := config.Load()
 
-	if cfg.Server.Mode == "release" {
-		weakSecrets := map[string]bool{
-			"": true,
-			"octopus-secret-key-change-in-production": true,
-			"change-me-to-a-long-random-string":       true,
-		}
-		if weakSecrets[cfg.JWT.Secret] || len(cfg.JWT.Secret) < 32 {
-			fmt.Fprintf(os.Stderr, "FATAL: JWT_SECRET must be a non-default random string of at least 32 characters in release mode\n")
-			os.Exit(1)
-		}
+	if err := config.ValidateStartup(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: %v\n", err)
+		os.Exit(1)
 	}
 
 	fmt.Printf("Initializing database (%s)...\n", cfg.Database.Driver)

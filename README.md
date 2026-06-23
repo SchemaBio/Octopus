@@ -5,7 +5,8 @@
 ## 功能特性
 
 - **数据库持久化**：PostgreSQL，JSONB/numeric 等原生类型优化，自动迁移表结构
-- **JWT 认证**：无状态认证系统，支持登录、注册、Token 刷新
+- **JWT 认证**：无状态认证系统，支持登录、注册、Token 刷新，Token 版本控制防篡改
+- **安全加固**：CSRF 时间安全比较、JWT 数据库验证、AI Proxy SSRF 防护、Report API SSRF 防护
 - **样本管理**：样本创建、查询、状态追踪，关联项目
 - **项目管理**：项目批次管理，进度汇总统计
 - **任务执行**：使用本地 `miniwdl` 执行 WDL 流程
@@ -13,10 +14,12 @@
 - **自动归档**：任务完成后自动将结果归档到指定目录，读取 `outputs.resolved.json`
 - **数据导入**：从归档的 parquet/TSV 文件解析并导入数据库，支持 7 种变异类型 + QC
 - **变异结果管理**：SNV/Indel、CNV Segment/Exon、STR、MEI、线粒体、UPD、ROH 共 7 类变异
-- **审核/回报**：统一通过数据库管理变异的审核和回报状态
-- **AI 辅助评估**：对接 LLM 对变异进行临床遗传学分析，支持多级过滤
+- **审核/回报**：统一通过数据库管理变异的审核和回报状态，支持 toggleable 状态
+- **AI 辅助评估**：对接 LLM 对变异进行临床遗传学分析，支持多级过滤，Proxy 安全加固
 - **结果查询**：根据 UUID 和 outputs.resolved.json 中的 key 查询归档文件路径
-- **WDL 模板管理**：预定义模板选择
+- **WDL 模板管理**：内置工作流目录 + 文件系统模板，支持默认输入值
+- **资源访问控制**：基于任务的访问验证，防止跨任务数据泄露
+- **启动配置验证**：release 模式下自动检查 JWT 密钥强度和配置一致性
 
 ## 目录结构
 
@@ -107,15 +110,18 @@ go run cmd/server/main.go
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/v1/templates | 获取模板列表 |
+| GET | /api/v1/templates | 获取模板列表 (内置目录 + 文件系统) |
 | GET | /api/v1/templates/:name | 获取模板详情 |
+| GET | /api/v1/templates/:name/inputs | 获取模板默认输入值 |
 
-### Sepiida 集成 (需要认证)
+### Sepiida 集成
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/v1/sepiida/health | Sepiida 健康检查 |
-| GET | /api/v1/sepiida/workflows | 列出所有 Workflow |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /api/v1/sepiida/health | ✅ | Sepiida 健康检查 |
+| GET | /api/v1/sepiida/workflows | 🔑 | 列出所有 Workflow (admin) |
+
+> ✅ = 认证用户  🔑 = 需要管理员权限 |
 
 ### 归档管理 (需要认证)
 
@@ -164,10 +170,16 @@ go run cmd/server/main.go
 | SEPIIDA_ENABLED | true | 启用 Sepiida 集成 |
 | PARQUET_ENABLED | true | 启用 Parquet 转换 |
 | PARQUET_DIR | | Parquet 输出目录 (默认同归档目录) |
-| JWT_SECRET | octopus-secret-key-change-in-production | JWT 签名密钥 ⚠️ 生产环境必须更改 |
+| JWT_SECRET | octopus-secret-key-change-in-production | JWT 签名密钥 ⚠️ 生产环境必须更改 (≥32字符) |
 | JWT_ISSUER | octopus | JWT Issuer |
 | JWT_EXPIRE | 24h | Access Token 有效期 |
 | JWT_REFRESH | 168h | Refresh Token 有效期 (7天) |
+| LLM_ENABLED | false | 启用 AI 评估 |
+| LLM_BASE_URL | | LLM API Base URL |
+| LLM_API_KEY | | LLM API Key |
+| LLM_MODEL | gpt-4o | 模型名称 |
+| LLM_ALLOWED_MODELS | LLM_MODEL | AI proxy 允许的模型列表，逗号分隔，`*` 表示不限制 |
+| LLM_PROXY_MAX_BODY_MB | 2 | AI proxy 单请求最大 JSON body (MB) |
 
 ### PostgreSQL 配置示例
 

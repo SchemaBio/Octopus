@@ -23,6 +23,7 @@ type User struct {
 	SystemRole    SystemRole `json:"system_role" gorm:"size:20;default:USER"`
 	StorageFolder string     `json:"-" gorm:"size:36;index"`
 	IsActive      bool       `json:"is_active" gorm:"default:true"`
+	TokenVersion  int        `json:"-" gorm:"default:1"`
 	CreatedAt     time.Time  `json:"created_at" gorm:"type:timestamptz"`
 	UpdatedAt     time.Time  `json:"updated_at" gorm:"type:timestamptz"`
 }

@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/model"
@@ -138,51 +136,10 @@ func (s *ResultService) ListROHRegions(ctx context.Context, query *model.ROHList
 
 // ReviewVariant marks a variant as reviewed by type
 func (s *ResultService) ReviewVariant(ctx context.Context, variantType string, id string, reviewer string) error {
-	now := time.Now()
-	_ = now
-
-	switch variantType {
-	case "snv-indel":
-		return s.repo.UpdateSNVIndelReview(id, true, reviewer)
-	case "cnv-segment":
-		return s.repo.UpdateCNVSegmentReview(id, true, reviewer)
-	case "cnv-exon":
-		return s.repo.UpdateCNVExonReview(id, true, reviewer)
-	case "str":
-		return s.repo.UpdateSTRReview(id, true, reviewer)
-	case "mei":
-		return s.repo.UpdateMEIReview(id, true, reviewer)
-	case "mt":
-		return s.repo.UpdateMTVariantReview(id, true, reviewer)
-	case "upd":
-		return s.repo.UpdateUPDRegionReview(id, true, reviewer)
-	case "roh":
-		return s.repo.UpdateROHRegionReview(id, true, reviewer)
-	default:
-		return fmt.Errorf("unknown variant type: %s", variantType)
-	}
+	return s.repo.UpdateVariantReview(variantType, id, true, reviewer)
 }
 
 // ReportVariant marks a variant as reported by type
 func (s *ResultService) ReportVariant(ctx context.Context, variantType string, id string, reporter string) error {
-	switch variantType {
-	case "snv-indel":
-		return s.repo.UpdateSNVIndelReport(id, true, reporter)
-	case "cnv-segment":
-		return s.repo.UpdateCNVSegmentReport(id, true, reporter)
-	case "cnv-exon":
-		return s.repo.UpdateCNVExonReport(id, true, reporter)
-	case "str":
-		return s.repo.UpdateSTRReport(id, true, reporter)
-	case "mei":
-		return s.repo.UpdateMEIReport(id, true, reporter)
-	case "mt":
-		return s.repo.UpdateMTVariantReport(id, true, reporter)
-	case "upd":
-		return s.repo.UpdateUPDRegionReport(id, true, reporter)
-	case "roh":
-		return s.repo.UpdateROHRegionReport(id, true, reporter)
-	default:
-		return fmt.Errorf("unknown variant type: %s", variantType)
-	}
+	return s.repo.UpdateVariantReport(variantType, id, true, reporter)
 }

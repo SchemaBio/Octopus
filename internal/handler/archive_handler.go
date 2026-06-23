@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/bioinfo/schema-platform/internal/config"
+	"github.com/bioinfo/schema-platform/internal/repository"
 	"github.com/bioinfo/schema-platform/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -14,6 +15,7 @@ type ArchiveHandler struct {
 	archiver   *service.Archiver
 	statusMgr  *service.StatusManager
 	parquetGen *service.ParquetGenerator
+	taskRepo   *repository.TaskRepository
 }
 
 func NewArchiveHandler(cfg *config.Config) *ArchiveHandler {
@@ -21,6 +23,7 @@ func NewArchiveHandler(cfg *config.Config) *ArchiveHandler {
 		archiver:   service.NewArchiver(cfg),
 		statusMgr:  service.NewStatusManager(cfg),
 		parquetGen: service.NewParquetGenerator(cfg),
+		taskRepo:   repository.NewTaskRepository(),
 	}
 }
 
@@ -35,6 +38,10 @@ func NewArchiveHandler(cfg *config.Config) *ArchiveHandler {
 // @Router /api/v1/archive/{uuid} [get]
 func (h *ArchiveHandler) ArchiveStatus(c *gin.Context) {
 	uuid := c.Param("uuid")
+
+	if _, ok := requireTaskAccess(c, h.taskRepo, uuid); !ok {
+		return
+	}
 
 	// Check if archive directory exists
 	archiveDir := h.archiver.GetArchiveDir(uuid)

@@ -5,6 +5,9 @@ import (
 	"strings"
 
 	"github.com/bioinfo/schema-platform/internal/config"
+	"github.com/bioinfo/schema-platform/internal/database"
+	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/bioinfo/schema-platform/internal/repository"
 	"github.com/bioinfo/schema-platform/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -12,6 +15,7 @@ import (
 // JWTAuth middleware validates JWT token (from header or cookie)
 func JWTAuth(cfg *config.Config) gin.HandlerFunc {
 	jwtService := service.NewJWTService(cfg)
+	userRepo := repository.NewUserRepository()
 
 	return func(c *gin.Context) {
 		tokenString := ""
@@ -42,13 +46,25 @@ func JWTAuth(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		// Validate token
-		claims, err := jwtService.ValidateToken(tokenString)
+		claims, err := jwtService.ValidateAccessToken(tokenString)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "Invalid or expired token",
 			})
 			c.Abort()
 			return
+		}
+
+		// Verify user still exists and is active (skip if DB unavailable)
+		if database.GetDB() != nil {
+			user, err := userRepo.FindByID(claims.UserID)
+			if err != nil || !claimsMatchUser(claims, user) {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"error": "Account is not active",
+				})
+				c.Abort()
+				return
+			}
 		}
 
 		// Set user info in context
@@ -63,6 +79,7 @@ func JWTAuth(cfg *config.Config) gin.HandlerFunc {
 // OptionalJWTAuth middleware that allows both authenticated and anonymous requests
 func OptionalJWTAuth(cfg *config.Config) gin.HandlerFunc {
 	jwtService := service.NewJWTService(cfg)
+	userRepo := repository.NewUserRepository()
 
 	return func(c *gin.Context) {
 		tokenString := ""
@@ -89,10 +106,19 @@ func OptionalJWTAuth(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		claims, err := jwtService.ValidateToken(tokenString)
+		claims, err := jwtService.ValidateAccessToken(tokenString)
 		if err != nil {
 			c.Next()
 			return
+		}
+
+		// Verify user still exists and is active (skip if DB unavailable)
+		if database.GetDB() != nil {
+			user, err := userRepo.FindByID(claims.UserID)
+			if err != nil || !claimsMatchUser(claims, user) {
+				c.Next()
+				return
+			}
 		}
 
 		// Set user info in context
@@ -104,10 +130,21 @@ func OptionalJWTAuth(cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
-// RequireRole middleware checks if user has required role
-func RequireRole(role string) gin.HandlerFunc {
+// claimsMatchUser verifies that JWT claims still match the database user state.
+func claimsMatchUser(claims *service.Claims, user *model.User) bool {
+	if claims.TokenVersion <= 0 {
+		return false
+	}
+	return user.Email == claims.Email &&
+		string(user.SystemRole) == claims.Role &&
+		user.IsActive &&
+		claims.TokenVersion == service.EffectiveTokenVersion(user.TokenVersion)
+}
+
+// RequireAdmin checks if user has admin role
+func RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userRole, exists := c.Get("role")
+		role, exists := c.Get("role")
 		if !exists {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "Unauthorized",
@@ -116,9 +153,9 @@ func RequireRole(role string) gin.HandlerFunc {
 			return
 		}
 
-		if userRole != role && userRole != "admin" {
+		if role.(string) != string(model.SystemRoleSuperAdmin) {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": "Insufficient permissions",
+				"error": "Admin access required",
 			})
 			c.Abort()
 			return
