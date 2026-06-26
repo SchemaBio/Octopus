@@ -33,7 +33,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	resp, err := h.userService.Login(req.Email, req.Password)
 	if err != nil {
-		ErrorUnauthorized(c, err.Error())
+		ErrorUnauthorized(c, SanitizeAuthError(err))
 		return
 	}
 
@@ -54,7 +54,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		if err.Error() == "email already exists" {
 			ErrorConflict(c, err.Error())
 		} else {
-			ErrorInternal(c, err.Error())
+			ErrorInternal(c, SanitizeAuthError(err))
 		}
 		return
 	}
@@ -81,7 +81,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 
 	resp, err := h.userService.RefreshToken(req.RefreshToken)
 	if err != nil {
-		ErrorUnauthorized(c, err.Error())
+		ErrorUnauthorized(c, SanitizeAuthError(err))
 		return
 	}
 
