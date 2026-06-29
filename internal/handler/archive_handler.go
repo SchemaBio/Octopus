@@ -81,6 +81,10 @@ func (h *ArchiveHandler) ArchiveStatus(c *gin.Context) {
 // @Router /api/v1/archive/{uuid}/import [post]
 func (h *ArchiveHandler) ImportToDatabase(c *gin.Context) {
 	uuid := c.Param("uuid")
+	task, ok := requireTaskAccess(c, h.taskRepo, uuid)
+	if !ok {
+		return
+	}
 
 	archiveDir := h.archiver.GetArchiveDir(uuid)
 	if archiveDir == "" {
@@ -96,7 +100,7 @@ func (h *ArchiveHandler) ImportToDatabase(c *gin.Context) {
 
 	// Import data
 	importer := service.NewImporter(h.archiver.GetConfig())
-	result, err := importer.ImportFromArchive(uuid, archiveDir)
+	result, err := importer.ImportFromTaskArchive(task, archiveDir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"uuid":  uuid,
@@ -120,6 +124,9 @@ func (h *ArchiveHandler) ImportToDatabase(c *gin.Context) {
 // @Router /api/v1/archive/{uuid}/output/{key} [get]
 func (h *ArchiveHandler) QueryOutput(c *gin.Context) {
 	uuid := c.Param("uuid")
+	if _, ok := requireTaskAccess(c, h.taskRepo, uuid); !ok {
+		return
+	}
 	key := c.Param("key")
 
 	result, err := h.archiver.QueryOutputByKey(uuid, key)
@@ -146,6 +153,9 @@ func (h *ArchiveHandler) QueryOutput(c *gin.Context) {
 // @Router /api/v1/archive/{uuid}/outputs [get]
 func (h *ArchiveHandler) ListOutputKeys(c *gin.Context) {
 	uuid := c.Param("uuid")
+	if _, ok := requireTaskAccess(c, h.taskRepo, uuid); !ok {
+		return
+	}
 
 	keys, err := h.archiver.ListOutputKeys(uuid)
 	if err != nil {
@@ -193,6 +203,9 @@ func (h *ArchiveHandler) ListOutputKeys(c *gin.Context) {
 // @Router /api/v1/archive/{uuid}/status [get]
 func (h *ArchiveHandler) GetStatus(c *gin.Context) {
 	uuid := c.Param("uuid")
+	if _, ok := requireTaskAccess(c, h.taskRepo, uuid); !ok {
+		return
+	}
 
 	status, err := h.statusMgr.GetStatus(uuid)
 	if err != nil {
@@ -219,6 +232,9 @@ func (h *ArchiveHandler) GetStatus(c *gin.Context) {
 // @Router /api/v1/archive/{uuid}/status [put]
 func (h *ArchiveHandler) UpdateStatus(c *gin.Context) {
 	uuid := c.Param("uuid")
+	if _, ok := requireTaskAccess(c, h.taskRepo, uuid); !ok {
+		return
+	}
 
 	var updates []service.StatusUpdate
 	if err := c.ShouldBindJSON(&updates); err != nil {
@@ -265,6 +281,9 @@ func (h *ArchiveHandler) UpdateStatus(c *gin.Context) {
 // @Router /api/v1/archive/{uuid}/parquet [get]
 func (h *ArchiveHandler) GetParquet(c *gin.Context) {
 	uuid := c.Param("uuid")
+	if _, ok := requireTaskAccess(c, h.taskRepo, uuid); !ok {
+		return
+	}
 
 	result, err := h.statusMgr.GetParquetData(uuid)
 	if err != nil {
@@ -289,6 +308,9 @@ func (h *ArchiveHandler) GetParquet(c *gin.Context) {
 // @Router /api/v1/archive/{uuid}/data [get]
 func (h *ArchiveHandler) GetCombinedData(c *gin.Context) {
 	uuid := c.Param("uuid")
+	if _, ok := requireTaskAccess(c, h.taskRepo, uuid); !ok {
+		return
+	}
 
 	archiveDir := h.archiver.GetArchiveDir(uuid)
 	if archiveDir == "" {

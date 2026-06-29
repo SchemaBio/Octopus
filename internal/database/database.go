@@ -71,6 +71,8 @@ func AutoMigrate() error {
 		// Upload models
 		&model.UploadJob{},
 		&model.UploadFile{},
+		// Import audit models
+		&model.ResultImportBatch{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)

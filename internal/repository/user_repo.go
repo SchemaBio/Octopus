@@ -2,6 +2,7 @@ package repository
 
 import (
 	"github.com/bioinfo/schema-platform/internal/model"
+	"gorm.io/gorm"
 )
 
 // UserRepository provides user-specific operations
@@ -26,6 +27,11 @@ func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 	return r.FindOneByCondition(map[string]interface{}{"email": email})
 }
 
+// FindByResetToken finds a user by password reset token
+func (r *UserRepository) FindByResetToken(token string) (*model.User, error) {
+	return r.FindOneByCondition(map[string]interface{}{"reset_token": token})
+}
+
 // ExistsByUsername checks if username exists
 func (r *UserRepository) ExistsByUsername(username string) bool {
 	var count int64
@@ -45,7 +51,7 @@ func (r *UserRepository) ExistsByEmail(email string) bool {
 
 // FindActiveUsers finds all active users
 func (r *UserRepository) FindActiveUsers() ([]model.User, error) {
-	return r.FindByCondition(map[string]interface{}{"active": true})
+	return r.FindByCondition(map[string]interface{}{"is_active": true})
 }
 
 // FindByRole finds users by role
@@ -82,14 +88,26 @@ func (r *UserRepository) PaginateByQuery(query *model.UserListQuery) ([]model.Us
 	return users, total, err
 }
 
-// UpdatePassword updates user password
+// UpdatePassword updates user password and revokes existing tokens.
 func (r *UserRepository) UpdatePassword(userID uint, hashedPassword string) error {
-	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("password", hashedPassword).Error
+	return r.db.Model(&model.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"password":      hashedPassword,
+		"token_version": nextTokenVersionExpr(),
+	}).Error
+}
+
+// IncrementTokenVersion revokes all previously issued tokens for a user.
+func (r *UserRepository) IncrementTokenVersion(userID uint) error {
+	return r.db.Model(&model.User{}).Where("id = ?", userID).UpdateColumn("token_version", nextTokenVersionExpr()).Error
+}
+
+func nextTokenVersionExpr() interface{} {
+	return gorm.Expr("CASE WHEN token_version IS NULL OR token_version < ? THEN ? ELSE token_version + ? END", 1, 2, 1)
 }
 
 // UpdateActive updates user active status
 func (r *UserRepository) UpdateActive(userID uint, active bool) error {
-	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("active", active).Error
+	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("is_active", active).Error
 }
 
 // CreateDefaultAdmin creates default admin user if not exists
@@ -101,12 +119,13 @@ func (r *UserRepository) CreateDefaultAdmin(email, hashedPassword, name string) 
 
 	// Create admin
 	admin := &model.User{
-		Username:   email,
-		Password:   hashedPassword,
-		Email:      email,
-		Name:       name,
-		SystemRole: model.SystemRoleSuperAdmin,
-		IsActive:   true,
+		Username:     email,
+		Password:     hashedPassword,
+		Email:        email,
+		Name:         name,
+		SystemRole:   model.SystemRoleSuperAdmin,
+		IsActive:     true,
+		TokenVersion: 1,
 	}
 
 	err := r.Create(admin)

@@ -8,14 +8,16 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Task     TaskConfig
-	Sepiida  SepiidaConfig
-	Parquet  ParquetConfig
-	JWT      JWTConfig
-	LLM      LLMConfig
-	Storage  StorageConfig
+	Server       ServerConfig
+	Database     DatabaseConfig
+	Task         TaskConfig
+	Sepiida      SepiidaConfig
+	Parquet      ParquetConfig
+	JWT          JWTConfig
+	ExternalAuth ExternalAuthConfig
+	Overlay      OverlayConfig
+	LLM          LLMConfig
+	Storage      StorageConfig
 }
 
 type ServerConfig struct {
@@ -65,13 +67,33 @@ type JWTConfig struct {
 	ClientPasswordHashEnabled bool          // Enable SHA-256 client-side password hash compatibility
 }
 
+type ExternalAuthConfig struct {
+	Enabled      bool
+	SharedSecret string
+	HeaderName   string
+	UserIDHeader string
+	EmailHeader  string
+	RoleHeader   string
+	OrgIDHeader  string
+}
+
+type OverlayConfig struct {
+	Enabled           bool
+	BaseURL           string
+	SharedSecret      string
+	Timeout           time.Duration
+	FailOpen          bool
+	TaskAdmissionPath string
+	TaskEventPath     string
+}
+
 type LLMConfig struct {
-	BaseURL         string   // OpenAI-compatible API base URL (e.g. https://api.openai.com/v1)
-	APIKey          string   // API key
-	Model           string   // Model name (e.g. gpt-4o)
-	Enabled         bool     // Enable AI evaluation
-	AllowedModels   []string // AI proxy allowed model list, comma-separated, "*" means no restriction
-	ProxyMaxBodyBytes int64  // AI proxy max request body size in bytes
+	BaseURL           string   // OpenAI-compatible API base URL (e.g. https://api.openai.com/v1)
+	APIKey            string   // API key
+	Model             string   // Model name (e.g. gpt-4o)
+	Enabled           bool     // Enable AI evaluation
+	AllowedModels     []string // AI proxy allowed model list, comma-separated, "*" means no restriction
+	ProxyMaxBodyBytes int64    // AI proxy max request body size in bytes
 }
 
 type StorageConfig struct {
@@ -106,7 +128,7 @@ func Load() *Config {
 		},
 		Sepiida: SepiidaConfig{
 			ServerURL: getEnv("SEPIIDA_URL", "http://localhost:9090"),
-			QueryKey:  getEnv("SEPIIDA_QUERY_KEY", ""),
+			QueryKey:  getEnvOrFile("SEPIIDA_QUERY_KEY", ""),
 			Enabled:   getEnv("SEPIIDA_ENABLED", "true") == "true",
 		},
 		Parquet: ParquetConfig{
@@ -115,13 +137,31 @@ func Load() *Config {
 			FilePatterns: []string{"*.csv", "*.tsv", "*.txt"}, // default patterns
 		},
 		JWT: JWTConfig{
-			Secret:                    getEnv("JWT_SECRET", "octopus-secret-key-change-in-production"),
+			Secret:                    getEnvOrFile("JWT_SECRET", "octopus-secret-key-change-in-production"),
 			Issuer:                    getEnv("JWT_ISSUER", "octopus"),
 			ExpireDuration:            parseDuration(getEnv("JWT_EXPIRE", "24h")),
 			RefreshDuration:           parseDuration(getEnv("JWT_REFRESH", "168h")),
 			CookieDomain:              getEnv("JWT_COOKIE_DOMAIN", ""),
 			CookieSecure:              getEnv("JWT_COOKIE_SECURE", "false") == "true",
 			ClientPasswordHashEnabled: getEnv("CLIENT_PASSWORD_HASH_ENABLED", "false") == "true",
+		},
+		ExternalAuth: ExternalAuthConfig{
+			Enabled:      getEnv("EXTERNAL_AUTH_ENABLED", "false") == "true",
+			SharedSecret: getEnvOrFile("EXTERNAL_AUTH_SHARED_SECRET", ""),
+			HeaderName:   getEnv("EXTERNAL_AUTH_HEADER", "X-Octopus-External-Auth"),
+			UserIDHeader: getEnv("EXTERNAL_AUTH_USER_ID_HEADER", "X-Octopus-User-ID"),
+			EmailHeader:  getEnv("EXTERNAL_AUTH_EMAIL_HEADER", "X-Octopus-User-Email"),
+			RoleHeader:   getEnv("EXTERNAL_AUTH_ROLE_HEADER", "X-Octopus-User-Role"),
+			OrgIDHeader:  getEnv("EXTERNAL_AUTH_ORG_ID_HEADER", "X-Octopus-Org-ID"),
+		},
+		Overlay: OverlayConfig{
+			Enabled:           getEnv("OVERLAY_ENABLED", "false") == "true",
+			BaseURL:           getEnv("OVERLAY_BASE_URL", ""),
+			SharedSecret:      getEnvOrFile("OVERLAY_SHARED_SECRET", ""),
+			Timeout:           parseDuration(getEnv("OVERLAY_TIMEOUT", "5s")),
+			FailOpen:          getEnv("OVERLAY_FAIL_OPEN", "false") == "true",
+			TaskAdmissionPath: getEnv("OVERLAY_TASK_ADMISSION_PATH", "/api/v1/overlay/tasks/admit"),
+			TaskEventPath:     getEnv("OVERLAY_TASK_EVENT_PATH", "/api/v1/overlay/tasks/events"),
 		},
 		LLM: LLMConfig{
 			BaseURL:           getEnv("LLM_BASE_URL", ""),

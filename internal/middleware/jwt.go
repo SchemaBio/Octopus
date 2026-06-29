@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/bioinfo/schema-platform/internal/config"
@@ -12,12 +14,66 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func applyExternalAuth(c *gin.Context, cfg *config.Config) bool {
+	if cfg == nil || !cfg.ExternalAuth.Enabled || cfg.ExternalAuth.SharedSecret == "" {
+		return false
+	}
+
+	token := bearerToken(c.GetHeader(cfg.ExternalAuth.HeaderName))
+	if token == "" {
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.ExternalAuth.SharedSecret)) != 1 {
+		return false
+	}
+
+	userID, err := strconv.ParseUint(strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.UserIDHeader)), 10, 64)
+	if err != nil || userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid external user identity"})
+		c.Abort()
+		return true
+	}
+
+	email := strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.EmailHeader))
+	role := strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.RoleHeader))
+	if role == "" {
+		role = string(model.SystemRoleUser)
+	}
+	orgID := strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.OrgIDHeader))
+
+	c.Set("user_id", uint(userID))
+	c.Set("email", email)
+	c.Set("role", role)
+	if orgID != "" {
+		c.Set("org_id", orgID)
+	}
+	c.Set("external_auth", true)
+	return true
+}
+
+func bearerToken(header string) string {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return ""
+	}
+	parts := strings.SplitN(header, " ", 2)
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		return strings.TrimSpace(parts[1])
+	}
+	return header
+}
+
 // JWTAuth middleware validates JWT token (from header or cookie)
 func JWTAuth(cfg *config.Config) gin.HandlerFunc {
 	jwtService := service.NewJWTService(cfg)
 	userRepo := repository.NewUserRepository()
 
 	return func(c *gin.Context) {
+		if applyExternalAuth(c, cfg) {
+			c.Next()
+			return
+		}
+
 		tokenString := ""
 
 		// Try Authorization header first
@@ -82,6 +138,11 @@ func OptionalJWTAuth(cfg *config.Config) gin.HandlerFunc {
 	userRepo := repository.NewUserRepository()
 
 	return func(c *gin.Context) {
+		if applyExternalAuth(c, cfg) {
+			c.Next()
+			return
+		}
+
 		tokenString := ""
 
 		// Try Authorization header first
@@ -176,4 +237,14 @@ func GetCurrentUser(c *gin.Context) (uint, string, string, bool) {
 	role, _ := c.Get("role")
 
 	return userID.(uint), email.(string), role.(string), true
+}
+
+// GetCurrentOrg gets the optional organization ID forwarded by a trusted overlay.
+func GetCurrentOrg(c *gin.Context) (string, bool) {
+	orgID, exists := c.Get("org_id")
+	if !exists {
+		return "", false
+	}
+	value, ok := orgID.(string)
+	return value, ok && value != ""
 }

@@ -15,17 +15,19 @@ const (
 
 // User represents a user account
 type User struct {
-	ID            uint       `json:"id" gorm:"primaryKey"`
-	Username      string     `json:"-" gorm:"uniqueIndex;size:50;not null"` // internal use only, not exposed in API
-	Password      string     `json:"-" gorm:"size:255;not null"`
-	Email         string     `json:"email" gorm:"uniqueIndex;size:100;not null"`
-	Name          string     `json:"name" gorm:"size:100;not null"`
-	SystemRole    SystemRole `json:"system_role" gorm:"size:20;default:USER"`
-	StorageFolder string     `json:"-" gorm:"size:36;index"`
-	IsActive      bool       `json:"is_active" gorm:"default:true"`
-	TokenVersion  int        `json:"-" gorm:"default:1"`
-	CreatedAt     time.Time  `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt     time.Time  `json:"updated_at" gorm:"type:timestamptz"`
+	ID               uint       `json:"id" gorm:"primaryKey"`
+	Username         string     `json:"-" gorm:"uniqueIndex;size:50;not null"` // internal use only, not exposed in API
+	Password         string     `json:"-" gorm:"size:255;not null"`
+	Email            string     `json:"email" gorm:"uniqueIndex;size:100;not null"`
+	Name             string     `json:"name" gorm:"size:100;not null"`
+	SystemRole       SystemRole `json:"system_role" gorm:"size:20;default:USER"`
+	StorageFolder    string     `json:"-" gorm:"size:36;index"`
+	IsActive         bool       `json:"is_active" gorm:"default:true"`
+	TokenVersion     int        `json:"-" gorm:"default:1;not null"`
+	ResetToken       string     `json:"-" gorm:"size:100"`
+	ResetTokenExpiry *time.Time `json:"-" gorm:"type:timestamptz"`
+	CreatedAt        time.Time  `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt        time.Time  `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // LoginRequest represents login request body (frontend uses email)
@@ -84,6 +86,17 @@ type RefreshResponse struct {
 	ExpiresAt    string `json:"expires_at"`
 }
 
+// ForgotPasswordRequest is the request body for password reset request
+type ForgotPasswordRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+// ResetPasswordRequest is the request body for password reset
+type ResetPasswordRequest struct {
+	Token       string `json:"token" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required,min=6"`
+}
+
 // UserCreateRequest is the request body for creating a user (admin)
 type UserCreateRequest struct {
 	Email      string     `json:"email" binding:"required,email"`
@@ -96,6 +109,7 @@ type UserCreateRequest struct {
 type UserUpdateRequest struct {
 	Name       string     `json:"name"`
 	SystemRole SystemRole `json:"system_role"`
+	IsActive   *bool      `json:"is_active"`
 }
 
 // UserListQuery is the query parameters for listing users

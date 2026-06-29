@@ -1,12 +1,22 @@
 package router
 
 import (
+	"net/http"
+
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/handler"
 	"github.com/bioinfo/schema-platform/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
+
+// redirectAuthLegacy issues a 308 Permanent Redirect to the new /auth/* path.
+// 308 preserves the request method and body for legacy POST clients.
+func redirectAuthLegacy(target string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Redirect(http.StatusPermanentRedirect, target)
+	}
+}
 
 func New(cfg *config.Config) *gin.Engine {
 	gin.SetMode(cfg.Server.Mode)
@@ -31,7 +41,17 @@ func New(cfg *config.Config) *gin.Engine {
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/refresh", authHandler.Refresh)
 			auth.POST("/logout", authHandler.Logout)
+			auth.POST("/forgot-password", authHandler.ForgotPassword)
+			auth.POST("/reset-password", authHandler.ResetPassword)
 		}
+
+		// Legacy auth routes (pre-/auth/ prefix) kept for older deploy scripts.
+		v1.POST("/login", redirectAuthLegacy("/api/v1/auth/login"))
+		v1.POST("/register", redirectAuthLegacy("/api/v1/auth/register"))
+		v1.POST("/refresh", redirectAuthLegacy("/api/v1/auth/refresh"))
+		v1.POST("/logout", redirectAuthLegacy("/api/v1/auth/logout"))
+		v1.POST("/forgot-password", redirectAuthLegacy("/api/v1/auth/forgot-password"))
+		v1.POST("/reset-password", redirectAuthLegacy("/api/v1/auth/reset-password"))
 
 		// Protected auth routes
 		authProtected := v1.Group("/auth")
@@ -100,13 +120,14 @@ func New(cfg *config.Config) *gin.Engine {
 			tasks.POST("/:id/start", taskHandler.StartTask)
 			tasks.POST("/:id/stop", taskHandler.StopTask)
 			tasks.POST("/:id/retry", taskHandler.RetryTask)
+			tasks.POST("/:id/results/import/retry", taskHandler.RetryResultImport)
 			tasks.POST("/:id/ai-evaluate", aiHandler.Evaluate)
 
-			// AI proxy for frontend page-agent (forwards LLM calls, POST only)
+			// AI proxy for frontend page-agent.
 			aiProxy := v1.Group("/ai/proxy")
 			aiProxy.Use(middleware.JWTAuth(cfg))
 			{
-				aiProxy.POST("/*path", aiHandler.ProxyAgent)
+				aiProxy.Any("/*path", aiHandler.ProxyAgent)
 			}
 			// Export
 			tasks.GET("/:id/export/excel", exportHandler.ExportExcel)
@@ -116,6 +137,10 @@ func New(cfg *config.Config) *gin.Engine {
 			// Reports
 			tasks.GET("/:id/reports", reportHandler.ListReports)
 			tasks.POST("/:id/reports", reportHandler.CreateReport)
+			tasks.POST("/:id/reports/upload", reportHandler.UploadReport)
+			tasks.PATCH("/:id/reports/:reportId/status", reportHandler.UpdateReportStatus)
+			tasks.DELETE("/:id/reports/:reportId", reportHandler.DeleteReport)
+			tasks.GET("/:id/reports/:reportId/download-url", reportHandler.GetReportDownloadURL)
 		}
 
 		// ========== Report templates ==========

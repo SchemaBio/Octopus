@@ -13,6 +13,17 @@ func ValidateStartup(cfg *Config) error {
 			return fmt.Errorf("JWT configuration error: %w", err)
 		}
 	}
+	if cfg.ExternalAuth.Enabled && cfg.ExternalAuth.SharedSecret == "" {
+		return fmt.Errorf("EXTERNAL_AUTH_SHARED_SECRET must be set when external auth is enabled")
+	}
+	if cfg.Overlay.Enabled {
+		if strings.TrimSpace(cfg.Overlay.BaseURL) == "" {
+			return fmt.Errorf("OVERLAY_BASE_URL must be set when overlay is enabled")
+		}
+		if cfg.Overlay.SharedSecret == "" {
+			return fmt.Errorf("OVERLAY_SHARED_SECRET must be set when overlay is enabled")
+		}
+	}
 
 	return nil
 }

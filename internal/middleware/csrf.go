@@ -46,7 +46,7 @@ func isSafeMethod(method string) bool {
 
 func isAuthEndpoint(path string) bool {
 	switch strings.TrimPrefix(path, "/api/v1/auth/") {
-	case "login", "register":
+	case "login", "register", "forgot-password":
 		return true
 	default:
 		return false

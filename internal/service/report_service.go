@@ -5,9 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -17,12 +20,22 @@ import (
 	"github.com/google/uuid"
 )
 
+const defaultReportContentType = "application/octet-stream"
+
 // ReportService handles report business logic
 type ReportService struct {
 	cfg          *config.Config
 	repo         *repository.ReportRepository
 	templateRepo *repository.ReportTemplateRepository
-	taskRepo     *repository.TaskRepository
+	http         *http.Client
+}
+
+// ReportDownload is a generated report stream returned directly to the client.
+type ReportDownload struct {
+	FileName      string
+	ContentType   string
+	ContentLength int64
+	Body          io.ReadCloser
 }
 
 func NewReportService(cfg *config.Config) *ReportService {
@@ -30,11 +43,11 @@ func NewReportService(cfg *config.Config) *ReportService {
 		cfg:          cfg,
 		repo:         repository.NewReportRepository(),
 		templateRepo: repository.NewReportTemplateRepository(),
-		taskRepo:     repository.NewTaskRepository(),
+		http:         reportHTTPClient(),
 	}
 }
 
-// ListByTaskID returns all reports for a task
+// ListByTaskID returns legacy persisted reports for a task.
 func (s *ReportService) ListByTaskID(taskID string) ([]model.ReportResponse, error) {
 	reports, err := s.repo.FindByTaskID(taskID)
 	if err != nil {
@@ -48,107 +61,145 @@ func (s *ReportService) ListByTaskID(taskID string) ([]model.ReportResponse, err
 	return results, nil
 }
 
-// CreateReport triggers report generation via external API
-func (s *ReportService) CreateReport(taskID string, req *model.ReportCreateRequest, userID string) (*model.Report, error) {
-	// Verify task exists
-	task, err := s.taskRepo.FindByUUID(taskID)
+// GenerateReportDownload calls the configured report API and returns its file
+// response as a stream. Octopus does not store, archive, or later serve reports
+// generated through this endpoint.
+func (s *ReportService) GenerateReportDownload(ctx context.Context, task *model.Task, req *model.ReportCreateRequest, userID string) (*ReportDownload, error) {
+	templateName := strings.TrimSpace(req.TemplateName)
+	if templateName == "" {
+		return nil, fmt.Errorf("templateName is required")
+	}
+
+	tmpl, err := s.templateRepo.FindByName(templateName)
 	if err != nil {
-		return nil, fmt.Errorf("task not found: %s", taskID)
+		return nil, fmt.Errorf("report template not found")
 	}
 
-	reportUUID := uuid.New().String()
+	return s.generateReportDownload(ctx, tmpl, task, req, userID)
+}
 
-	report := &model.Report{
-		ID:        reportUUID,
-		TaskID:    taskID,
-		Name:      req.Name,
-		Type:      "generated",
-		Status:    model.ReportStatusDraft,
-		CreatedBy: userID,
-	}
-
-	// If template specified, call external API
-	if req.TemplateName != "" {
-		report.TemplateName = req.TemplateName
-		tmpl, err := s.templateRepo.FindByName(req.TemplateName)
-		if err == nil && tmpl != nil {
-			report.Type = "generated"
-			// Call external report generation API in background
-			go s.callExternalAPI(tmpl, task, report)
-		}
-	}
-
-	if err := s.repo.Create(report); err != nil {
+func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.ReportTemplate, task *model.Task, req *model.ReportCreateRequest, userID string) (*ReportDownload, error) {
+	if err := validateReportAPIEndpoint(tmpl.APIEndpoint); err != nil {
 		return nil, err
 	}
 
-	return report, nil
-}
-
-// callExternalAPI calls the user's configured report generation API
-func (s *ReportService) callExternalAPI(tmpl *model.ReportTemplate, task *model.Task, report *model.Report) {
-	// Validate endpoint for SSRF protection
-	if err := validateReportAPIEndpoint(tmpl.APIEndpoint); err != nil {
-		s.updateReportStatus(report.ID, model.ReportStatusDraft, "")
-		return
+	requestID := uuid.New().String()
+	reportName := strings.TrimSpace(req.Name)
+	if reportName == "" {
+		reportName = tmpl.Name
 	}
-
 	payload := map[string]interface{}{
-		"reportId":   report.ID,
+		"requestId":  requestID,
+		"reportId":   requestID,
 		"taskId":     task.UUID,
 		"taskName":   task.Name,
 		"sampleId":   task.SampleID,
 		"pipeline":   task.Pipeline,
-		"reportName": report.Name,
+		"reportName": reportName,
+		"createdBy":  userID,
 	}
 
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", tmpl.APIEndpoint, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, tmpl.APIEndpoint, bytes.NewReader(body))
 	if err != nil {
-		s.updateReportStatus(report.ID, model.ReportStatusDraft, "")
-		return
+		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/octet-stream,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*")
 	if tmpl.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+tmpl.APIKey)
+		httpReq.Header.Set("Authorization", "Bearer "+tmpl.APIKey)
 	}
 
-	client := reportHTTPClient()
-	resp, err := client.Do(req)
+	resp, err := s.httpClient().Do(httpReq)
 	if err != nil {
-		s.updateReportStatus(report.ID, model.ReportStatusDraft, "")
-		return
+		return nil, fmt.Errorf("report API request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		// Parse response for external job ID
-		var result map[string]interface{}
-		if json.NewDecoder(resp.Body).Decode(&result) == nil {
-			if jobID, ok := result["jobId"].(string); ok {
-				s.updateReportStatus(report.ID, model.ReportStatusPendingReview, jobID)
-				return
-			}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		defer resp.Body.Close()
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("report API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = defaultReportContentType
+	}
+
+	return &ReportDownload{
+		FileName:      reportDownloadFileName(req.Name, tmpl.Name, task.UUID, resp.Header.Get("Content-Disposition"), contentType),
+		ContentType:   contentType,
+		ContentLength: resp.ContentLength,
+		Body:          resp.Body,
+	}, nil
+}
+
+func (s *ReportService) httpClient() *http.Client {
+	if s.http != nil {
+		return s.http
+	}
+	return reportHTTPClient()
+}
+
+func reportDownloadFileName(requestName, templateName, taskID, contentDisposition, contentType string) string {
+	if _, params, err := mime.ParseMediaType(contentDisposition); err == nil {
+		if filename := sanitizeReportFileName(params["filename"]); filename != "" {
+			return filename
 		}
-		s.updateReportStatus(report.ID, model.ReportStatusPendingReview, "")
+		if filename := sanitizeReportFileName(params["filename*"]); filename != "" {
+			return filename
+		}
 	}
+
+	base := sanitizeReportFileName(requestName)
+	if base == "" {
+		base = sanitizeReportFileName(templateName)
+	}
+	if base == "" {
+		base = "report-" + taskID
+	}
+	if path.Ext(base) == "" {
+		base += reportFileExtension(contentType)
+	}
+	return base
 }
 
-func (s *ReportService) updateReportStatus(reportID string, status model.ReportStatus, externalJobID string) {
-	report, err := s.repo.FindByStringID(reportID)
+func sanitizeReportFileName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	name = path.Base(strings.ReplaceAll(name, "\\", "/"))
+	name = strings.Trim(name, ". ")
+	if name == "" || name == "." || name == "/" {
+		return ""
+	}
+	return name
+}
+
+func reportFileExtension(contentType string) string {
+	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return
+		mediaType = contentType
 	}
-	report.Status = status
-	if externalJobID != "" {
-		report.ExternalJobID = externalJobID
+	switch strings.ToLower(strings.TrimSpace(mediaType)) {
+	case "application/pdf":
+		return ".pdf"
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		return ".docx"
+	case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+		return ".xlsx"
+	case "text/html":
+		return ".html"
+	case "text/plain":
+		return ".txt"
+	default:
+		return ".bin"
 	}
-	report.UpdatedAt = time.Now()
-	s.repo.Update(report)
 }
 
-// ListActiveTemplates returns all active report templates (public-safe, no sensitive fields)
+// ListActiveTemplates returns all active report templates.
 func (s *ReportService) ListActiveTemplates() ([]model.ReportTemplateResponse, error) {
 	templates, err := s.templateRepo.FindActive()
 	if err != nil {
@@ -161,8 +212,12 @@ func (s *ReportService) ListActiveTemplates() ([]model.ReportTemplateResponse, e
 	return results, nil
 }
 
-// CreateTemplate creates a new report template
-func (s *ReportService) CreateTemplate(req *model.ReportTemplateCreateRequest) (*model.ReportTemplate, error) {
+// CreateTemplate creates a new report template.
+func (s *ReportService) CreateTemplate(req *model.ReportTemplateCreateRequest) (*model.ReportTemplateAdminResponse, error) {
+	if err := validateReportAPIEndpoint(req.APIEndpoint); err != nil {
+		return nil, err
+	}
+
 	tmpl := &model.ReportTemplate{
 		ID:          uuid.New().String(),
 		Name:        req.Name,
@@ -175,15 +230,15 @@ func (s *ReportService) CreateTemplate(req *model.ReportTemplateCreateRequest) (
 	if err := s.templateRepo.Create(tmpl); err != nil {
 		return nil, err
 	}
-	return tmpl, nil
+	resp := tmpl.ToAdminResponse()
+	return &resp, nil
 }
 
-// validateReportAPIEndpoint validates a report API endpoint for SSRF protection.
 func validateReportAPIEndpoint(rawURL string) error {
-	return validateReportEndpointWithResolver(rawURL, net.LookupIP)
+	return validateReportAPIEndpointWithResolver(rawURL, net.LookupIP)
 }
 
-func validateReportEndpointWithResolver(rawURL string, lookup func(string) ([]net.IP, error)) error {
+func validateReportAPIEndpointWithResolver(rawURL string, lookup func(string) ([]net.IP, error)) error {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return fmt.Errorf("invalid report API endpoint")
@@ -196,7 +251,7 @@ func validateReportEndpointWithResolver(rawURL string, lookup func(string) ([]ne
 	}
 
 	host := u.Hostname()
-	if strings.EqualFold(host, "localhost") || strings.EqualFold(host, "127.0.0.1") {
+	if strings.EqualFold(host, "localhost") {
 		return fmt.Errorf("report API endpoint host is not allowed")
 	}
 
@@ -208,14 +263,14 @@ func validateReportEndpointWithResolver(rawURL string, lookup func(string) ([]ne
 		return fmt.Errorf("report API endpoint host did not resolve")
 	}
 	for _, ip := range ips {
-		if !isPublicReportIP(ip) {
+		if !isPublicIP(ip) {
 			return fmt.Errorf("report API endpoint must resolve to public IP addresses")
 		}
 	}
 	return nil
 }
 
-func isPublicReportIP(ip net.IP) bool {
+func isPublicIP(ip net.IP) bool {
 	if ip == nil || ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() ||
 		ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 		return false
@@ -256,11 +311,10 @@ func reportDialContext(ctx context.Context, network, address string) (net.Conn, 
 		return nil, fmt.Errorf("report API endpoint host did not resolve")
 	}
 	for _, ip := range ips {
-		if !isPublicReportIP(ip.IP) {
+		if !isPublicIP(ip.IP) {
 			return nil, fmt.Errorf("report API endpoint must resolve to public IP addresses")
 		}
 	}
-
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	for _, ip := range ips {
 		return dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))

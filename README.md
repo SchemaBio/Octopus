@@ -5,21 +5,55 @@
 ## 功能特性
 
 - **数据库持久化**：PostgreSQL，JSONB/numeric 等原生类型优化，自动迁移表结构
-- **JWT 认证**：无状态认证系统，支持登录、注册、Token 刷新，Token 版本控制防篡改
+- **JWT 认证**：无状态认证系统，支持登录、注册、Token 刷新、退出吊销和密码重置，Token 版本控制防篡改
 - **安全加固**：CSRF 时间安全比较、JWT 数据库验证、AI Proxy SSRF 防护、Report API SSRF 防护
 - **样本管理**：样本创建、查询、状态追踪，关联项目
 - **项目管理**：项目批次管理，进度汇总统计
 - **任务执行**：使用本地 `miniwdl` 执行 WDL 流程
 - **Sepiida 集成**：实时查询任务进度和状态
 - **自动归档**：任务完成后自动将结果归档到指定目录，读取 `outputs.resolved.json`
-- **数据导入**：从归档的 parquet/TSV 文件解析并导入数据库，支持 7 种变异类型 + QC
+- **数据导入**：从归档的 parquet/TSV 文件解析并导入数据库，支持 7 种变异类型 + QC、导入状态追踪和失败重试
 - **变异结果管理**：SNV/Indel、CNV Segment/Exon、STR、MEI、线粒体、UPD、ROH 共 7 类变异
 - **审核/回报**：统一通过数据库管理变异的审核和回报状态，支持 toggleable 状态
 - **AI 辅助评估**：对接 LLM 对变异进行临床遗传学分析，支持多级过滤，Proxy 安全加固
 - **结果查询**：根据 UUID 和 outputs.resolved.json 中的 key 查询归档文件路径
+- **报告生成**：通过本地配置的 Report API 直接生成并流式下载报告，不依赖对象存储
 - **WDL 模板管理**：内置工作流目录 + 文件系统模板，支持默认输入值
 - **资源访问控制**：基于任务的访问验证，防止跨任务数据泄露
 - **启动配置验证**：release 模式下自动检查 JWT 密钥强度和配置一致性
+
+### 社区版边界
+
+Octopus 保持本地自部署定位，本次同步 Squid 的安全与本地工作流增强，但不引入 Squid SaaS 专属能力：积分计费、腾讯云 CVM 竞价实例、COS/对象存储归档、平台级组织管理、按组织限流和完整多租户隔离仍只属于 Squid。
+
+### SaaS Overlay 扩展点（默认关闭）
+
+Octopus 仍然是完整可部署的开源社区版，不包含 Squid 的闭源计费、云调度或多租户控制面。为了避免同时维护两套后端，Octopus 提供一组通用扩展点：部署方可以先部署开源 Octopus，再让 Squid 作为外部 SaaS Overlay 负责租户认证、任务准入和生命周期计费。
+
+启用方式是显式配置环境变量。社区部署保持 `EXTERNAL_AUTH_ENABLED=false` 和 `OVERLAY_ENABLED=false` 即可，不需要 Squid。
+
+| 能力 | 方向 | 说明 |
+|------|------|------|
+| Trusted external auth | Squid -> Octopus | Squid 验证 SaaS 用户后，用共享密钥和身份头调用 Octopus API |
+| Task admission webhook | Octopus -> Squid | 创建、启动、重试任务前询问外部策略面是否允许 |
+| Task event webhook | Octopus -> Squid | 任务 created/running/queued/completed/failed/cancelled/start_failed 时发送事件 |
+
+Trusted external auth 默认头：
+
+| Header | 说明 |
+|--------|------|
+| `X-Octopus-External-Auth` | `Bearer <EXTERNAL_AUTH_SHARED_SECRET>` |
+| `X-Octopus-User-ID` | 已认证用户 ID |
+| `X-Octopus-User-Email` | 已认证用户邮箱 |
+| `X-Octopus-User-Role` | 用户角色，缺省为普通用户 |
+| `X-Octopus-Org-ID` | 可选组织 ID，由 SaaS Overlay 使用 |
+
+Overlay webhook 默认路径：
+
+| Endpoint | Payload | 用途 |
+|----------|---------|------|
+| `POST /api/v1/overlay/tasks/admit` | `OverlayTaskAdmissionRequest` | 返回 `{ "allowed": true }` 或 `{ "allowed": false, "reason": "..." }` |
+| `POST /api/v1/overlay/tasks/events` | `OverlayTaskEventRequest` | 接收任务生命周期事件；Octopus 以 best-effort 方式发送 |
 
 ## 目录结构
 
@@ -71,7 +105,11 @@ go run cmd/server/main.go
 | POST | /api/v1/auth/register | 用户注册 | ❌ |
 | POST | /api/v1/auth/refresh | 刷新 Token | ❌ |
 | POST | /api/v1/auth/logout | 登出 | ❌ |
+| POST | /api/v1/auth/forgot-password | 生成密码重置 token | ❌ |
+| POST | /api/v1/auth/reset-password | 使用重置 token 设置新密码 | ❌ |
 | GET | /api/v1/auth/me | 获取当前用户信息 | ✅ |
+
+> 旧路径 `/api/v1/{login,register,refresh,logout,forgot-password,reset-password}` 会 308 永久重定向到 `/api/v1/auth/*`，方便老脚本平滑迁移。
 
 ### 任务管理 (需要认证)
 
@@ -81,8 +119,18 @@ go run cmd/server/main.go
 | GET | /api/v1/tasks | 获取任务列表 |
 | GET | /api/v1/tasks/:id | 获取任务详情 |
 | GET | /api/v1/tasks/:id/progress | 获取任务进度 (Sepiida) |
+| POST | /api/v1/tasks/:id/start | 启动 queued/failed 任务 |
+| POST | /api/v1/tasks/:id/stop | 停止 running 任务 |
+| POST | /api/v1/tasks/:id/retry | 重试 failed 任务 |
+| POST | /api/v1/tasks/:id/results/import/retry | 重试归档结果导入 |
 | DELETE | /api/v1/tasks/:id | 取消任务 |
 | GET | /api/v1/tasks/:id/logs | 获取任务日志 |
+| GET | /api/v1/tasks/:id/sample | 获取任务关联样本 |
+| POST | /api/v1/tasks/:id/ai-evaluate | 触发 AI 辅助评估 |
+| GET | /api/v1/tasks/:id/export/excel | 导出 Excel |
+| GET | /api/v1/tasks/:id/export/parquet | 导出 Parquet |
+| GET | /api/v1/tasks/:id/export/vcf | 导出 VCF |
+| GET | /api/v1/tasks/:id/export/mt-vcf | 导出线粒体 VCF |
 
 ### 样本管理 (需要认证)
 
@@ -132,6 +180,21 @@ go run cmd/server/main.go
 | GET | /api/v1/archive/:uuid/output/:key | 根据 key 查询归档文件路径 |
 | POST | /api/v1/archive/:uuid/import | 手动触发数据导入 (parquet → DB) |
 
+### 报告管理 (需要认证)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/report-templates | 列出可用报告模板 |
+| POST | /api/v1/report-templates | 创建报告模板 (admin) |
+| GET | /api/v1/tasks/:id/reports | 查询历史兼容报告记录 |
+| POST | /api/v1/tasks/:id/reports | 调用配置的 Report API 并直接下载生成文件 |
+| POST | /api/v1/tasks/:id/reports/upload | 已禁用，返回 410 |
+| PATCH | /api/v1/tasks/:id/reports/:reportId/status | 已禁用，返回 410 |
+| DELETE | /api/v1/tasks/:id/reports/:reportId | 已禁用，返回 410 |
+| GET | /api/v1/tasks/:id/reports/:reportId/download-url | 已禁用，返回 410 |
+
+Octopus 不保存新生成报告，也不生成对象存储下载链接；报告 API 的响应会以附件形式直接流式返回给客户端。
+
 ### 结果管理 (需要认证)
 
 | Method | Path | Description |
@@ -167,13 +230,31 @@ go run cmd/server/main.go
 | UPLOAD_MAX_SIZE_MB | 0 | 上传文件大小限制，0 表示不限制 |
 | SEPIIDA_URL | http://localhost:9090 | Sepiida Server URL |
 | SEPIIDA_QUERY_KEY | | Sepiida Query Key |
+| SEPIIDA_QUERY_KEY_FILE | | 从文件读取 Sepiida Query Key，适合 Docker/K8s secret |
 | SEPIIDA_ENABLED | true | 启用 Sepiida 集成 |
 | PARQUET_ENABLED | true | 启用 Parquet 转换 |
 | PARQUET_DIR | | Parquet 输出目录 (默认同归档目录) |
 | JWT_SECRET | octopus-secret-key-change-in-production | JWT 签名密钥 ⚠️ 生产环境必须更改 (≥32字符) |
+| JWT_SECRET_FILE | | 从文件读取 JWT 签名密钥，优先级低于 `JWT_SECRET` |
 | JWT_ISSUER | octopus | JWT Issuer |
 | JWT_EXPIRE | 24h | Access Token 有效期 |
 | JWT_REFRESH | 168h | Refresh Token 有效期 (7天) |
+| EXTERNAL_AUTH_ENABLED | false | 启用可信外部认证头，供 Squid 等网关转发已认证用户 |
+| EXTERNAL_AUTH_SHARED_SECRET | | 外部认证共享密钥，启用时必填 |
+| EXTERNAL_AUTH_SHARED_SECRET_FILE | | 从文件读取外部认证共享密钥 |
+| EXTERNAL_AUTH_HEADER | X-Octopus-External-Auth | 承载外部认证共享密钥的请求头 |
+| EXTERNAL_AUTH_USER_ID_HEADER | X-Octopus-User-ID | 外部认证用户 ID 请求头 |
+| EXTERNAL_AUTH_EMAIL_HEADER | X-Octopus-User-Email | 外部认证用户邮箱请求头 |
+| EXTERNAL_AUTH_ROLE_HEADER | X-Octopus-User-Role | 外部认证用户角色请求头 |
+| EXTERNAL_AUTH_ORG_ID_HEADER | X-Octopus-Org-ID | 外部认证组织 ID 请求头 |
+| OVERLAY_ENABLED | false | 启用任务准入和生命周期事件 Overlay |
+| OVERLAY_BASE_URL | | Overlay 服务根地址，例如 Squid API 地址 |
+| OVERLAY_SHARED_SECRET | | Octopus 调用 Overlay webhook 的共享密钥，启用时必填 |
+| OVERLAY_SHARED_SECRET_FILE | | 从文件读取 Overlay 共享密钥 |
+| OVERLAY_TIMEOUT | 5s | Overlay HTTP 调用超时时间 |
+| OVERLAY_FAIL_OPEN | false | 准入 webhook 失败时是否放行；社区/生产建议保持 false |
+| OVERLAY_TASK_ADMISSION_PATH | /api/v1/overlay/tasks/admit | 任务准入 webhook 路径 |
+| OVERLAY_TASK_EVENT_PATH | /api/v1/overlay/tasks/events | 任务事件 webhook 路径 |
 | LLM_ENABLED | false | 启用 AI 评估 |
 | LLM_BASE_URL | | LLM API Base URL |
 | LLM_API_KEY | | LLM API Key |
@@ -199,7 +280,24 @@ export DB_DSN="host=localhost user=octopus password=octopus123 dbname=octopus po
    Authorization: Bearer <token>
    ```
 4. Token 过期前，调用 `/api/v1/auth/refresh` 刷新 Token
-5. 登出时，前端删除存储的 Token
+5. 登出时，服务端会提升用户 `token_version`，吊销当前会话及旧 Token
+
+### 密码重置
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/forgot-password \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com"}'
+
+curl -X POST http://localhost:8080/api/v1/auth/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "<reset-token>",
+    "new_password": "newStrongPassword123"
+  }'
+```
+
+`forgot-password` 会生成 1 小时有效的重置 token，并且不会暴露账号是否存在。Octopus 当前不内置邮件/短信投递，需要部署方把 token 投递接入到自己的通知链路。
 
 ### 登录示例
 
@@ -546,3 +644,4 @@ curl -X POST http://localhost:8080/api/v1/results/cnv-segment/{id}/report \
 3. Token 过期前调用 `/auth/refresh` 刷新
 4. 通过结果查询 API 加载各类变异数据 (含审核/回报状态)
 5. 用户操作后调用 review/report API 同步状态到数据库
+

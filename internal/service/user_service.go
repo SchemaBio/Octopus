@@ -1,11 +1,15 @@
 package service
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/model"
 	"github.com/bioinfo/schema-platform/internal/repository"
+	"github.com/google/uuid"
 )
 
 // UserService handles user business logic
@@ -22,6 +26,21 @@ func NewUserService(cfg *config.Config) *UserService {
 		repo:   repository.NewUserRepository(),
 		jwtSvc: NewJWTService(cfg),
 	}
+}
+
+func tokenClaimsMatchUser(claims *Claims, user *model.User) bool {
+	if claims.TokenVersion <= 0 {
+		return false
+	}
+	return claims.UserID == user.ID &&
+		claims.Email == user.Email &&
+		claims.Role == string(user.SystemRole) &&
+		claims.TokenVersion == EffectiveTokenVersion(user.TokenVersion)
+}
+
+func resetTokenDigest(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return fmt.Sprintf("%x", sum[:])
 }
 
 // Login authenticates user by email and returns tokens
@@ -77,12 +96,13 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.LoginResponse
 
 	// Create user with email as username (internal)
 	user := &model.User{
-		Username:   req.Email,
-		Password:   hashedPassword,
-		Email:      req.Email,
-		Name:       req.Name,
-		SystemRole: model.SystemRoleUser,
-		IsActive:   true,
+		Username:     req.Email,
+		Password:     hashedPassword,
+		Email:        req.Email,
+		Name:         req.Name,
+		SystemRole:   model.SystemRoleUser,
+		IsActive:     true,
+		TokenVersion: 1,
 	}
 
 	if err := s.repo.Create(user); err != nil {
@@ -108,9 +128,19 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.LoginResponse
 
 // RefreshToken refreshes access token
 func (s *UserService) RefreshToken(refreshToken string) (*model.RefreshResponse, error) {
-	token, newRefreshToken, expiresAt, err := s.jwtSvc.RefreshToken(refreshToken)
+	claims, err := s.jwtSvc.ValidateRefreshToken(refreshToken)
 	if err != nil {
 		return nil, errors.New("invalid refresh token")
+	}
+
+	user, err := s.repo.FindByID(claims.UserID)
+	if err != nil || !user.IsActive || !tokenClaimsMatchUser(claims, user) {
+		return nil, errors.New("invalid refresh token")
+	}
+
+	token, newRefreshToken, expiresAt, err := s.jwtSvc.GenerateToken(user)
+	if err != nil {
+		return nil, errors.New("failed to generate token")
 	}
 
 	return &model.RefreshResponse{
@@ -144,12 +174,13 @@ func (s *UserService) CreateDefaultAdmin(email, password, name string) (*model.U
 	}
 
 	admin := &model.User{
-		Username:   email,
-		Password:   hashedPassword,
-		Email:      email,
-		Name:       name,
-		SystemRole: model.SystemRoleSuperAdmin,
-		IsActive:   true,
+		Username:     email,
+		Password:     hashedPassword,
+		Email:        email,
+		Name:         name,
+		SystemRole:   model.SystemRoleSuperAdmin,
+		IsActive:     true,
+		TokenVersion: 1,
 	}
 
 	if err := s.repo.Create(admin); err != nil {
@@ -190,6 +221,9 @@ func (s *UserService) UpdateUser(id uint, req *model.UserUpdateRequest) (*model.
 	if req.SystemRole != "" {
 		user.SystemRole = req.SystemRole
 	}
+	if req.IsActive != nil {
+		user.IsActive = *req.IsActive
+	}
 
 	if err := s.repo.Update(user); err != nil {
 		return nil, err
@@ -222,4 +256,72 @@ func (s *UserService) ChangePassword(id uint, oldPassword, newPassword string) e
 	}
 
 	return s.repo.UpdatePassword(id, hashedPassword)
+}
+
+// RevokeUserTokens invalidates all existing access and refresh tokens for a user.
+func (s *UserService) RevokeUserTokens(id uint) error {
+	return s.repo.IncrementTokenVersion(id)
+}
+
+// RevokeToken invalidates the session represented by a current access or refresh token.
+func (s *UserService) RevokeToken(token string) error {
+	claims, err := s.jwtSvc.ValidateToken(token)
+	if err != nil {
+		return err
+	}
+	user, err := s.repo.FindByID(claims.UserID)
+	if err != nil {
+		return err
+	}
+	if !tokenClaimsMatchUser(claims, user) {
+		return errors.New("token is no longer current")
+	}
+	return s.repo.IncrementTokenVersion(user.ID)
+}
+
+// GenerateResetToken creates a password reset token for a user.
+func (s *UserService) GenerateResetToken(email string) (string, error) {
+	user, err := s.repo.FindByEmail(email)
+	if err != nil {
+		return "", nil
+	}
+
+	token := uuid.New().String()
+	expiry := time.Now().Add(1 * time.Hour)
+	user.ResetToken = resetTokenDigest(token)
+	user.ResetTokenExpiry = &expiry
+
+	if err := s.repo.Update(user); err != nil {
+		return "", err
+	}
+
+	return token, nil
+}
+
+// ResetPassword resets password using a reset token.
+func (s *UserService) ResetPassword(token, newPassword string) error {
+	user, err := s.repo.FindByResetToken(resetTokenDigest(token))
+	if err != nil {
+		user, err = s.repo.FindByResetToken(token)
+	}
+	if err != nil {
+		return errors.New("invalid or expired reset token")
+	}
+
+	if user.ResetTokenExpiry == nil || time.Now().After(*user.ResetTokenExpiry) {
+		return errors.New("reset token has expired")
+	}
+
+	preparedPassword := PreparePassword(newPassword, user.Email, s.cfg.JWT.ClientPasswordHashEnabled)
+	hashedPassword, err := HashPassword(preparedPassword)
+	if err != nil {
+		return err
+	}
+
+	user.Password = hashedPassword
+	user.ResetToken = ""
+	user.ResetTokenExpiry = nil
+	user.TokenVersion = EffectiveTokenVersion(user.TokenVersion) + 1
+
+	return s.repo.Update(user)
 }

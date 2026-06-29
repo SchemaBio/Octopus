@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -20,15 +21,17 @@ import (
 )
 
 type TaskService struct {
-	cfg            *config.Config
-	sepiida        *sepiida.Client
-	repo           *repository.TaskRepository
-	uploadJobRepo  *repository.UploadJobRepository
-	uploadFileRepo *repository.UploadFileRepository
-	sampleRepo     *repository.SampleRepository
-	pipelineRepo   *repository.PipelineRepository
-	mu             sync.RWMutex
-	running        map[string]*exec.Cmd
+	cfg             *config.Config
+	sepiida         *sepiida.Client
+	overlay         *OverlayClient
+	repo            *repository.TaskRepository
+	importBatchRepo *repository.ResultImportBatchRepository
+	uploadJobRepo   *repository.UploadJobRepository
+	uploadFileRepo  *repository.UploadFileRepository
+	sampleRepo      *repository.SampleRepository
+	pipelineRepo    *repository.PipelineRepository
+	mu              sync.RWMutex
+	running         map[string]*exec.Cmd
 }
 
 func NewTaskService(cfg *config.Config) *TaskService {
@@ -38,17 +41,72 @@ func NewTaskService(cfg *config.Config) *TaskService {
 	}
 
 	svc := &TaskService{
-		cfg:            cfg,
-		sepiida:        sepClient,
-		repo:           repository.NewTaskRepository(),
-		uploadJobRepo:  repository.NewUploadJobRepository(),
-		uploadFileRepo: repository.NewUploadFileRepository(),
-		sampleRepo:     repository.NewSampleRepository(),
-		pipelineRepo:   repository.NewPipelineRepository(),
-		running:        make(map[string]*exec.Cmd),
+		cfg:             cfg,
+		sepiida:         sepClient,
+		overlay:         NewOverlayClient(cfg.Overlay),
+		repo:            repository.NewTaskRepository(),
+		importBatchRepo: repository.NewResultImportBatchRepository(),
+		uploadJobRepo:   repository.NewUploadJobRepository(),
+		uploadFileRepo:  repository.NewUploadFileRepository(),
+		sampleRepo:      repository.NewSampleRepository(),
+		pipelineRepo:    repository.NewPipelineRepository(),
+		running:         make(map[string]*exec.Cmd),
 	}
 
 	return svc
+}
+
+func (s *TaskService) admitTask(ctx context.Context, action string, actor model.OverlayActor, task *model.Task) error {
+	if s.overlay == nil {
+		return nil
+	}
+	return s.overlay.AdmitTask(ctx, model.OverlayTaskAdmissionRequest{
+		Action:      action,
+		Actor:       actor,
+		Task:        model.NewOverlayTaskSnapshot(task),
+		RequestedAt: time.Now(),
+	})
+}
+
+func (s *TaskService) emitTaskEvent(event string, actor model.OverlayActor, task *model.Task, previousStatus model.TaskStatus, message string) {
+	if s.overlay == nil || task == nil {
+		return
+	}
+	req := model.OverlayTaskEventRequest{
+		Event:          event,
+		Actor:          actor,
+		Task:           model.NewOverlayTaskSnapshot(task),
+		PreviousStatus: previousStatus,
+		OccurredAt:     time.Now(),
+		Message:        message,
+	}
+	go func() {
+		if err := s.overlay.EmitTaskEvent(context.Background(), req); err != nil {
+			fmt.Printf("WARNING: overlay task event %s failed for %s: %v\n", event, task.UUID, err)
+		}
+	}()
+}
+
+func (s *TaskService) emitStatusEvent(task *model.Task, previousStatus model.TaskStatus) {
+	if task == nil || previousStatus == task.Status {
+		return
+	}
+	event := ""
+	switch task.Status {
+	case model.TaskStatusQueued, model.TaskStatusWaitingData:
+		event = model.OverlayTaskEventQueued
+	case model.TaskStatusRunning:
+		event = model.OverlayTaskEventRunning
+	case model.TaskStatusCompleted:
+		event = model.OverlayTaskEventCompleted
+	case model.TaskStatusFailed:
+		event = model.OverlayTaskEventFailed
+	case model.TaskStatusCancelled:
+		event = model.OverlayTaskEventCancelled
+	}
+	if event != "" {
+		s.emitTaskEvent(event, model.OverlayActor{}, task, previousStatus, task.Error)
+	}
 }
 
 // StartSepiidaSync begins periodic syncing of task status from Sepiida.
@@ -96,9 +154,10 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 		return
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	completedNow := false
+	previousStatus := task.Status
 
+	s.mu.Lock()
 	changed := false
 	switch workflow.Status {
 	case model.SepiidaStatusRunning:
@@ -114,6 +173,7 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 			now := time.Now()
 			task.FinishedAt = &now
 			changed = true
+			completedNow = true
 		}
 	case model.SepiidaStatusFailed:
 		if task.Status != model.TaskStatusFailed {
@@ -135,6 +195,12 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	if changed {
 		task.UpdatedAt = time.Now()
 		s.repo.Update(task)
+		s.emitStatusEvent(task, previousStatus)
+	}
+	s.mu.Unlock()
+
+	if completedNow {
+		s.importTaskArchive(task)
 	}
 }
 
@@ -197,7 +263,7 @@ func ensurePathInsideBase(base, path string) error {
 // CreateTask creates a new task. It resolves data file paths from the linked Sample,
 // UploadJob, and Pipeline configuration, injecting them into WDL inputs.
 // If the upload job is not yet completed, the task enters waiting_for_data status.
-func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateRequest, userID uint) (*model.Task, error) {
+func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateRequest, actor model.OverlayActor) (*model.Task, error) {
 	executor := model.ExecutorType(s.cfg.Task.DefaultExecutor)
 	if executor != model.ExecutorLocal {
 		executor = model.ExecutorLocal
@@ -310,38 +376,47 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 
 	now := time.Now()
 	task := &model.Task{
-		ID:              taskID,
-		UUID:            workflowUUID,
-		Name:            req.PipelineName,
-		SampleID:        req.SampleID,
-		InternalID:      req.InternalID,
-		UploadJobID:     req.UploadJobID,
-		Pipeline:        req.PipelineName,
-		PipelineVersion: req.PipelineVersion,
-		Template:        req.Template,
-		Executor:        executor,
-		InputJSON:       inputJSONStr,
-		ConfigFile:      configFile,
-		OutputDir:       outputDir,
-		Status:          taskStatus,
-		Progress:        0,
-		SampleIDRef:     sampleIDRef,
-		Remark:          req.Remark,
-		CreatedBy:       userID,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                 taskID,
+		UUID:               workflowUUID,
+		Name:               req.PipelineName,
+		SampleID:           req.SampleID,
+		InternalID:         req.InternalID,
+		UploadJobID:        req.UploadJobID,
+		Pipeline:           req.PipelineName,
+		PipelineVersion:    req.PipelineVersion,
+		Template:           req.Template,
+		Executor:           executor,
+		InputJSON:          inputJSONStr,
+		ConfigFile:         configFile,
+		OutputDir:          outputDir,
+		Status:             taskStatus,
+		Progress:           0,
+		SampleIDRef:        sampleIDRef,
+		Remark:             req.Remark,
+		CreatedBy:          actor.UserID,
+		ResultImportStatus: model.ResultImportStatusPending,
+		ExternalOrgID:      actor.OrgID,
+		EstimatedMinutes:   req.EstimatedMinutes,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+
+	if err := s.admitTask(ctx, model.OverlayAdmissionActionCreate, actor, task); err != nil {
+		return nil, err
 	}
 
 	if err := s.repo.Create(task); err != nil {
 		return nil, fmt.Errorf("failed to save task: %w", err)
 	}
 
+	s.emitTaskEvent(model.OverlayTaskEventCreated, actor, task, "", "")
+
 	return task, nil
 }
 
 // StartTask starts a queued, waiting_for_data, or failed task.
 // Before launching, it verifies that all input data files are accessible.
-func (s *TaskService) StartTask(ctx context.Context, id string) (*model.Task, error) {
+func (s *TaskService) StartTask(ctx context.Context, id string, actor model.OverlayActor) (*model.Task, error) {
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
@@ -364,6 +439,11 @@ func (s *TaskService) StartTask(ctx context.Context, id string) (*model.Task, er
 		return nil, fmt.Errorf("failed to stage data files: %w", err)
 	}
 
+	previousStatus := task.Status
+	if err := s.admitTask(ctx, model.OverlayAdmissionActionStart, actor, task); err != nil {
+		return nil, err
+	}
+
 	task.Status = model.TaskStatusRunning
 	task.Progress = 0
 	task.Error = ""
@@ -372,16 +452,18 @@ func (s *TaskService) StartTask(ctx context.Context, id string) (*model.Task, er
 	task.UpdatedAt = now
 
 	if err := s.repo.Update(task); err != nil {
+		s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
 		return nil, err
 	}
 
+	s.emitTaskEvent(model.OverlayTaskEventRunning, actor, task, previousStatus, "")
 	go s.launchTask(task)
 
 	return task, nil
 }
 
 // StopTask stops a running task
-func (s *TaskService) StopTask(ctx context.Context, id string) (*model.Task, error) {
+func (s *TaskService) StopTask(ctx context.Context, id string, actor model.OverlayActor) (*model.Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -408,11 +490,12 @@ func (s *TaskService) StopTask(ctx context.Context, id string) (*model.Task, err
 		return nil, err
 	}
 
+	s.emitTaskEvent(model.OverlayTaskEventQueued, actor, task, model.TaskStatusRunning, "")
 	return task, nil
 }
 
 // RetryTask retries a failed, cancelled, or waiting_for_data task
-func (s *TaskService) RetryTask(ctx context.Context, id string) (*model.Task, error) {
+func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.OverlayActor) (*model.Task, error) {
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
@@ -435,6 +518,11 @@ func (s *TaskService) RetryTask(ctx context.Context, id string) (*model.Task, er
 		return nil, fmt.Errorf("failed to stage data files: %w", err)
 	}
 
+	previousStatus := task.Status
+	if err := s.admitTask(ctx, model.OverlayAdmissionActionRetry, actor, task); err != nil {
+		return nil, err
+	}
+
 	task.Status = model.TaskStatusRunning
 	task.Progress = 0
 	task.Error = ""
@@ -443,9 +531,11 @@ func (s *TaskService) RetryTask(ctx context.Context, id string) (*model.Task, er
 	task.UpdatedAt = now
 
 	if err := s.repo.Update(task); err != nil {
+		s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
 		return nil, err
 	}
 
+	s.emitTaskEvent(model.OverlayTaskEventRunning, actor, task, previousStatus, "")
 	go s.launchTask(task)
 
 	return task, nil
@@ -521,6 +611,7 @@ func (s *TaskService) launchTask(task *model.Task) {
 			return // Sepiida already handled it
 		}
 
+		previousStatus := task.Status
 		finishedAt := time.Now()
 		if err != nil {
 			task.Status = model.TaskStatusFailed
@@ -532,16 +623,183 @@ func (s *TaskService) launchTask(task *model.Task) {
 		task.FinishedAt = &finishedAt
 		task.UpdatedAt = finishedAt
 		s.repo.Update(task)
+		s.emitStatusEvent(task, previousStatus)
+		if task.Status == model.TaskStatusCompleted {
+			s.importTaskArchive(task)
+		}
 	}()
 }
 
 func (s *TaskService) updateTaskError(task *model.Task, errMsg string) {
 	s.mu.Lock()
+	previousStatus := task.Status
 	task.Status = model.TaskStatusFailed
 	task.Error = errMsg
-	task.UpdatedAt = time.Now()
+	now := time.Now()
+	task.FinishedAt = &now
+	task.UpdatedAt = now
 	s.repo.Update(task)
 	s.mu.Unlock()
+	s.emitTaskEvent(model.OverlayTaskEventFailed, model.OverlayActor{}, task, previousStatus, errMsg)
+}
+
+func (s *TaskService) importTaskArchive(task *model.Task) {
+	if task == nil || task.Status != model.TaskStatusCompleted {
+		return
+	}
+	if task.ResultImportStatus == model.ResultImportStatusRunning {
+		return
+	}
+
+	archiveDir := filepath.Join(s.cfg.Task.ArchiveDir, task.UUID)
+	if s.cfg.Task.ArchiveDir == "" {
+		return
+	}
+	if _, err := os.Stat(archiveDir); err != nil {
+		return
+	}
+	fingerprint := archiveImportFingerprint(task, archiveDir)
+	if task.ResultImportStatus == model.ResultImportStatusSuccess && task.ResultImportFingerprint == fingerprint {
+		return
+	}
+
+	s.runTaskArchiveImport(task, archiveDir)
+}
+
+func (s *TaskService) runTaskArchiveImport(task *model.Task, archiveDir string) {
+	fingerprint := archiveImportFingerprint(task, archiveDir)
+	now := time.Now()
+	task.ResultImportStatus = model.ResultImportStatusRunning
+	task.ResultImportError = ""
+	task.ResultImportedAt = nil
+	task.ResultImportAttempts++
+	task.UpdatedAt = now
+	_ = s.repo.Update(task)
+
+	batch := s.startResultImportBatch(task, archiveDir, fingerprint, now)
+	result, err := NewImporter(s.cfg).ImportFromTaskArchive(task, archiveDir)
+	finishedAt := time.Now()
+	task.ResultImportedAt = &finishedAt
+	task.UpdatedAt = finishedAt
+	if err != nil {
+		task.ResultImportStatus = model.ResultImportStatusFailed
+		task.ResultImportError = err.Error()
+	} else if result != nil && !result.Success {
+		task.ResultImportStatus = model.ResultImportStatusFailed
+		task.ResultImportError = result.Error
+	} else {
+		task.ResultImportStatus = model.ResultImportStatusSuccess
+		task.ResultImportError = ""
+		task.ResultImportFingerprint = fingerprint
+	}
+	_ = s.repo.Update(task)
+	s.finishResultImportBatch(batch, result, task.ResultImportStatus, task.ResultImportError, finishedAt)
+}
+
+func (s *TaskService) startResultImportBatch(task *model.Task, archiveDir, fingerprint string, startedAt time.Time) *model.ResultImportBatch {
+	if task == nil || s.importBatchRepo == nil {
+		return nil
+	}
+
+	batch := &model.ResultImportBatch{
+		TaskUUID:      task.UUID,
+		Source:        "local",
+		Status:        model.ResultImportBatchStatusRunning,
+		Fingerprint:   fingerprint,
+		ArchiveBase:   s.cfg.Task.ArchiveDir,
+		ArchivePrefix: task.UUID,
+		OutputsKey:    "outputs.resolved.json",
+		StartedAt:     startedAt,
+	}
+	if err := s.importBatchRepo.Create(batch); err != nil {
+		fmt.Printf("WARNING: failed to create result import batch for task %s: %v\n", task.UUID, err)
+		return nil
+	}
+	return batch
+}
+
+func (s *TaskService) finishResultImportBatch(batch *model.ResultImportBatch, result *ImportResult, status model.ResultImportStatus, importErr string, finishedAt time.Time) {
+	if batch == nil || s.importBatchRepo == nil {
+		return
+	}
+
+	batch.FinishedAt = &finishedAt
+	batch.Error = importErr
+	switch status {
+	case model.ResultImportStatusSuccess:
+		batch.Status = model.ResultImportBatchStatusSuccess
+	default:
+		batch.Status = model.ResultImportBatchStatusFailed
+	}
+	if result != nil {
+		batch.ObjectKeysJSON = marshalImportAuditJSON(result.SourceFiles)
+		batch.CountsJSON = marshalImportAuditJSON(result.Counts)
+		if batch.Error == "" {
+			batch.Error = result.Error
+		}
+	}
+	if err := s.importBatchRepo.Update(batch); err != nil {
+		fmt.Printf("WARNING: failed to update result import batch for task %s: %v\n", batch.TaskUUID, err)
+	}
+}
+
+func marshalImportAuditJSON(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func archiveImportFingerprint(task *model.Task, archiveDir string) string {
+	if task == nil {
+		return ""
+	}
+	outputsPath := filepath.Join(archiveDir, "outputs.resolved.json")
+	var outputsMod int64
+	if info, err := os.Stat(outputsPath); err == nil {
+		outputsMod = info.ModTime().UnixNano()
+	}
+	payload := fmt.Sprintf("%s|%s|%d", task.UUID, archiveDir, outputsMod)
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+// RetryResultImport resets structured result import state and runs the archive import again.
+func (s *TaskService) RetryResultImport(ctx context.Context, id string) (*model.TaskProgressResponse, error) {
+	task, err := s.repo.FindByUUID(id)
+	if err != nil {
+		return nil, fmt.Errorf("task not found: %s", id)
+	}
+	if task.Status != model.TaskStatusCompleted {
+		return nil, fmt.Errorf("task is not completed")
+	}
+	if task.ResultImportStatus == model.ResultImportStatusRunning {
+		return nil, fmt.Errorf("result import is already running")
+	}
+
+	archiveDir := filepath.Join(s.cfg.Task.ArchiveDir, task.UUID)
+	if s.cfg.Task.ArchiveDir == "" {
+		return nil, fmt.Errorf("archive directory is not configured")
+	}
+	if _, err := os.Stat(archiveDir); err != nil {
+		return nil, fmt.Errorf("archive not found for task: %s", id)
+	}
+
+	task.ResultImportStatus = model.ResultImportStatusPending
+	task.ResultImportError = ""
+	task.ResultImportedAt = nil
+	task.ResultImportFingerprint = ""
+	task.UpdatedAt = time.Now()
+	if err := s.repo.Update(task); err != nil {
+		return nil, err
+	}
+
+	s.runTaskArchiveImport(task, archiveDir)
+	return s.GetTaskProgress(ctx, id)
 }
 
 // GetTask retrieves a task by UUID
@@ -557,13 +815,18 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 	}
 
 	resp := &model.TaskProgressResponse{
-		ID:        task.UUID,
-		UUID:      task.UUID,
-		Name:      task.Name,
-		Template:  task.Template,
-		Status:    task.Status,
-		Progress:  task.Progress,
-		CreatedAt: task.CreatedAt,
+		ID:                      task.UUID,
+		UUID:                    task.UUID,
+		Name:                    task.Name,
+		Template:                task.Template,
+		Status:                  task.Status,
+		Progress:                task.Progress,
+		CreatedAt:               task.CreatedAt,
+		ResultImportStatus:      task.ResultImportStatus,
+		ResultImportError:       task.ResultImportError,
+		ResultImportedAt:        task.ResultImportedAt,
+		ResultImportFingerprint: task.ResultImportFingerprint,
+		ResultImportAttempts:    task.ResultImportAttempts,
 	}
 
 	// Query Sepiida for real-time progress
@@ -573,6 +836,13 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 			resp.Sepiida = workflow
 			resp.Tasks = tasks
 			s.syncTaskFromSepiida(task)
+			resp.Status = task.Status
+			resp.Progress = task.Progress
+			resp.ResultImportStatus = task.ResultImportStatus
+			resp.ResultImportError = task.ResultImportError
+			resp.ResultImportedAt = task.ResultImportedAt
+			resp.ResultImportFingerprint = task.ResultImportFingerprint
+			resp.ResultImportAttempts = task.ResultImportAttempts
 		}
 	}
 
@@ -598,7 +868,7 @@ func (s *TaskService) ListTasks(ctx context.Context, query *model.TaskListQuery)
 }
 
 // CancelTask cancels a running task
-func (s *TaskService) CancelTask(ctx context.Context, id string) error {
+func (s *TaskService) CancelTask(ctx context.Context, id string, actor model.OverlayActor) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -620,7 +890,11 @@ func (s *TaskService) CancelTask(ctx context.Context, id string) error {
 	task.FinishedAt = &now
 	task.UpdatedAt = now
 
-	return s.repo.Update(task)
+	if err := s.repo.Update(task); err != nil {
+		return err
+	}
+	s.emitTaskEvent(model.OverlayTaskEventCancelled, actor, task, "", "")
+	return nil
 }
 
 // UpdateTask updates task fields

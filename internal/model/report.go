@@ -6,21 +6,23 @@ import "time"
 type ReportStatus string
 
 const (
-	ReportStatusDraft          ReportStatus = "DRAFT"
-	ReportStatusPendingReview  ReportStatus = "PENDING_REVIEW"
-	ReportStatusApproved       ReportStatus = "APPROVED"
-	ReportStatusReleased       ReportStatus = "RELEASED"
+	ReportStatusDraft         ReportStatus = "DRAFT"
+	ReportStatusPendingReview ReportStatus = "PENDING_REVIEW"
+	ReportStatusApproved      ReportStatus = "APPROVED"
+	ReportStatusReleased      ReportStatus = "RELEASED"
 )
 
-// Report represents a generated report record
+// Report represents a legacy generated report record. New report generation is
+// downloaded directly from the configured report API and is not persisted here.
 type Report struct {
 	ID             string       `json:"id" gorm:"primaryKey;size:36"`
 	TaskID         string       `json:"taskId" gorm:"size:36;index"`
 	Name           string       `json:"name" gorm:"size:200"`
-	Type           string       `json:"type" gorm:"size:20"` // generated, uploaded
+	Type           string       `json:"type" gorm:"size:20"` // legacy generated/uploaded records
 	TemplateName   string       `json:"templateName" gorm:"size:200"`
 	FileName       string       `json:"fileName" gorm:"size:500"`
 	ExternalURL    string       `json:"externalUrl" gorm:"size:500"`
+	UploadedFileID *uint        `json:"uploadedFileId,omitempty" gorm:"index"`
 	Status         ReportStatus `json:"status" gorm:"size:30;default:DRAFT"`
 	ExternalJobID  string       `json:"externalJobId" gorm:"size:100"`
 	CreatedBy      string       `json:"createdBy" gorm:"size:100"`
@@ -57,38 +59,52 @@ type ReportCreateRequest struct {
 	TemplateName string `json:"templateName"`
 }
 
+// ReportUploadRequest is a legacy request shape. Uploaded reports are disabled.
+type ReportUploadRequest struct {
+	Name           string `json:"name" binding:"required"`
+	FileName       string `json:"fileName"`
+	UploadedFileID uint   `json:"uploadedFileId" binding:"required"`
+}
+
+// ReportStatusUpdateRequest changes a report workflow status.
+type ReportStatusUpdateRequest struct {
+	Status ReportStatus `json:"status" binding:"required"`
+}
+
 // ReportResponse is the API response for a report
 type ReportResponse struct {
-	ID           string       `json:"id"`
-	TaskID       string       `json:"taskId"`
-	Name         string       `json:"name"`
-	Type         string       `json:"type"`
-	TemplateName string       `json:"templateName,omitempty"`
-	FileName     string       `json:"fileName,omitempty"`
-	ExternalURL  string       `json:"externalUrl,omitempty"`
-	Status       ReportStatus `json:"status"`
-	CreatedBy    string       `json:"createdBy"`
-	ReviewedBy   string       `json:"reviewedBy,omitempty"`
-	ApprovedBy   string       `json:"approvedBy,omitempty"`
-	ReleasedBy   string       `json:"releasedBy,omitempty"`
-	CreatedAt    string       `json:"created_at"`
+	ID             string       `json:"id"`
+	TaskID         string       `json:"taskId"`
+	Name           string       `json:"name"`
+	Type           string       `json:"type"`
+	TemplateName   string       `json:"templateName,omitempty"`
+	FileName       string       `json:"fileName,omitempty"`
+	ExternalURL    string       `json:"externalUrl,omitempty"`
+	UploadedFileID *uint        `json:"uploadedFileId,omitempty"`
+	Status         ReportStatus `json:"status"`
+	CreatedBy      string       `json:"createdBy"`
+	ReviewedBy     string       `json:"reviewedBy,omitempty"`
+	ApprovedBy     string       `json:"approvedBy,omitempty"`
+	ReleasedBy     string       `json:"releasedBy,omitempty"`
+	CreatedAt      string       `json:"created_at"`
 }
 
 func (r *Report) ToResponse() ReportResponse {
 	return ReportResponse{
-		ID:           r.ID,
-		TaskID:       r.TaskID,
-		Name:         r.Name,
-		Type:         r.Type,
-		TemplateName: r.TemplateName,
-		FileName:     r.FileName,
-		ExternalURL:  r.ExternalURL,
-		Status:       r.Status,
-		CreatedBy:    r.CreatedBy,
-		ReviewedBy:   r.ReviewedBy,
-		ApprovedBy:   r.ApprovedBy,
-		ReleasedBy:   r.ReleasedBy,
-		CreatedAt:    r.CreatedAt.Format(time.RFC3339),
+		ID:             r.ID,
+		TaskID:         r.TaskID,
+		Name:           r.Name,
+		Type:           r.Type,
+		TemplateName:   r.TemplateName,
+		FileName:       r.FileName,
+		ExternalURL:    r.ExternalURL,
+		UploadedFileID: r.UploadedFileID,
+		Status:         r.Status,
+		CreatedBy:      r.CreatedBy,
+		ReviewedBy:     r.ReviewedBy,
+		ApprovedBy:     r.ApprovedBy,
+		ReleasedBy:     r.ReleasedBy,
+		CreatedAt:      r.CreatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -104,7 +120,17 @@ type ReportTemplateCreateRequest struct {
 type ReportTemplateResponse struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Description string `json:"description"`
+	Description string `json:"description,omitempty"`
+	IsActive    bool   `json:"isActive"`
+}
+
+// ReportTemplateAdminResponse is the template payload for admins.
+type ReportTemplateAdminResponse struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	APIEndpoint string `json:"apiEndpoint"`
+	APIKey      string `json:"apiKey,omitempty"`
 	IsActive    bool   `json:"isActive"`
 }
 
@@ -114,6 +140,17 @@ func (t *ReportTemplate) ToResponse() ReportTemplateResponse {
 		ID:          t.ID,
 		Name:        t.Name,
 		Description: t.Description,
+		IsActive:    t.IsActive,
+	}
+}
+
+func (t *ReportTemplate) ToAdminResponse() ReportTemplateAdminResponse {
+	return ReportTemplateAdminResponse{
+		ID:          t.ID,
+		Name:        t.Name,
+		Description: t.Description,
+		APIEndpoint: t.APIEndpoint,
+		APIKey:      t.APIKey,
 		IsActive:    t.IsActive,
 	}
 }

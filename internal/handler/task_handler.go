@@ -22,6 +22,17 @@ func NewTaskHandler(cfg *config.Config) *TaskHandler {
 	}
 }
 
+func taskActorFromContext(c *gin.Context) model.OverlayActor {
+	userID, email, role, _ := middleware.GetCurrentUser(c)
+	orgID, _ := middleware.GetCurrentOrg(c)
+	return model.OverlayActor{
+		UserID: userID,
+		Email:  email,
+		Role:   role,
+		OrgID:  orgID,
+	}
+}
+
 // CreateTask creates a new task
 func (h *TaskHandler) CreateTask(c *gin.Context) {
 	var req model.TaskCreateRequest
@@ -30,13 +41,13 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		return
 	}
 
-	userID, _, _, ok := middleware.GetCurrentUser(c)
+	_, _, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	task, err := h.svc.CreateTask(c.Request.Context(), &req, userID)
+	task, err := h.svc.CreateTask(c.Request.Context(), &req, taskActorFromContext(c))
 	if err != nil {
 		ErrorInternal(c, err.Error())
 		return
@@ -129,7 +140,7 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 func (h *TaskHandler) StartTask(c *gin.Context) {
 	id := c.Param("id")
 
-	task, err := h.svc.StartTask(c.Request.Context(), id)
+	task, err := h.svc.StartTask(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
@@ -142,7 +153,7 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 func (h *TaskHandler) StopTask(c *gin.Context) {
 	id := c.Param("id")
 
-	task, err := h.svc.StopTask(c.Request.Context(), id)
+	task, err := h.svc.StopTask(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
@@ -155,7 +166,7 @@ func (h *TaskHandler) StopTask(c *gin.Context) {
 func (h *TaskHandler) RetryTask(c *gin.Context) {
 	id := c.Param("id")
 
-	task, err := h.svc.RetryTask(c.Request.Context(), id)
+	task, err := h.svc.RetryTask(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
@@ -164,11 +175,24 @@ func (h *TaskHandler) RetryTask(c *gin.Context) {
 	Success(c, task.ToResponse())
 }
 
+// RetryResultImport retries structured result import for a completed task archive.
+func (h *TaskHandler) RetryResultImport(c *gin.Context) {
+	id := c.Param("id")
+
+	progress, err := h.svc.RetryResultImport(c.Request.Context(), id)
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+
+	Success(c, progress)
+}
+
 // CancelTask cancels a running or queued task
 func (h *TaskHandler) CancelTask(c *gin.Context) {
 	id := c.Param("id")
 
-	if err := h.svc.CancelTask(c.Request.Context(), id); err != nil {
+	if err := h.svc.CancelTask(c.Request.Context(), id, taskActorFromContext(c)); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}

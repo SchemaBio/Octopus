@@ -32,10 +32,19 @@ func NewImporter(cfg *config.Config) *Importer {
 
 // ImportResult represents the result of an import operation
 type ImportResult struct {
-	UUID    string         `json:"uuid"`
-	Success bool           `json:"success"`
-	Counts  map[string]int `json:"counts"`
-	Error   string         `json:"error,omitempty"`
+	UUID        string         `json:"uuid"`
+	Success     bool           `json:"success"`
+	Counts      map[string]int `json:"counts"`
+	SourceFiles []string       `json:"source_files,omitempty"`
+	Error       string         `json:"error,omitempty"`
+}
+
+// ImportFromTaskArchive imports structure data from a task archive.
+func (imp *Importer) ImportFromTaskArchive(task *model.Task, archiveDir string) (*ImportResult, error) {
+	if task == nil {
+		return nil, fmt.Errorf("task is required")
+	}
+	return imp.ImportFromArchive(task.UUID, archiveDir)
 }
 
 // ImportFromArchive imports all result data from an archive directory into the database
@@ -53,6 +62,8 @@ func (imp *Importer) ImportFromArchive(taskID string, archiveDir string) (*Impor
 
 	// 2. Find result TSV files in the archive directory
 	tsvFiles := imp.findResultFiles(archiveDir)
+	result.SourceFiles = append(result.SourceFiles, filepath.Join(archiveDir, "outputs.resolved.json"))
+	result.SourceFiles = append(result.SourceFiles, tsvFiles...)
 
 	// 3. Import each file
 	for _, tsvPath := range tsvFiles {
@@ -636,49 +647,49 @@ func (imp *Importer) importMTVariants(taskID string, path string) (int, error) {
 	var results []model.MitochondrialVariant
 	for _, row := range rows {
 		v := model.MitochondrialVariant{
-			ID:                  uuid.New().String(),
-			TaskID:              taskID,
-			Chromosome:          row["Chromosome"],
-			Position:            parseInt64(row["Position"]),
-			MTGene:              row["MT_Gene"],
-			MTGeneType:          row["MT_Gene_Type"],
-			MitophenVariant:     row["Mitophen_Variant"],
-			MitophenPhenotypes:  row["Mitophen_Phenotypes"],
-			MTHGVS:              row["MT_HGVS"],
-			Ref:                 row["Ref"],
-			Alt:                 row["Alt"],
-			VariantType:         row["Type"],
-			Filter:              row["Filter"],
-			Genotype:            row["Genotype"],
-			Heteroplasmy:        parseFloat(row["Heteroplasmy"]),
-			HeteroplasmyClass:   row["Heteroplasmy_Class"],
-			Depth:               parseInt(row["Depth"]),
-			AD:                  row["AD"],
-			AF:                  row["AF"],
-			Gene:                row["Gene"],
-			Feature:             row["Feature"],
-			Consequence:         row["Consequence"],
-			Impact:              row["Impact"],
-			HGVS_c:              row["HGVS_c"],
-			HGVS_p:              row["HGVS_p"],
-			AminoAcids:          row["Amino_Acids"],
-			ProteinPosition:     row["Protein_Position"],
-			ClinvarSig:          row["ClinVar_Sig"],
-			ClinvarDN:           row["ClinVar_DN"],
-			ClinvarStar:         row["ClinVar_Star"],
-			GnomadAF:            parseFloatPtr(row["GnomAD_AF"]),
-			GnomadEasAF:         parseFloatPtr(row["GnomAD_AF_EAS"]),
-			DbSNP:               row["dbSNP"],
-			MaxAF:               parseFloatPtr(row["MAX_AF"]),
-			TLOD:                row["TLOD"],
-			POPAF:               row["POPAF"],
-			GERMQ:               row["GERMQ"],
-			STRANDQ:             row["STRANDQ"],
-			CONTQ:               row["CONTQ"],
-			SEQQ:                row["SEQQ"],
-			MBQ:                 row["MBQ"],
-			MMQ:                 row["MMQ"],
-			MFRL:                row["MFRL"],
+			ID:                 uuid.New().String(),
+			TaskID:             taskID,
+			Chromosome:         row["Chromosome"],
+			Position:           parseInt64(row["Position"]),
+			MTGene:             row["MT_Gene"],
+			MTGeneType:         row["MT_Gene_Type"],
+			MitophenVariant:    row["Mitophen_Variant"],
+			MitophenPhenotypes: row["Mitophen_Phenotypes"],
+			MTHGVS:             row["MT_HGVS"],
+			Ref:                row["Ref"],
+			Alt:                row["Alt"],
+			VariantType:        row["Type"],
+			Filter:             row["Filter"],
+			Genotype:           row["Genotype"],
+			Heteroplasmy:       parseFloat(row["Heteroplasmy"]),
+			HeteroplasmyClass:  row["Heteroplasmy_Class"],
+			Depth:              parseInt(row["Depth"]),
+			AD:                 row["AD"],
+			AF:                 row["AF"],
+			Gene:               row["Gene"],
+			Feature:            row["Feature"],
+			Consequence:        row["Consequence"],
+			Impact:             row["Impact"],
+			HGVS_c:             row["HGVS_c"],
+			HGVS_p:             row["HGVS_p"],
+			AminoAcids:         row["Amino_Acids"],
+			ProteinPosition:    row["Protein_Position"],
+			ClinvarSig:         row["ClinVar_Sig"],
+			ClinvarDN:          row["ClinVar_DN"],
+			ClinvarStar:        row["ClinVar_Star"],
+			GnomadAF:           parseFloatPtr(row["GnomAD_AF"]),
+			GnomadEasAF:        parseFloatPtr(row["GnomAD_AF_EAS"]),
+			DbSNP:              row["dbSNP"],
+			MaxAF:              parseFloatPtr(row["MAX_AF"]),
+			TLOD:               row["TLOD"],
+			POPAF:              row["POPAF"],
+			GERMQ:              row["GERMQ"],
+			STRANDQ:            row["STRANDQ"],
+			CONTQ:              row["CONTQ"],
+			SEQQ:               row["SEQQ"],
+			MBQ:                row["MBQ"],
+			MMQ:                row["MMQ"],
+			MFRL:               row["MFRL"],
 		}
 		results = append(results, v)
 	}

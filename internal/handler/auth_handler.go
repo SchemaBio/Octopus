@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/middleware"
@@ -106,10 +107,72 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	Success(c, model.UserToResponse(user))
 }
 
-// Logout handles user logout (stateless - client discards tokens)
+// Logout handles user logout and invalidates the presented token when possible.
 func (h *AuthHandler) Logout(c *gin.Context) {
+	for _, token := range logoutTokens(c) {
+		if err := h.userService.RevokeToken(token); err == nil {
+			break
+		}
+	}
+
 	service.ClearTokenCookies(c, &h.cfg.JWT)
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+}
+
+func logoutTokens(c *gin.Context) []string {
+	var tokens []string
+	authHeader := c.GetHeader("Authorization")
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && parts[0] == "Bearer" {
+			tokens = append(tokens, parts[1])
+		}
+	}
+	if cookie, err := c.Cookie("access_token"); err == nil && cookie != "" {
+		tokens = append(tokens, cookie)
+	}
+	if cookie, err := c.Cookie("refresh_token"); err == nil && cookie != "" {
+		tokens = append(tokens, cookie)
+	}
+	return tokens
+}
+
+// ForgotPassword starts a password reset flow.
+func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	var req model.ForgotPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+
+	token, err := h.userService.GenerateResetToken(req.Email)
+	if err != nil {
+		ErrorInternal(c, SanitizeAuthError(err))
+		return
+	}
+
+	// TODO: deliver token via email/SMS. Never return reset tokens in API responses.
+	_ = token
+
+	Success(c, gin.H{
+		"message": "If the email exists, a reset link has been sent",
+	})
+}
+
+// ResetPassword resets password using a reset token.
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	var req model.ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+
+	if err := h.userService.ResetPassword(req.Token, req.NewPassword); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+
+	Success(c, gin.H{"message": "Password reset successfully"})
 }
 
 // --- User management handlers (admin) ---

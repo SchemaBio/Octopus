@@ -91,7 +91,7 @@ func SanitizeAuthError(err error) string {
 		return "invalid email or password"
 	case errMsg == "user not found":
 		return "invalid email or password" // Don't reveal if user exists
-	case errMsg == "account is disabled" || errMsg == "account is not active":
+	case errMsg == "account is disabled" || errMsg == "account is not active" || errMsg == "user account is disabled":
 		return "account is not active"
 	default:
 		// Log internal error, return generic message
