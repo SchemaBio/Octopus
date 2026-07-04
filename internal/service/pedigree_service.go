@@ -76,6 +76,14 @@ func (s *PedigreeService) Get(id string) (*model.PedigreeDetailResponse, error) 
 	}, nil
 }
 
+func (s *PedigreeService) GetModel(id string) (*model.Pedigree, error) {
+	pedigree, err := s.repo.FindByStringID(id)
+	if err != nil {
+		return nil, errors.New("pedigree not found")
+	}
+	return pedigree, nil
+}
+
 // Create creates a new pedigree
 func (s *PedigreeService) Create(req *model.PedigreeCreateRequest, userID uint) (*model.Pedigree, error) {
 	pedigree := &model.Pedigree{

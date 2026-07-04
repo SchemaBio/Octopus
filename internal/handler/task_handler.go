@@ -6,6 +6,7 @@ import (
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/middleware"
 	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/bioinfo/schema-platform/internal/repository"
 	"github.com/bioinfo/schema-platform/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -13,12 +14,14 @@ import (
 type TaskHandler struct {
 	svc       *service.TaskService
 	sampleSvc *service.SampleService
+	taskRepo  *repository.TaskRepository
 }
 
 func NewTaskHandler(cfg *config.Config) *TaskHandler {
 	return &TaskHandler{
 		svc:       service.NewTaskService(cfg),
 		sampleSvc: service.NewSampleService(cfg),
+		taskRepo:  repository.NewTaskRepository(),
 	}
 }
 
@@ -70,6 +73,9 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 	if query.PageSize == 0 {
 		query.PageSize = 10
 	}
+	if !applyTaskListScope(c, &query) {
+		return
+	}
 
 	resp, err := h.svc.ListTasks(c.Request.Context(), &query)
 	if err != nil {
@@ -83,6 +89,9 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 // GetTask returns a single task by UUID
 func (h *TaskHandler) GetTask(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
+		return
+	}
 
 	task, err := h.svc.GetTask(c.Request.Context(), id)
 	if err != nil {
@@ -96,6 +105,9 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 // GetTaskSample returns the sample associated with a task
 func (h *TaskHandler) GetTaskSample(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
+		return
+	}
 
 	task, err := h.svc.GetTask(c.Request.Context(), id)
 	if err != nil {
@@ -120,6 +132,9 @@ func (h *TaskHandler) GetTaskSample(c *gin.Context) {
 // UpdateTask updates task information
 func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
+		return
+	}
 
 	var req model.TaskUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -139,6 +154,9 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 // StartTask starts a queued or failed task
 func (h *TaskHandler) StartTask(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
+		return
+	}
 
 	task, err := h.svc.StartTask(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
@@ -152,6 +170,9 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 // StopTask stops a running task
 func (h *TaskHandler) StopTask(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
+		return
+	}
 
 	task, err := h.svc.StopTask(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
@@ -165,6 +186,9 @@ func (h *TaskHandler) StopTask(c *gin.Context) {
 // RetryTask retries a failed task
 func (h *TaskHandler) RetryTask(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
+		return
+	}
 
 	task, err := h.svc.RetryTask(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
@@ -178,6 +202,9 @@ func (h *TaskHandler) RetryTask(c *gin.Context) {
 // RetryResultImport retries structured result import for a completed task archive.
 func (h *TaskHandler) RetryResultImport(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
+		return
+	}
 
 	progress, err := h.svc.RetryResultImport(c.Request.Context(), id)
 	if err != nil {
@@ -191,6 +218,9 @@ func (h *TaskHandler) RetryResultImport(c *gin.Context) {
 // CancelTask cancels a running or queued task
 func (h *TaskHandler) CancelTask(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
+		return
+	}
 
 	if err := h.svc.CancelTask(c.Request.Context(), id, taskActorFromContext(c)); err != nil {
 		ErrorBadRequest(c, err.Error())
@@ -203,6 +233,9 @@ func (h *TaskHandler) CancelTask(c *gin.Context) {
 // GetTaskLogs returns task execution logs
 func (h *TaskHandler) GetTaskLogs(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
+		return
+	}
 
 	logs, err := h.svc.GetTaskLogs(c.Request.Context(), id)
 	if err != nil {
@@ -216,6 +249,9 @@ func (h *TaskHandler) GetTaskLogs(c *gin.Context) {
 // GetTaskProgress returns task progress with Sepiida integration
 func (h *TaskHandler) GetTaskProgress(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
+		return
+	}
 
 	progress, err := h.svc.GetTaskProgress(c.Request.Context(), id)
 	if err != nil {

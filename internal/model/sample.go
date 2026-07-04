@@ -38,25 +38,25 @@ const (
 
 // Sample represents a biological sample (germline)
 type Sample struct {
-	ID                  uint               `json:"-" gorm:"primaryKey"`
-	UUID                string             `json:"id" gorm:"uniqueIndex;size:36;not null"`
-	InternalID          string             `json:"internal_id" gorm:"uniqueIndex;size:100;not null"`
-	Gender              SampleGender       `json:"gender" gorm:"size:20;default:unknown"`
-	Age                 *int               `json:"age,omitempty"`
-	SampleType          SampleTypeFrontend `json:"sample_type" gorm:"size:20;default:其他"`
-	Batch               string             `json:"batch" gorm:"size:100"`
-	ClinicalDiagnosis   string             `json:"clinical_diagnosis" gorm:"type:jsonb"` // JSON
-	HPOTerms            string             `json:"-" gorm:"type:jsonb"`                  // JSON
-	MatchedPair         string             `json:"-" gorm:"type:jsonb"`                  // JSON
-	SubmissionInfo      string             `json:"-" gorm:"type:jsonb"`                  // JSON
-	ProjectInfo         string             `json:"-" gorm:"type:jsonb"`                  // JSON
-	FamilyHistory       string             `json:"-" gorm:"type:jsonb"`                  // JSON
-	Remark              string             `json:"remark" gorm:"type:text"`
-	Status              SampleStatus       `json:"status" gorm:"size:20;default:pending"`
-	ProjectID           uint               `json:"project_id" gorm:"index"`
-	CreatedBy           uint               `json:"created_by" gorm:"index"`
-	CreatedAt           time.Time          `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt           time.Time          `json:"updated_at" gorm:"type:timestamptz"`
+	ID                uint               `json:"-" gorm:"primaryKey"`
+	UUID              string             `json:"id" gorm:"uniqueIndex;size:36;not null"`
+	InternalID        string             `json:"internal_id" gorm:"uniqueIndex;size:100;not null"`
+	Gender            SampleGender       `json:"gender" gorm:"size:20;default:unknown"`
+	Age               *int               `json:"age,omitempty"`
+	SampleType        SampleTypeFrontend `json:"sample_type" gorm:"size:20;default:其他"`
+	Batch             string             `json:"batch" gorm:"size:100"`
+	ClinicalDiagnosis string             `json:"clinical_diagnosis" gorm:"type:jsonb"` // JSON
+	HPOTerms          string             `json:"-" gorm:"type:jsonb"`                  // JSON
+	MatchedPair       string             `json:"-" gorm:"type:jsonb"`                  // JSON
+	SubmissionInfo    string             `json:"-" gorm:"type:jsonb"`                  // JSON
+	ProjectInfo       string             `json:"-" gorm:"type:jsonb"`                  // JSON
+	FamilyHistory     string             `json:"-" gorm:"type:jsonb"`                  // JSON
+	Remark            string             `json:"remark" gorm:"type:text"`
+	Status            SampleStatus       `json:"status" gorm:"size:20;default:pending"`
+	ProjectID         uint               `json:"project_id" gorm:"index"`
+	CreatedBy         uint               `json:"created_by" gorm:"index"`
+	CreatedAt         time.Time          `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt         time.Time          `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // HPOTerm represents an HPO term
@@ -73,19 +73,19 @@ type MatchedPair struct {
 
 // ClinicalDiagnosisInfo is the structured clinical diagnosis
 type ClinicalDiagnosisInfo struct {
-	MainDiagnosis  string     `json:"mainDiagnosis"`
-	Symptoms       []string   `json:"symptoms"`
-	HPOTerms       []HPOTerm  `json:"hpoTerms,omitempty"`
-	OnsetAge       string     `json:"onsetAge,omitempty"`
-	DiseaseHistory string     `json:"diseaseHistory,omitempty"`
+	MainDiagnosis  string    `json:"mainDiagnosis"`
+	Symptoms       []string  `json:"symptoms"`
+	HPOTerms       []HPOTerm `json:"hpoTerms,omitempty"`
+	OnsetAge       string    `json:"onsetAge,omitempty"`
+	DiseaseHistory string    `json:"diseaseHistory,omitempty"`
 }
 
 // SubmissionInfo represents sample submission details
 type SubmissionInfo struct {
-	SubmissionDate      string `json:"submissionDate"`
+	SubmissionDate       string `json:"submissionDate"`
 	SampleCollectionDate string `json:"sampleCollectionDate"`
-	SampleReceiveDate   string `json:"sampleReceiveDate"`
-	SampleQuality       string `json:"sampleQuality"` // good, acceptable, poor
+	SampleReceiveDate    string `json:"sampleReceiveDate"`
+	SampleQuality        string `json:"sampleQuality"` // good, acceptable, poor
 }
 
 // ProjectInfo represents project association
@@ -100,9 +100,9 @@ type ProjectInfo struct {
 
 // FamilyHistoryInfo represents family history
 type FamilyHistoryInfo struct {
-	HasHistory      bool              `json:"hasHistory"`
-	AffectedMembers []AffectedMember  `json:"affectedMembers,omitempty"`
-	PedigreeNote    string            `json:"pedigreeNote,omitempty"`
+	HasHistory      bool             `json:"hasHistory"`
+	AffectedMembers []AffectedMember `json:"affectedMembers,omitempty"`
+	PedigreeNote    string           `json:"pedigreeNote,omitempty"`
 }
 
 // AffectedMember represents an affected family member
@@ -131,21 +131,21 @@ type SampleResponse struct {
 
 // SampleDetailResponse is the API response for a sample detail
 type SampleDetailResponse struct {
-	ID                string              `json:"id"`
-	InternalID        string              `json:"internal_id"`
-	Gender            SampleGender        `json:"gender"`
-	Age               *int                `json:"age,omitempty"`
-	SampleType        SampleTypeFrontend  `json:"sample_type"`
-	Batch             string              `json:"batch"`
-	MatchedPair       *MatchedPair        `json:"matched_pair,omitempty"`
-	Remark            string              `json:"remark"`
+	ID                string                `json:"id"`
+	InternalID        string                `json:"internal_id"`
+	Gender            SampleGender          `json:"gender"`
+	Age               *int                  `json:"age,omitempty"`
+	SampleType        SampleTypeFrontend    `json:"sample_type"`
+	Batch             string                `json:"batch"`
+	MatchedPair       *MatchedPair          `json:"matched_pair,omitempty"`
+	Remark            string                `json:"remark"`
 	ClinicalDiagnosis ClinicalDiagnosisInfo `json:"clinical_diagnosis"`
-	SubmissionInfo    SubmissionInfo       `json:"submission_info"`
-	ProjectInfo       ProjectInfo          `json:"project_info"`
-	FamilyHistory     FamilyHistoryInfo    `json:"family_history"`
-	AnalysisTasks     []AnalysisTaskBrief  `json:"analysis_tasks"`
-	CreatedAt         string               `json:"created_at"`
-	UpdatedAt         string               `json:"updated_at"`
+	SubmissionInfo    SubmissionInfo        `json:"submission_info"`
+	ProjectInfo       ProjectInfo           `json:"project_info"`
+	FamilyHistory     FamilyHistoryInfo     `json:"family_history"`
+	AnalysisTasks     []AnalysisTaskBrief   `json:"analysis_tasks"`
+	CreatedAt         string                `json:"created_at"`
+	UpdatedAt         string                `json:"updated_at"`
 }
 
 // AnalysisTaskBrief is a brief task reference in sample detail
@@ -187,12 +187,14 @@ type SampleUpdateRequest struct {
 
 // SampleListQuery is the query parameters for listing samples
 type SampleListQuery struct {
-	Page       int              `form:"page" binding:"min=1"`
-	PageSize   int              `form:"page_size" binding:"min=1,max=100"`
-	Search     string           `form:"search"`
-	Status     SampleStatus     `form:"status"`
+	Page       int                `form:"page" binding:"min=1"`
+	PageSize   int                `form:"page_size" binding:"min=1,max=100"`
+	Search     string             `form:"search"`
+	Status     SampleStatus       `form:"status"`
 	SampleType SampleTypeFrontend `form:"sample_type"`
-	ProjectID  uint             `form:"project_id"`
+	ProjectID  uint               `form:"project_id"`
+	CreatedBy  uint               `json:"-"`
+	IncludeAll bool               `json:"-"`
 }
 
 // SampleListResponse is the response for listing samples

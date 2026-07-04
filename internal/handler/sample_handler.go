@@ -28,13 +28,12 @@ func (h *SampleHandler) CreateSample(c *gin.Context) {
 		return
 	}
 
-	userID, _, _, ok := middleware.GetCurrentUser(c)
-	if !ok {
+	if _, _, _, ok := middleware.GetCurrentUser(c); !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	sample, err := h.svc.CreateSample(c.Request.Context(), &req, userID)
+	sample, err := h.svc.CreateSample(c.Request.Context(), &req, taskActorFromContext(c))
 	if err != nil {
 		ErrorInternal(c, err.Error())
 		return
@@ -62,6 +61,9 @@ func (h *SampleHandler) ListSamples(c *gin.Context) {
 	if query.PageSize == 0 {
 		query.PageSize = 10
 	}
+	if !applyCreatedByListScope(c, &query.CreatedBy, &query.IncludeAll) {
+		return
+	}
 
 	resp, err := h.svc.ListSamples(c.Request.Context(), &query)
 	if err != nil {
@@ -81,6 +83,9 @@ func (h *SampleHandler) GetSample(c *gin.Context) {
 		ErrorNotFound(c, "Sample not found")
 		return
 	}
+	if !requireOwnerAccess(c, sample.CreatedBy, "Sample") {
+		return
+	}
 
 	Success(c, h.svc.SampleToDetailResponse(sample))
 }
@@ -95,7 +100,16 @@ func (h *SampleHandler) UpdateSample(c *gin.Context) {
 		return
 	}
 
-	sample, err := h.svc.UpdateSample(c.Request.Context(), id, &req)
+	existing, err := h.svc.GetSample(c.Request.Context(), id)
+	if err != nil {
+		ErrorNotFound(c, "Sample not found")
+		return
+	}
+	if !requireOwnerAccess(c, existing.CreatedBy, "Sample") {
+		return
+	}
+
+	sample, err := h.svc.UpdateSample(c.Request.Context(), id, &req, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, err.Error())
 		return
@@ -107,6 +121,14 @@ func (h *SampleHandler) UpdateSample(c *gin.Context) {
 // DeleteSample deletes a sample
 func (h *SampleHandler) DeleteSample(c *gin.Context) {
 	id := c.Param("id")
+	existing, err := h.svc.GetSample(c.Request.Context(), id)
+	if err != nil {
+		ErrorNotFound(c, "Sample not found")
+		return
+	}
+	if !requireOwnerAccess(c, existing.CreatedBy, "Sample") {
+		return
+	}
 
 	if err := h.svc.DeleteSample(c.Request.Context(), id); err != nil {
 		ErrorNotFound(c, err.Error())

@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/handler"
@@ -34,8 +35,10 @@ func New(cfg *config.Config) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	{
 		// ========== Authentication (public) ==========
+		publicRateLimit := middleware.IPRateLimit(60, time.Minute)
 		authHandler := handler.NewAuthHandler(cfg)
 		auth := v1.Group("/auth")
+		auth.Use(publicRateLimit)
 		{
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/register", authHandler.Register)
@@ -64,6 +67,7 @@ func New(cfg *config.Config) *gin.Engine {
 		userHandler := handler.NewUserHandler(cfg)
 		users := v1.Group("/users")
 		users.Use(middleware.JWTAuth(cfg))
+		users.Use(middleware.RequireAdmin())
 		{
 			users.GET("", userHandler.ListUsers)
 			users.GET("/:id", userHandler.GetUser)

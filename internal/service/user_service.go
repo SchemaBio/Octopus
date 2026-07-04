@@ -1,7 +1,9 @@
 package service
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"time"
@@ -9,7 +11,6 @@ import (
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/model"
 	"github.com/bioinfo/schema-platform/internal/repository"
-	"github.com/google/uuid"
 )
 
 // UserService handles user business logic
@@ -41,6 +42,14 @@ func tokenClaimsMatchUser(claims *Claims, user *model.User) bool {
 func resetTokenDigest(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return fmt.Sprintf("%x", sum[:])
+}
+
+func newResetToken() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 // Login authenticates user by email and returns tokens
@@ -85,6 +94,9 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.LoginResponse
 	// Check if email exists
 	if s.repo.ExistsByEmail(req.Email) {
 		return nil, errors.New("email already exists")
+	}
+	if err := ValidatePasswordStrength(req.Password); err != nil {
+		return nil, err
 	}
 
 	// Hash password (with optional client-side hash)
@@ -164,7 +176,14 @@ func (s *UserService) GetUserByEmail(email string) (*model.User, error) {
 func (s *UserService) CreateDefaultAdmin(email, password, name string) (*model.User, error) {
 	// Check if admin exists by email
 	if s.repo.ExistsByEmail(email) {
-		return s.repo.FindByEmail(email)
+		user, err := s.repo.FindByEmail(email)
+		if err != nil {
+			return nil, err
+		}
+		if user.SystemRole != model.SystemRoleSuperAdmin || !user.IsActive {
+			return nil, errors.New("DEFAULT_ADMIN_EMAIL already belongs to a non-active or non-admin account")
+		}
+		return user, nil
 	}
 
 	preparedPassword := PreparePassword(password, email, s.cfg.JWT.ClientPasswordHashEnabled)
@@ -248,6 +267,9 @@ func (s *UserService) ChangePassword(id uint, oldPassword, newPassword string) e
 	if !CheckPassword(preparedOld, user.Password) {
 		return errors.New("invalid old password")
 	}
+	if err := ValidatePasswordStrength(newPassword); err != nil {
+		return err
+	}
 
 	preparedNew := PreparePassword(newPassword, user.Email, s.cfg.JWT.ClientPasswordHashEnabled)
 	hashedPassword, err := HashPassword(preparedNew)
@@ -286,7 +308,10 @@ func (s *UserService) GenerateResetToken(email string) (string, error) {
 		return "", nil
 	}
 
-	token := uuid.New().String()
+	token, err := newResetToken()
+	if err != nil {
+		return "", err
+	}
 	expiry := time.Now().Add(1 * time.Hour)
 	user.ResetToken = resetTokenDigest(token)
 	user.ResetTokenExpiry = &expiry
@@ -302,14 +327,14 @@ func (s *UserService) GenerateResetToken(email string) (string, error) {
 func (s *UserService) ResetPassword(token, newPassword string) error {
 	user, err := s.repo.FindByResetToken(resetTokenDigest(token))
 	if err != nil {
-		user, err = s.repo.FindByResetToken(token)
-	}
-	if err != nil {
 		return errors.New("invalid or expired reset token")
 	}
 
 	if user.ResetTokenExpiry == nil || time.Now().After(*user.ResetTokenExpiry) {
 		return errors.New("reset token has expired")
+	}
+	if err := ValidatePasswordStrength(newPassword); err != nil {
+		return err
 	}
 
 	preparedPassword := PreparePassword(newPassword, user.Email, s.cfg.JWT.ClientPasswordHashEnabled)

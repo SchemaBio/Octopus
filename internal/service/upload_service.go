@@ -279,5 +279,39 @@ func (s *UploadService) GetLocalFilePath(ctx context.Context, userID uint, fileU
 		return "", fmt.Errorf("upload file is not completed")
 	}
 
-	return file.StorageKey, nil
+	return safeLocalUploadPath(s.cfg.Storage.LocalDir, file.StorageKey)
+}
+
+func safeLocalUploadPath(localDir, storageKey string) (string, error) {
+	if strings.TrimSpace(storageKey) == "" {
+		return "", fmt.Errorf("upload file path is empty")
+	}
+	base, err := filepath.Abs(localDir)
+	if err != nil {
+		return "", err
+	}
+	path, err := filepath.Abs(storageKey)
+	if err != nil {
+		return "", err
+	}
+	resolvedBase, err := filepath.EvalSymlinks(base)
+	if err == nil {
+		base = resolvedBase
+	}
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(base, resolvedPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("upload file path escapes storage directory")
+	}
+	info, err := os.Stat(resolvedPath)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("upload file is not a regular file")
+	}
+	return resolvedPath, nil
 }

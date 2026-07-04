@@ -206,15 +206,8 @@ func claimsMatchUser(claims *service.Claims, user *model.User) bool {
 func RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, exists := c.Get("role")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Unauthorized",
-			})
-			c.Abort()
-			return
-		}
-
-		if role.(string) != string(model.SystemRoleSuperAdmin) {
+		roleString, ok := role.(string)
+		if !exists || !ok || roleString != string(model.SystemRoleSuperAdmin) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "Admin access required",
 			})
@@ -235,8 +228,20 @@ func GetCurrentUser(c *gin.Context) (uint, string, string, bool) {
 	}
 	email, _ := c.Get("email")
 	role, _ := c.Get("role")
+	userIDValue, ok := userID.(uint)
+	if !ok {
+		return 0, "", "", false
+	}
+	emailValue, ok := email.(string)
+	if !ok {
+		return 0, "", "", false
+	}
+	roleValue, ok := role.(string)
+	if !ok {
+		return 0, "", "", false
+	}
 
-	return userID.(uint), email.(string), role.(string), true
+	return userIDValue, emailValue, roleValue, true
 }
 
 // GetCurrentOrg gets the optional organization ID forwarded by a trusted overlay.

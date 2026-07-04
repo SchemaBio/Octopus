@@ -21,18 +21,18 @@ const (
 
 // Pipeline represents an analysis pipeline configuration
 type Pipeline struct {
-	ID               string           `json:"id" gorm:"primaryKey;size:36"`
-	Name             string           `json:"name" gorm:"size:200;not null"`
-	BaseType         PipelineBaseType `json:"base_type" gorm:"size:30"`
-	Version          string           `json:"version" gorm:"size:50"`
-	Description      string           `json:"description" gorm:"type:text"`
-	BEDFile          string           `json:"bed_file" gorm:"size:500"`
-	ReferenceGenome  string           `json:"reference_genome" gorm:"size:20"` // hg19, hg38
-	CNVBaseline      string           `json:"cnv_baseline" gorm:"size:500"`
-	Status           PipelineStatus   `json:"status" gorm:"size:20;default:active"`
-	CreatedBy        uint             `json:"created_by" gorm:"index"`
-	CreatedAt        time.Time        `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt        time.Time        `json:"updated_at" gorm:"type:timestamptz"`
+	ID              string           `json:"id" gorm:"primaryKey;size:36"`
+	Name            string           `json:"name" gorm:"size:200;not null"`
+	BaseType        PipelineBaseType `json:"base_type" gorm:"size:30"`
+	Version         string           `json:"version" gorm:"size:50"`
+	Description     string           `json:"description" gorm:"type:text"`
+	BEDFile         string           `json:"bed_file" gorm:"size:500"`
+	ReferenceGenome string           `json:"reference_genome" gorm:"size:20"` // hg19, hg38
+	CNVBaseline     string           `json:"cnv_baseline" gorm:"size:500"`
+	Status          PipelineStatus   `json:"status" gorm:"size:20;default:active"`
+	CreatedBy       uint             `json:"created_by" gorm:"index"`
+	CreatedAt       time.Time        `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt       time.Time        `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // PipelineResponse is the API response for a pipeline
@@ -75,15 +75,17 @@ type PipelineUpdateRequest struct {
 
 // PipelineListQuery is the query parameters for listing pipelines
 type PipelineListQuery struct {
-	Page     int    `form:"page" binding:"min=1"`
-	PageSize int    `form:"page_size" binding:"min=1,max=100"`
-	Search   string `form:"search"`
+	Page       int    `form:"page" binding:"min=1"`
+	PageSize   int    `form:"page_size" binding:"min=1,max=100"`
+	Search     string `form:"search"`
+	CreatedBy  uint   `json:"-"`
+	IncludeAll bool   `json:"-"`
 }
 
 // PipelineListResponse is the response for listing pipelines
 type PipelineListResponse struct {
-	Total int64               `json:"total"`
-	Items []PipelineResponse  `json:"items"`
+	Total int64              `json:"total"`
+	Items []PipelineResponse `json:"items"`
 }
 
 // TableName specifies the table name for Pipeline

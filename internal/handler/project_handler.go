@@ -63,6 +63,9 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 	if query.PageSize == 0 {
 		query.PageSize = 10
 	}
+	if !applyCreatedByListScope(c, &query.CreatedBy, &query.IncludeAll) {
+		return
+	}
 
 	resp, err := h.svc.ListProjects(c.Request.Context(), &query)
 	if err != nil {
@@ -87,6 +90,9 @@ func (h *ProjectHandler) GetProject(c *gin.Context) {
 		ErrorNotFound(c, err.Error())
 		return
 	}
+	if !requireOwnerAccess(c, project.CreatedBy, "Project") {
+		return
+	}
 
 	Success(c, h.svc.ProjectToResponse(project))
 }
@@ -97,6 +103,15 @@ func (h *ProjectHandler) GetProjectSummary(c *gin.Context) {
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		ErrorBadRequest(c, "invalid project ID")
+		return
+	}
+
+	project, err := h.svc.GetProject(c.Request.Context(), uint(id))
+	if err != nil {
+		ErrorNotFound(c, err.Error())
+		return
+	}
+	if !requireOwnerAccess(c, project.CreatedBy, "Project") {
 		return
 	}
 
@@ -124,6 +139,15 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 		return
 	}
 
+	existing, err := h.svc.GetProject(c.Request.Context(), uint(id))
+	if err != nil {
+		ErrorNotFound(c, err.Error())
+		return
+	}
+	if !requireOwnerAccess(c, existing.CreatedBy, "Project") {
+		return
+	}
+
 	project, err := h.svc.UpdateProject(c.Request.Context(), uint(id), &req)
 	if err != nil {
 		ErrorNotFound(c, err.Error())
@@ -139,6 +163,14 @@ func (h *ProjectHandler) DeleteProject(c *gin.Context) {
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		ErrorBadRequest(c, "invalid project ID")
+		return
+	}
+	existing, err := h.svc.GetProject(c.Request.Context(), uint(id))
+	if err != nil {
+		ErrorNotFound(c, err.Error())
+		return
+	}
+	if !requireOwnerAccess(c, existing.CreatedBy, "Project") {
 		return
 	}
 

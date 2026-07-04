@@ -12,8 +12,8 @@ type SNVIndel struct {
 	VariantType         string             `json:"variantType" gorm:"size:20"` // SNP, DEL, INS
 	Quality             float64            `json:"quality" gorm:"type:numeric"`
 	Filter              string             `json:"filter" gorm:"size:50"`
-	Genotype            string             `json:"genotype" gorm:"size:20"`  // 0/1, 1/1, 0|1
-	Zygosity            string             `json:"zygosity" gorm:"size:20"`  // Hom, Het
+	Genotype            string             `json:"genotype" gorm:"size:20"` // 0/1, 1/1, 0|1
+	Zygosity            string             `json:"zygosity" gorm:"size:20"` // Hom, Het
 	PhaseSet            string             `json:"phaseSet,omitempty" gorm:"size:50"`
 	Depth               int                `json:"depth" gorm:"type:integer"`
 	AD                  string             `json:"ad,omitempty" gorm:"size:50"` // comma-separated, e.g. "0,77"

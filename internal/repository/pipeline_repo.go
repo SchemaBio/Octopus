@@ -37,6 +37,13 @@ func (r *PipelineRepository) ExistsByName(name string) bool {
 func (r *PipelineRepository) PaginateByQuery(query *model.PipelineListQuery) ([]model.Pipeline, int64, error) {
 	db := r.db.Model(&model.Pipeline{})
 
+	if !query.IncludeAll {
+		if query.CreatedBy != 0 {
+			db = db.Where("created_by = ?", query.CreatedBy)
+		} else {
+			db = db.Where("1 = 0")
+		}
+	}
 	if query.Search != "" {
 		search := "%" + query.Search + "%"
 		db = db.Where("name LIKE ? OR description LIKE ?", search, search)

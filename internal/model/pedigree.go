@@ -28,20 +28,20 @@ const (
 type RelationType string
 
 const (
-	RelationProband            RelationType = "proband"
-	RelationFather             RelationType = "father"
-	RelationMother             RelationType = "mother"
-	RelationSibling            RelationType = "sibling"
-	RelationChild              RelationType = "child"
-	RelationSpouse             RelationType = "spouse"
+	RelationProband             RelationType = "proband"
+	RelationFather              RelationType = "father"
+	RelationMother              RelationType = "mother"
+	RelationSibling             RelationType = "sibling"
+	RelationChild               RelationType = "child"
+	RelationSpouse              RelationType = "spouse"
 	RelationGrandfatherPaternal RelationType = "grandfather_paternal"
 	RelationGrandmotherPaternal RelationType = "grandmother_paternal"
 	RelationGrandfatherMaternal RelationType = "grandfather_maternal"
 	RelationGrandmotherMaternal RelationType = "grandmother_maternal"
-	RelationUncle              RelationType = "uncle"
-	RelationAunt               RelationType = "aunt"
-	RelationCousin             RelationType = "cousin"
-	RelationOther              RelationType = "other"
+	RelationUncle               RelationType = "uncle"
+	RelationAunt                RelationType = "aunt"
+	RelationCousin              RelationType = "cousin"
+	RelationOther               RelationType = "other"
 )
 
 // Pedigree represents a family pedigree
@@ -80,24 +80,24 @@ type PedigreeMember struct {
 
 // PedigreeResponse is the API response for a pedigree list item
 type PedigreeResponse struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Disease     string    `json:"disease,omitempty"`
-	MemberCount int       `json:"member_count"`
-	CreatedAt   string    `json:"created_at"`
-	UpdatedAt   string    `json:"updated_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Disease     string `json:"disease,omitempty"`
+	MemberCount int    `json:"member_count"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 // PedigreeDetailResponse is the API response for a pedigree with members
 type PedigreeDetailResponse struct {
-	ID              string                `json:"id"`
-	Name            string                `json:"name"`
-	Disease         string                `json:"disease,omitempty"`
-	Note            string                `json:"note,omitempty"`
-	ProbandMemberID string                `json:"proband_member_id,omitempty"`
-	Members         []PedigreeMemberResp  `json:"members"`
-	CreatedAt       string                `json:"created_at"`
-	UpdatedAt       string                `json:"updated_at"`
+	ID              string               `json:"id"`
+	Name            string               `json:"name"`
+	Disease         string               `json:"disease,omitempty"`
+	Note            string               `json:"note,omitempty"`
+	ProbandMemberID string               `json:"proband_member_id,omitempty"`
+	Members         []PedigreeMemberResp `json:"members"`
+	CreatedAt       string               `json:"created_at"`
+	UpdatedAt       string               `json:"updated_at"`
 }
 
 // PedigreeMemberResp is the API response for a pedigree member
@@ -172,15 +172,17 @@ type PedigreeMemberUpdateRequest struct {
 
 // PedigreeListQuery is the query parameters for listing pedigrees
 type PedigreeListQuery struct {
-	Page     int    `form:"page" binding:"min=1"`
-	PageSize int    `form:"page_size" binding:"min=1,max=100"`
-	Search   string `form:"search"`
+	Page       int    `form:"page" binding:"min=1"`
+	PageSize   int    `form:"page_size" binding:"min=1,max=100"`
+	Search     string `form:"search"`
+	CreatedBy  uint   `json:"-"`
+	IncludeAll bool   `json:"-"`
 }
 
 // PedigreeListResponse is the response for listing pedigrees
 type PedigreeListResponse struct {
-	Total int64               `json:"total"`
-	Items []PedigreeResponse  `json:"items"`
+	Total int64              `json:"total"`
+	Items []PedigreeResponse `json:"items"`
 }
 
 // TableName specifies the table name for Pedigree

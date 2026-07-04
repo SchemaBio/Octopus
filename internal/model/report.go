@@ -130,7 +130,7 @@ type ReportTemplateAdminResponse struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	APIEndpoint string `json:"apiEndpoint"`
-	APIKey      string `json:"apiKey,omitempty"`
+	HasAPIKey   bool   `json:"hasApiKey"`
 	IsActive    bool   `json:"isActive"`
 }
 
@@ -150,7 +150,7 @@ func (t *ReportTemplate) ToAdminResponse() ReportTemplateAdminResponse {
 		Name:        t.Name,
 		Description: t.Description,
 		APIEndpoint: t.APIEndpoint,
-		APIKey:      t.APIKey,
+		HasAPIKey:   t.APIKey != "",
 		IsActive:    t.IsActive,
 	}
 }

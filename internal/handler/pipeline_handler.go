@@ -28,13 +28,12 @@ func (h *PipelineHandler) CreatePipeline(c *gin.Context) {
 		return
 	}
 
-	userID, _, _, ok := middleware.GetCurrentUser(c)
-	if !ok {
+	if _, _, _, ok := middleware.GetCurrentUser(c); !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	pipeline, err := h.svc.CreatePipeline(c.Request.Context(), &req, userID)
+	pipeline, err := h.svc.CreatePipeline(c.Request.Context(), &req, taskActorFromContext(c))
 	if err != nil {
 		ErrorInternal(c, err.Error())
 		return
@@ -62,6 +61,9 @@ func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	if query.PageSize == 0 {
 		query.PageSize = 10
 	}
+	if !applyCreatedByListScope(c, &query.CreatedBy, &query.IncludeAll) {
+		return
+	}
 
 	resp, err := h.svc.ListPipelines(c.Request.Context(), &query)
 	if err != nil {
@@ -81,6 +83,9 @@ func (h *PipelineHandler) GetPipeline(c *gin.Context) {
 		ErrorNotFound(c, "Pipeline not found")
 		return
 	}
+	if !requireOwnerAccess(c, pipeline.CreatedBy, "Pipeline") {
+		return
+	}
 
 	Success(c, pipeline.ToResponse())
 }
@@ -95,7 +100,16 @@ func (h *PipelineHandler) UpdatePipeline(c *gin.Context) {
 		return
 	}
 
-	pipeline, err := h.svc.UpdatePipeline(c.Request.Context(), id, &req)
+	existing, err := h.svc.GetPipeline(c.Request.Context(), id)
+	if err != nil {
+		ErrorNotFound(c, "Pipeline not found")
+		return
+	}
+	if !requireOwnerAccess(c, existing.CreatedBy, "Pipeline") {
+		return
+	}
+
+	pipeline, err := h.svc.UpdatePipeline(c.Request.Context(), id, &req, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, err.Error())
 		return
@@ -107,6 +121,14 @@ func (h *PipelineHandler) UpdatePipeline(c *gin.Context) {
 // DeletePipeline deletes a pipeline
 func (h *PipelineHandler) DeletePipeline(c *gin.Context) {
 	id := c.Param("id")
+	existing, err := h.svc.GetPipeline(c.Request.Context(), id)
+	if err != nil {
+		ErrorNotFound(c, "Pipeline not found")
+		return
+	}
+	if !requireOwnerAccess(c, existing.CreatedBy, "Pipeline") {
+		return
+	}
 
 	if err := h.svc.DeletePipeline(c.Request.Context(), id); err != nil {
 		ErrorNotFound(c, err.Error())

@@ -52,6 +52,14 @@ func (s *GeneListService) Get(id string) (*model.GeneListResponse, error) {
 	return &resp, nil
 }
 
+func (s *GeneListService) GetModel(id string) (*model.GeneList, error) {
+	geneList, err := s.repo.FindByStringID(id)
+	if err != nil {
+		return nil, errors.New("gene list not found")
+	}
+	return geneList, nil
+}
+
 // Create creates a new gene list
 func (s *GeneListService) Create(req *model.GeneListCreateRequest, userID uint) (*model.GeneListResponse, error) {
 	if s.repo.ExistsByName(req.Name) {

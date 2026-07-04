@@ -137,8 +137,7 @@ func (imp *Importer) ImportFromArchive(taskID string, archiveDir string) (*Impor
 
 // importQC reads QC data from outputs.resolved.json
 func (imp *Importer) importQC(taskID string, archiveDir string, result *ImportResult) error {
-	resolvedPath := filepath.Join(archiveDir, "outputs.resolved.json")
-	data, err := os.ReadFile(resolvedPath)
+	data, err := (&Archiver{cfg: imp.cfg}).readArchiveJSONFile(archiveDir, "outputs.resolved.json")
 	if err != nil {
 		return err
 	}
@@ -263,7 +262,7 @@ func (imp *Importer) findResultFiles(archiveDir string) []string {
 
 	// Walk archive dir and subdirectories
 	filepath.Walk(archiveDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+		if err != nil || info.IsDir() || !info.Mode().IsRegular() {
 			return nil
 		}
 

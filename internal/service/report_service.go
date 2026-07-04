@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -20,7 +21,12 @@ import (
 	"github.com/google/uuid"
 )
 
-const defaultReportContentType = "application/octet-stream"
+const (
+	defaultReportContentType = "application/octet-stream"
+	maxReportDownloadBytes   = 50 << 20
+)
+
+var ErrReportDownloadTooLarge = errors.New("report API response exceeds maximum size")
 
 // ReportService handles report business logic
 type ReportService struct {
@@ -119,7 +125,14 @@ func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		defer resp.Body.Close()
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("report API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+		if strings.TrimSpace(string(msg)) == "" {
+			return nil, fmt.Errorf("report API returned %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("report API returned %d", resp.StatusCode)
+	}
+	if resp.ContentLength > maxReportDownloadBytes {
+		resp.Body.Close()
+		return nil, fmt.Errorf("report API response exceeds maximum size of %d MB", maxReportDownloadBytes>>20)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -131,8 +144,41 @@ func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.
 		FileName:      reportDownloadFileName(req.Name, tmpl.Name, task.UUID, resp.Header.Get("Content-Disposition"), contentType),
 		ContentType:   contentType,
 		ContentLength: resp.ContentLength,
-		Body:          resp.Body,
+		Body:          newMaxBytesReadCloser(resp.Body, maxReportDownloadBytes),
 	}, nil
+}
+
+type maxBytesReadCloser struct {
+	rc   io.ReadCloser
+	max  int64
+	read int64
+}
+
+func newMaxBytesReadCloser(rc io.ReadCloser, max int64) io.ReadCloser {
+	return &maxBytesReadCloser{rc: rc, max: max}
+}
+
+func (r *maxBytesReadCloser) Read(p []byte) (int, error) {
+	if r.read >= r.max {
+		var probe [1]byte
+		n, err := r.rc.Read(probe[:])
+		if n > 0 {
+			return 0, fmt.Errorf("%w of %d MB", ErrReportDownloadTooLarge, r.max>>20)
+		}
+		return 0, err
+	}
+
+	remaining := r.max - r.read
+	if int64(len(p)) > remaining {
+		p = p[:remaining]
+	}
+	n, err := r.rc.Read(p)
+	r.read += int64(n)
+	return n, err
+}
+
+func (r *maxBytesReadCloser) Close() error {
+	return r.rc.Close()
 }
 
 func (s *ReportService) httpClient() *http.Client {

@@ -47,6 +47,13 @@ func (r *SampleRepository) UpdateStatus(id uint, status model.SampleStatus) erro
 func (r *SampleRepository) PaginateByQuery(query *model.SampleListQuery) ([]model.Sample, int64, error) {
 	db := r.db.Model(&model.Sample{})
 
+	if !query.IncludeAll {
+		if query.CreatedBy != 0 {
+			db = db.Where("created_by = ?", query.CreatedBy)
+		} else {
+			db = db.Where("1 = 0")
+		}
+	}
 	if query.Search != "" {
 		search := "%" + query.Search + "%"
 		db = db.Where("internal_id LIKE ? OR uuid LIKE ?", search, search)

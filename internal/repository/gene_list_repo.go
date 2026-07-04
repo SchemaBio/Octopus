@@ -20,6 +20,13 @@ func NewGeneListRepository() *GeneListRepository {
 func (r *GeneListRepository) PaginateByQuery(query *model.GeneListListQuery) ([]model.GeneList, int64, error) {
 	db := r.db.Model(&model.GeneList{})
 
+	if !query.IncludeAll {
+		if query.CreatedBy != 0 {
+			db = db.Where("created_by = ?", query.CreatedBy)
+		} else {
+			db = db.Where("1 = 0")
+		}
+	}
 	if query.Search != "" {
 		search := "%" + query.Search + "%"
 		db = db.Where("name LIKE ? OR description LIKE ?", search, search)

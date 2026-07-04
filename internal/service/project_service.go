@@ -10,8 +10,8 @@ import (
 
 // ProjectService handles project business logic
 type ProjectService struct {
-	cfg       *config.Config
-	repo      *repository.ProjectRepository
+	cfg        *config.Config
+	repo       *repository.ProjectRepository
 	sampleRepo *repository.SampleRepository
 	taskRepo   *repository.TaskRepository
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bioinfo/schema-platform/internal/config"
+	"github.com/bioinfo/schema-platform/internal/repository"
 	"github.com/bioinfo/schema-platform/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -22,6 +23,7 @@ const defaultAIProxyMaxBodyBytes = 2 << 20 // 2 MB
 type AIHandler struct {
 	cfg       *config.Config
 	evaluator *service.AIEvaluator
+	taskRepo  *repository.TaskRepository
 	http      *http.Client
 	validate  func(string) error
 }
@@ -30,6 +32,7 @@ func NewAIHandler(cfg *config.Config) *AIHandler {
 	return &AIHandler{
 		cfg:       cfg,
 		evaluator: service.NewAIEvaluator(cfg),
+		taskRepo:  repository.NewTaskRepository(),
 		http:      aiProxyHTTPClient(),
 		validate:  validateAIProxyEndpoint,
 	}
@@ -43,10 +46,18 @@ func (h *AIHandler) Evaluate(c *gin.Context) {
 	}
 
 	taskID := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
 
 	// Parse optional filter from request body
 	filter := service.DefaultAIFilter()
-	c.ShouldBindJSON(&filter)
+	if c.Request.Body != nil && c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&filter); err != nil && err != io.EOF {
+			ErrorBadRequest(c, err.Error())
+			return
+		}
+	}
 
 	// Check if client wants streaming
 	accept := c.GetHeader("Accept")

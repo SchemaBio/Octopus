@@ -145,6 +145,8 @@ func TestValidateStartupRejectsWeakReleaseJWTSecret(t *testing.T) {
 	}
 
 	cfg.JWT.Secret = "xK9mP2vN7bQ4wR6tY8uI1oA3sD5fG0hJ"
+	cfg.Server.AllowedOrigins = "https://app.example.com"
+	cfg.JWT.CookieSecure = true
 	err = ValidateStartup(cfg)
 	if err != nil {
 		t.Errorf("unexpected error for strong secret: %v", err)
@@ -159,6 +161,37 @@ func TestValidateStartupAllowsDebugMode(t *testing.T) {
 	err := ValidateStartup(cfg)
 	if err != nil {
 		t.Errorf("expected no error in debug mode, got: %v", err)
+	}
+}
+
+func TestValidateStartupRejectsReleaseLLMHTTPURL(t *testing.T) {
+	cfg := &Config{
+		Server: ServerConfig{Mode: "release", AllowedOrigins: "https://app.example.com"},
+		JWT:    JWTConfig{Secret: "xK9mP2vN7bQ4wR6tY8uI1oA3sD5fG0hJ", CookieSecure: true},
+		LLM: LLMConfig{
+			Enabled: true,
+			BaseURL: "http://llm.example.com/v1",
+			APIKey:  "secret",
+		},
+	}
+
+	if err := ValidateStartup(cfg); err == nil {
+		t.Fatal("expected release LLM HTTP URL to fail")
+	}
+}
+
+func TestValidateStartupRejectsUnsafeReleaseCORS(t *testing.T) {
+	cfg := &Config{
+		Server: ServerConfig{Mode: "release", AllowedOrigins: "*"},
+		JWT:    JWTConfig{Secret: "xK9mP2vN7bQ4wR6tY8uI1oA3sD5fG0hJ", CookieSecure: true},
+	}
+	if err := ValidateStartup(cfg); err == nil {
+		t.Fatal("expected wildcard release CORS origin to fail")
+	}
+
+	cfg.Server.AllowedOrigins = "http://app.example.com"
+	if err := ValidateStartup(cfg); err == nil {
+		t.Fatal("expected non-HTTPS release CORS origin to fail")
 	}
 }
 

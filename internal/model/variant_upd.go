@@ -19,15 +19,15 @@ const (
 
 // UPDRegion represents a UPD region
 type UPDRegion struct {
-	ID                  string             `json:"id" gorm:"primaryKey;size:36"`
-	TaskID              string             `json:"taskId" gorm:"size:36;index"`
-	Chromosome          string             `json:"chromosome" gorm:"size:10"`
-	StartPosition       int64              `json:"startPosition"`
-	EndPosition         int64              `json:"endPosition"`
-	Length              int64              `json:"length"`
-	Type                UPDType            `json:"type" gorm:"size:20"`
-	Genes               string             `json:"genes" gorm:"type:jsonb"` // JSON array
-	ParentOfOrigin      ParentOfOrigin     `json:"parentOfOrigin,omitempty" gorm:"size:20"`
+	ID                  string         `json:"id" gorm:"primaryKey;size:36"`
+	TaskID              string         `json:"taskId" gorm:"size:36;index"`
+	Chromosome          string         `json:"chromosome" gorm:"size:10"`
+	StartPosition       int64          `json:"startPosition"`
+	EndPosition         int64          `json:"endPosition"`
+	Length              int64          `json:"length"`
+	Type                UPDType        `json:"type" gorm:"size:20"`
+	Genes               string         `json:"genes" gorm:"type:jsonb"` // JSON array
+	ParentOfOrigin      ParentOfOrigin `json:"parentOfOrigin,omitempty" gorm:"size:20"`
 	VariantReviewStatus `json:"reviewStatus" gorm:"embedded"`
 }
 

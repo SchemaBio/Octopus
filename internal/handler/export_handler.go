@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/repository"
@@ -68,10 +69,15 @@ func (h *ExportHandler) serveFile(c *gin.Context, fileType, contentType string) 
 		ErrorNotFound(c, fmt.Sprintf("%s file not found", fileType))
 		return
 	}
+	safePath, err := resolveRegularFileInsideBase(task.OutputDir, filePath)
+	if err != nil {
+		ErrorNotFound(c, fmt.Sprintf("%s file not found", fileType))
+		return
+	}
 
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(filePath)))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(safePath)))
 	c.Header("Content-Type", contentType)
-	c.File(filePath)
+	c.File(safePath)
 }
 
 // findFileByPattern finds the first file matching a glob pattern in a directory
@@ -113,6 +119,9 @@ func findVCFFile(dir string, isMT bool) string {
 	lastLink := filepath.Join(dir, "_LAST")
 	if target, err := os.Readlink(lastLink); err == nil {
 		lastDir := filepath.Join(dir, target)
+		if !isPathInsideBase(dir, lastDir) {
+			return ""
+		}
 		matches, _ = filepath.Glob(filepath.Join(lastDir, pattern))
 		if len(matches) > 0 {
 			return matches[0]
@@ -120,4 +129,45 @@ func findVCFFile(dir string, isMT bool) string {
 	}
 
 	return ""
+}
+
+func isPathInsideBase(base, path string) bool {
+	baseAbs, err := filepath.Abs(base)
+	if err != nil {
+		return false
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(baseAbs, pathAbs)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel)
+}
+
+func resolveRegularFileInsideBase(base, filePath string) (string, error) {
+	baseEval, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		baseEval, err = filepath.Abs(base)
+		if err != nil {
+			return "", err
+		}
+	}
+	fileEval, err := filepath.EvalSymlinks(filePath)
+	if err != nil {
+		return "", err
+	}
+	if !isPathInsideBase(baseEval, fileEval) {
+		return "", fmt.Errorf("file escapes task output directory")
+	}
+	info, err := os.Stat(fileEval)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("file is not regular")
+	}
+	return fileEval, nil
 }

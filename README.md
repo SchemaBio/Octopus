@@ -257,7 +257,7 @@ Octopus 不保存新生成报告，也不生成对象存储下载链接；报告
 | OVERLAY_TASK_EVENT_PATH | /api/v1/overlay/tasks/events | 任务事件 webhook 路径 |
 | LLM_ENABLED | false | 启用 AI 评估 |
 | LLM_BASE_URL | | LLM API Base URL |
-| LLM_API_KEY | | LLM API Key |
+| LLM_API_KEY | | LLM API Key??????????????? |
 | LLM_MODEL | gpt-4o | 模型名称 |
 | LLM_ALLOWED_MODELS | LLM_MODEL | AI proxy 允许的模型列表，逗号分隔，`*` 表示不限制 |
 | LLM_PROXY_MAX_BODY_MB | 2 | AI proxy 单请求最大 JSON body (MB) |
@@ -306,7 +306,7 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "admin",
-    "password": "admin123"
+    "password": "<strong-admin-password>"
   }'
 ```
 
@@ -376,7 +376,7 @@ curl http://localhost:8080/api/v1/auth/me \
 
 | 用户名 | 密码 | 角色 |
 |--------|------|------|
-| admin | admin123 | admin |
+| admin | <debug-only-default-or-your-strong-password> | admin |
 | user | user123 | user |
 
 ⚠️ **生产环境务必更换测试账号密码或使用数据库存储用户**

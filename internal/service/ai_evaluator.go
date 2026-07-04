@@ -53,7 +53,12 @@ type AIEvaluator struct {
 func NewAIEvaluator(cfg *config.Config) *AIEvaluator {
 	var llm *LLMClient
 	if cfg.LLM.Enabled {
-		llm = NewLLMClient(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model)
+		llm = NewLLMClient(
+			cfg.LLM.BaseURL,
+			cfg.LLM.APIKey,
+			cfg.LLM.Model,
+			AllowPrivateLLMEndpoints(!strings.EqualFold(cfg.Server.Mode, "release")),
+		)
 	}
 	return &AIEvaluator{
 		llm:          llm,

@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"path/filepath"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/middleware"
@@ -187,9 +188,9 @@ func (h *UploadHandler) GetDownloadURL(c *gin.Context) {
 
 	path, err := h.svc.GetLocalFilePath(c.Request.Context(), userID, fileUUID)
 	if err != nil {
-		ErrorInternal(c, err.Error())
+		ErrorNotFound(c, "Upload file not found")
 		return
 	}
 
-	Success(c, gin.H{"path": path})
+	c.FileAttachment(path, filepath.Base(path))
 }

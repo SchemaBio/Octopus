@@ -43,11 +43,12 @@ func NewParquetReader() *ParquetReader {
 // offset: start row (0-indexed)
 // limit: max rows to return
 func (pr *ParquetReader) ReadPage(filePath string, offset, limit int64) (*ParquetPageResult, error) {
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+	safePath, err := resolveParquetRegularFile(filepath.Dir(filePath), filePath)
+	if err != nil {
 		return nil, fmt.Errorf("parquet file not found: %s", filePath)
 	}
 
-	fr, err := local.NewLocalFileReader(filePath)
+	fr, err := local.NewLocalFileReader(safePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open parquet file: %w", err)
 	}
@@ -62,37 +63,38 @@ func (pr *ParquetReader) ReadPage(filePath string, offset, limit int64) (*Parque
 
 	totalRows := int64(prReader.GetNumRows())
 
-	// Clamp offset/limit
-	if offset >= totalRows {
-		offset = 0
-	}
-	if limit <= 0 || limit > MaxParquetPageLimit {
-		limit = 100
-	}
-	if offset+limit > totalRows {
-		limit = totalRows - offset
+	offset, limit = normalizeParquetPage(totalRows, offset, limit)
+	var pageRows []map[string]interface{}
+	if limit > 0 {
+		if offset > 0 {
+			if err := prReader.SkipRows(offset); err != nil {
+				return nil, fmt.Errorf("failed to seek parquet data: %w", err)
+			}
+		}
+		rawRows, err := prReader.ReadByNumber(int(limit))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read parquet data: %w", err)
+		}
+		pageRows, err = parquetRowsToMaps(rawRows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert parquet data: %w", err)
+		}
 	}
 
-	// Read ALL rows into memory (xitongsys/parquet-go reads the full file in batch)
-	// We page in-memory. For large files, consider using row-group-level reading.
-	rawRows := make([]map[string]interface{}, totalRows)
-	if err := prReader.Read(&rawRows); err != nil {
-		return nil, fmt.Errorf("failed to read parquet data: %w", err)
+	if pageRows == nil {
+		pageRows = []map[string]interface{}{}
 	}
-
-	// Extract page
-	pagedRows := rawRows[offset : offset+limit]
 
 	// Clean up values: convert byte arrays to strings (common in parquet-go)
-	cleanedRows := make([]map[string]interface{}, len(pagedRows))
-	for i, row := range pagedRows {
+	cleanedRows := make([]map[string]interface{}, len(pageRows))
+	for i, row := range pageRows {
 		cleanedRows[i] = cleanRowValues(row)
 	}
 
 	// Extract columns from first row
-	columns := pr.extractColumns(pagedRows)
+	columns := pr.extractColumns(pageRows)
 
-	table := strings.TrimSuffix(filepath.Base(filePath), ".parquet")
+	table := strings.TrimSuffix(filepath.Base(safePath), ".parquet")
 
 	result := &ParquetPageResult{
 		Table:     table,
@@ -104,6 +106,83 @@ func (pr *ParquetReader) ReadPage(filePath string, offset, limit int64) (*Parque
 	}
 
 	return result, nil
+}
+
+func normalizeParquetPage(totalRows, offset, limit int64) (int64, int64) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 || limit > MaxParquetPageLimit {
+		limit = 100
+	}
+	if totalRows <= 0 || offset >= totalRows {
+		return offset, 0
+	}
+	if offset+limit > totalRows {
+		limit = totalRows - offset
+	}
+	return offset, limit
+}
+
+func parquetRowsToMaps(rawRows []interface{}) ([]map[string]interface{}, error) {
+	rows := make([]map[string]interface{}, 0, len(rawRows))
+	for _, raw := range rawRows {
+		if raw == nil {
+			continue
+		}
+		if row, ok := raw.(map[string]interface{}); ok {
+			rows = append(rows, row)
+			continue
+		}
+		b, err := json.Marshal(raw)
+		if err != nil {
+			return nil, err
+		}
+		var row map[string]interface{}
+		if err := json.Unmarshal(b, &row); err != nil {
+			return nil, err
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+func resolveParquetRegularFile(baseDir, filePath string) (string, error) {
+	baseEval, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return "", err
+	}
+	fileEval, err := filepath.EvalSymlinks(filePath)
+	if err != nil {
+		return "", err
+	}
+	if !parquetPathInsideBase(baseEval, fileEval) {
+		return "", fmt.Errorf("parquet file escapes output directory")
+	}
+	info, err := os.Stat(fileEval)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("parquet file is not regular")
+	}
+	return fileEval, nil
+}
+
+func parquetPathInsideBase(base, path string) bool {
+	baseAbs, err := filepath.Abs(base)
+	if err != nil {
+		return false
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(baseAbs, pathAbs)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel)
 }
 
 // extractColumns extracts column metadata from the first row
@@ -190,7 +269,12 @@ func (pr *ParquetReader) FindParquetFiles(dir string) ([]string, error) {
 
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".parquet") {
-			files = append(files, filepath.Join(dir, entry.Name()))
+			path := filepath.Join(dir, entry.Name())
+			safePath, err := resolveParquetRegularFile(dir, path)
+			if err != nil {
+				continue
+			}
+			files = append(files, safePath)
 		}
 	}
 

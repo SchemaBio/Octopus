@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +15,8 @@ import (
 )
 
 var templateDir string
+
+const maxTemplateReadBytes = 1 << 20
 
 func initTemplates() {
 	templateDir = config.GetEnv("TEMPLATE_DIR", "/home/ubuntu/schema-germline")
@@ -38,6 +42,61 @@ func safeTemplatePath(name string) (string, bool) {
 	return wdlPath, true
 }
 
+func safePublicTemplate(t model.Template) model.Template {
+	t.Path = ""
+	return t
+}
+
+func isPathWithin(base, path string) bool {
+	baseAbs, err := filepath.Abs(base)
+	if err != nil {
+		return false
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(baseAbs, pathAbs)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel)
+}
+
+func readTemplateFile(path string) ([]byte, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, err
+	}
+	resolvedDir, err := filepath.EvalSymlinks(templateDir)
+	if err != nil {
+		return nil, err
+	}
+	if !isPathWithin(resolvedDir, resolved) {
+		return nil, fmt.Errorf("template path escapes template directory")
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("template is not a regular file")
+	}
+	if info.Size() > maxTemplateReadBytes {
+		return nil, fmt.Errorf("template is too large")
+	}
+	f, err := os.Open(resolved)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxTemplateReadBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxTemplateReadBytes {
+		return nil, fmt.Errorf("template is too large")
+	}
+	return data, nil
+}
+
 // ListTemplates godoc
 // @Summary List available WDL templates
 // @Description Get a list of available WDL workflow templates (from catalog and filesystem)
@@ -52,7 +111,7 @@ func ListTemplates(c *gin.Context) {
 
 	// Add catalog definitions
 	for _, def := range workflow.ListDefinitions() {
-		templates = append(templates, workflow.ToTemplate(templateDir, def, false))
+		templates = append(templates, safePublicTemplate(workflow.ToTemplate(templateDir, def, false)))
 	}
 
 	// Add filesystem WDL files not already in catalog
@@ -65,10 +124,10 @@ func ListTemplates(c *gin.Context) {
 				if workflow.IsSupported(name) {
 					continue
 				}
-				templates = append(templates, model.Template{
-					Name: name,
-					Path: filepath.Join(templateDir, file.Name()),
-				})
+				if info, err := file.Info(); err != nil || !info.Mode().IsRegular() {
+					continue
+				}
+				templates = append(templates, model.Template{Name: name})
 			}
 		}
 	}
@@ -92,7 +151,7 @@ func GetTemplate(c *gin.Context) {
 
 	// Check catalog first
 	if def, ok := workflow.GetDefinition(name); ok {
-		c.JSON(http.StatusOK, workflow.ToTemplate(templateDir, def, false))
+		c.JSON(http.StatusOK, safePublicTemplate(workflow.ToTemplate(templateDir, def, false)))
 		return
 	}
 
@@ -103,22 +162,19 @@ func GetTemplate(c *gin.Context) {
 		return
 	}
 
-	// Check if file exists
-	if _, err := os.Stat(wdlPath); os.IsNotExist(err) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
-		return
-	}
-
 	// Read WDL file content
-	content, err := os.ReadFile(wdlPath)
+	content, err := readTemplateFile(wdlPath)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read template"})
+		if os.IsNotExist(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid template file"})
 		return
 	}
 
 	c.JSON(http.StatusOK, model.Template{
 		Name:        name,
-		Path:        wdlPath,
 		Description: "WDL workflow template",
 		InputFields: parseWDLInputs(string(content)),
 	})

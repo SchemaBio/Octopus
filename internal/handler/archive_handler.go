@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"os"
 
@@ -166,23 +165,9 @@ func (h *ArchiveHandler) ListOutputKeys(c *gin.Context) {
 		return
 	}
 
-	// Also read full outputs.resolved.json content
-	archiveDir := h.archiver.GetArchiveDir(uuid)
 	outputs := map[string]interface{}{}
-	if archiveDir != "" {
-		// Try outputs.resolved.json first, fall back to outputs.json
-		outputsPath := archiveDir + "/outputs.resolved.json"
-		data, err := os.ReadFile(outputsPath)
-		if err != nil {
-			outputsPath = archiveDir + "/outputs.json"
-			data, err = os.ReadFile(outputsPath)
-		}
-		if err == nil {
-			var parsed map[string]interface{}
-			if json.Unmarshal(data, &parsed) == nil {
-				outputs = parsed
-			}
-		}
+	if parsed, err := h.archiver.ReadOutputs(uuid); err == nil {
+		outputs = parsed
 	}
 
 	c.JSON(http.StatusOK, gin.H{

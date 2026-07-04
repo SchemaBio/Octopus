@@ -24,6 +24,9 @@ func NewResultHandler(cfg *config.Config) *ResultHandler {
 // GetQC returns QC results for a task
 func (h *ResultHandler) GetQC(c *gin.Context) {
 	taskID := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
 
 	qc, err := h.svc.GetQC(c.Request.Context(), taskID)
 	if err != nil {
@@ -36,12 +39,16 @@ func (h *ResultHandler) GetQC(c *gin.Context) {
 
 // ListSNVIndels returns paginated SNV/Indel results
 func (h *ResultHandler) ListSNVIndels(c *gin.Context) {
+	taskID := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
 	var query model.SNVIndelListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	query.TaskID = c.Param("id")
+	query.TaskID = taskID
 	setQueryDefaults(&query.Page, &query.PageSize)
 
 	results, total, err := h.svc.ListSNVIndels(c.Request.Context(), &query)
@@ -55,12 +62,16 @@ func (h *ResultHandler) ListSNVIndels(c *gin.Context) {
 
 // ListCNVSegments returns paginated CNV segment results
 func (h *ResultHandler) ListCNVSegments(c *gin.Context) {
+	taskID := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
 	var query model.CNVSegmentListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	query.TaskID = c.Param("id")
+	query.TaskID = taskID
 	setQueryDefaults(&query.Page, &query.PageSize)
 
 	results, total, err := h.svc.ListCNVSegments(c.Request.Context(), &query)
@@ -74,12 +85,16 @@ func (h *ResultHandler) ListCNVSegments(c *gin.Context) {
 
 // ListCNVExons returns paginated CNV exon results
 func (h *ResultHandler) ListCNVExons(c *gin.Context) {
+	taskID := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
 	var query model.CNVExonListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	query.TaskID = c.Param("id")
+	query.TaskID = taskID
 	setQueryDefaults(&query.Page, &query.PageSize)
 
 	results, total, err := h.svc.ListCNVExons(c.Request.Context(), &query)
@@ -93,12 +108,16 @@ func (h *ResultHandler) ListCNVExons(c *gin.Context) {
 
 // ListSTRs returns paginated STR results
 func (h *ResultHandler) ListSTRs(c *gin.Context) {
+	taskID := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
 	var query model.STRListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	query.TaskID = c.Param("id")
+	query.TaskID = taskID
 	setQueryDefaults(&query.Page, &query.PageSize)
 
 	results, total, err := h.svc.ListSTRs(c.Request.Context(), &query)
@@ -112,12 +131,16 @@ func (h *ResultHandler) ListSTRs(c *gin.Context) {
 
 // ListMEIs returns paginated MEI results
 func (h *ResultHandler) ListMEIs(c *gin.Context) {
+	taskID := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
 	var query model.MEIListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	query.TaskID = c.Param("id")
+	query.TaskID = taskID
 	setQueryDefaults(&query.Page, &query.PageSize)
 
 	results, total, err := h.svc.ListMEIs(c.Request.Context(), &query)
@@ -131,12 +154,16 @@ func (h *ResultHandler) ListMEIs(c *gin.Context) {
 
 // ListMTVariants returns paginated mitochondrial variant results
 func (h *ResultHandler) ListMTVariants(c *gin.Context) {
+	taskID := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
 	var query model.MTListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	query.TaskID = c.Param("id")
+	query.TaskID = taskID
 	setQueryDefaults(&query.Page, &query.PageSize)
 
 	results, total, err := h.svc.ListMTVariants(c.Request.Context(), &query)
@@ -150,12 +177,16 @@ func (h *ResultHandler) ListMTVariants(c *gin.Context) {
 
 // ListUPDRegions returns paginated UPD region results
 func (h *ResultHandler) ListUPDRegions(c *gin.Context) {
+	taskID := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
 	var query model.UPDListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	query.TaskID = c.Param("id")
+	query.TaskID = taskID
 	setQueryDefaults(&query.Page, &query.PageSize)
 
 	results, total, err := h.svc.ListUPDRegions(c.Request.Context(), &query)
@@ -169,12 +200,16 @@ func (h *ResultHandler) ListUPDRegions(c *gin.Context) {
 
 // ListROHRegions returns paginated ROH region results
 func (h *ResultHandler) ListROHRegions(c *gin.Context) {
+	taskID := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
 	var query model.ROHListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	query.TaskID = c.Param("id")
+	query.TaskID = taskID
 	setQueryDefaults(&query.Page, &query.PageSize)
 
 	results, total, err := h.svc.ListROHRegions(c.Request.Context(), &query)
@@ -196,13 +231,13 @@ func (h *ResultHandler) ReviewVariant(c *gin.Context) {
 		return
 	}
 
-	_, _, email, ok := middleware.GetCurrentUser(c)
+	_, email, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	if err := h.svc.ReviewVariant(c.Request.Context(), variantType, vid, email); err != nil {
+	if err := h.svc.ReviewVariant(c.Request.Context(), variantType, taskID, vid, email); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
@@ -220,13 +255,13 @@ func (h *ResultHandler) ReportVariant(c *gin.Context) {
 		return
 	}
 
-	_, _, email, ok := middleware.GetCurrentUser(c)
+	_, email, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	if err := h.svc.ReportVariant(c.Request.Context(), variantType, vid, email); err != nil {
+	if err := h.svc.ReportVariant(c.Request.Context(), variantType, taskID, vid, email); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}

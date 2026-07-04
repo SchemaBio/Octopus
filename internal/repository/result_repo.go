@@ -49,9 +49,13 @@ func (r *ResultRepository) PaginateSNVIndels(query *model.SNVIndelListQuery) ([]
 	db.Count(&total)
 
 	page := query.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	pageSize := query.PageSize
-	if pageSize < 1 { pageSize = 10 }
+	if pageSize < 1 {
+		pageSize = 10
+	}
 
 	var results []model.SNVIndel
 	err := db.Order("acmg_classification ASC, gene ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
@@ -94,9 +98,13 @@ func (r *ResultRepository) PaginateCNVSegments(query *model.CNVSegmentListQuery)
 	db.Count(&total)
 
 	page := query.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	pageSize := query.PageSize
-	if pageSize < 1 { pageSize = 10 }
+	if pageSize < 1 {
+		pageSize = 10
+	}
 
 	var results []model.CNVSegment
 	err := db.Order("chromosome ASC, start_position ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
@@ -137,9 +145,13 @@ func (r *ResultRepository) PaginateCNVExons(query *model.CNVExonListQuery) ([]mo
 	db.Count(&total)
 
 	page := query.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	pageSize := query.PageSize
-	if pageSize < 1 { pageSize = 10 }
+	if pageSize < 1 {
+		pageSize = 10
+	}
 
 	var results []model.CNVExon
 	err := db.Order("gene ASC, exon ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
@@ -180,9 +192,13 @@ func (r *ResultRepository) PaginateSTRs(query *model.STRListQuery) ([]model.STR,
 	db.Count(&total)
 
 	page := query.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	pageSize := query.PageSize
-	if pageSize < 1 { pageSize = 10 }
+	if pageSize < 1 {
+		pageSize = 10
+	}
 
 	var results []model.STR
 	err := db.Order("gene ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
@@ -223,9 +239,13 @@ func (r *ResultRepository) PaginateMEIs(query *model.MEIListQuery) ([]model.MEIV
 	db.Count(&total)
 
 	page := query.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	pageSize := query.PageSize
-	if pageSize < 1 { pageSize = 10 }
+	if pageSize < 1 {
+		pageSize = 10
+	}
 
 	var results []model.MEIVariant
 	err := db.Order("chromosome ASC, position ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
@@ -263,9 +283,13 @@ func (r *ResultRepository) PaginateMTVariants(query *model.MTListQuery) ([]model
 	db.Count(&total)
 
 	page := query.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	pageSize := query.PageSize
-	if pageSize < 1 { pageSize = 10 }
+	if pageSize < 1 {
+		pageSize = 10
+	}
 
 	var results []model.MitochondrialVariant
 	err := db.Order("position ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
@@ -303,9 +327,13 @@ func (r *ResultRepository) PaginateUPDRegions(query *model.UPDListQuery) ([]mode
 	db.Count(&total)
 
 	page := query.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	pageSize := query.PageSize
-	if pageSize < 1 { pageSize = 10 }
+	if pageSize < 1 {
+		pageSize = 10
+	}
 
 	var results []model.UPDRegion
 	err := db.Order("chromosome ASC, start_position ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
@@ -412,9 +440,13 @@ func (r *ResultRepository) PaginateROHRegions(query *model.ROHListQuery) ([]mode
 	db.Count(&total)
 
 	page := query.Page
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	pageSize := query.PageSize
-	if pageSize < 1 { pageSize = 10 }
+	if pageSize < 1 {
+		pageSize = 10
+	}
 
 	var results []model.ROHRegion
 	err := db.Order("chr ASC, begin ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
@@ -493,26 +525,42 @@ var variantModel = map[string]interface{}{
 	"roh":         &model.ROHRegion{},
 }
 
-// UpdateVariantReview generically updates the review status of any variant type.
-func (r *ResultRepository) UpdateVariantReview(variantType, id string, reviewed bool, reviewer string) error {
+// UpdateVariantReview generically updates the review status of any variant type,
+// scoped to the current task to prevent cross-task variant ID tampering.
+func (r *ResultRepository) UpdateVariantReview(variantType, taskID, id string, reviewed bool, reviewer string) error {
 	m, ok := variantModel[variantType]
 	if !ok {
 		return fmt.Errorf("unknown variant type: %s", variantType)
 	}
-	return r.db.Model(m).Where("id = ?", id).Updates(map[string]interface{}{
+	tx := r.db.Model(m).Where("id = ? AND task_id = ?", id, taskID).Updates(map[string]interface{}{
 		"reviewed":    reviewed,
 		"reviewed_by": reviewer,
-	}).Error
+	})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
-// UpdateVariantReport generically updates the report status of any variant type.
-func (r *ResultRepository) UpdateVariantReport(variantType, id string, reported bool, reporter string) error {
+// UpdateVariantReport generically updates the report status of any variant type,
+// scoped to the current task to prevent cross-task variant ID tampering.
+func (r *ResultRepository) UpdateVariantReport(variantType, taskID, id string, reported bool, reporter string) error {
 	m, ok := variantModel[variantType]
 	if !ok {
 		return fmt.Errorf("unknown variant type: %s", variantType)
 	}
-	return r.db.Model(m).Where("id = ?", id).Updates(map[string]interface{}{
+	tx := r.db.Model(m).Where("id = ? AND task_id = ?", id, taskID).Updates(map[string]interface{}{
 		"reported":    reported,
 		"reported_by": reporter,
-	}).Error
+	})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

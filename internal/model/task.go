@@ -101,10 +101,13 @@ type TaskUpdateRequest struct {
 
 // TaskListQuery is the query parameters for listing tasks
 type TaskListQuery struct {
-	Status   TaskStatus `form:"status"`
-	SampleID string     `form:"sampleId"`
-	Page     int        `form:"page" binding:"min=1"`
-	PageSize int        `form:"page_size" binding:"min=1,max=100"`
+	Status        TaskStatus `form:"status"`
+	SampleID      string     `form:"sampleId"`
+	Page          int        `form:"page" binding:"min=1"`
+	PageSize      int        `form:"page_size" binding:"min=1,max=100"`
+	CreatedBy     uint       `json:"-"`
+	ExternalOrgID string     `json:"-"`
+	IncludeAll    bool       `json:"-"`
 }
 
 // TaskResponse matches frontend AnalysisTask type
@@ -166,7 +169,7 @@ type Template struct {
 	ShortName     string                 `json:"shortName,omitempty"`
 	Domain        string                 `json:"domain,omitempty"`
 	Workflow      string                 `json:"workflow,omitempty"`
-	Path          string                 `json:"path"`
+	Path          string                 `json:"path,omitempty"`
 	Description   string                 `json:"description"`
 	InputFields   []string               `json:"input_fields,omitempty"`
 	DefaultInputs map[string]interface{} `json:"default_inputs,omitempty"`

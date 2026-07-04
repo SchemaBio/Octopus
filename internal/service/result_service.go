@@ -135,11 +135,11 @@ func (s *ResultService) ListROHRegions(ctx context.Context, query *model.ROHList
 // ========== Review/Report by type ==========
 
 // ReviewVariant marks a variant as reviewed by type
-func (s *ResultService) ReviewVariant(ctx context.Context, variantType string, id string, reviewer string) error {
-	return s.repo.UpdateVariantReview(variantType, id, true, reviewer)
+func (s *ResultService) ReviewVariant(ctx context.Context, variantType string, taskID string, id string, reviewer string) error {
+	return s.repo.UpdateVariantReview(variantType, taskID, id, true, reviewer)
 }
 
 // ReportVariant marks a variant as reported by type
-func (s *ResultService) ReportVariant(ctx context.Context, variantType string, id string, reporter string) error {
-	return s.repo.UpdateVariantReport(variantType, id, true, reporter)
+func (s *ResultService) ReportVariant(ctx context.Context, variantType string, taskID string, id string, reporter string) error {
+	return s.repo.UpdateVariantReport(variantType, taskID, id, true, reporter)
 }

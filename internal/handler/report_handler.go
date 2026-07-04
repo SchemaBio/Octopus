@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -56,7 +57,7 @@ func (h *ReportHandler) CreateReport(c *gin.Context) {
 		return
 	}
 
-	_, _, email, ok := middleware.GetCurrentUser(c)
+	_, email, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
@@ -77,6 +78,10 @@ func (h *ReportHandler) CreateReport(c *gin.Context) {
 	}
 	c.Status(http.StatusOK)
 	if _, err := io.Copy(c.Writer, download.Body); err != nil {
+		if errors.Is(err, service.ErrReportDownloadTooLarge) {
+			c.Error(fmt.Errorf("report download aborted: %w", err))
+			return
+		}
 		c.Error(err)
 	}
 }

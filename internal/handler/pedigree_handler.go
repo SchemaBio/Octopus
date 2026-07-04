@@ -20,6 +20,18 @@ func NewPedigreeHandler(cfg *config.Config) *PedigreeHandler {
 	}
 }
 
+func (h *PedigreeHandler) requirePedigreeAccess(c *gin.Context, id string) (*model.Pedigree, bool) {
+	pedigree, err := h.svc.GetModel(id)
+	if err != nil {
+		ErrorNotFound(c, err.Error())
+		return nil, false
+	}
+	if !requireOwnerAccess(c, pedigree.CreatedBy, "Pedigree") {
+		return nil, false
+	}
+	return pedigree, true
+}
+
 // List returns paginated pedigree list
 func (h *PedigreeHandler) List(c *gin.Context) {
 	var query model.PedigreeListQuery
@@ -32,6 +44,9 @@ func (h *PedigreeHandler) List(c *gin.Context) {
 	}
 	if query.PageSize == 0 {
 		query.PageSize = 10
+	}
+	if !applyCreatedByListScope(c, &query.CreatedBy, &query.IncludeAll) {
+		return
 	}
 
 	resp, err := h.svc.List(&query)
@@ -46,6 +61,9 @@ func (h *PedigreeHandler) List(c *gin.Context) {
 // Get returns a pedigree with members
 func (h *PedigreeHandler) Get(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := h.requirePedigreeAccess(c, id); !ok {
+		return
+	}
 
 	resp, err := h.svc.Get(id)
 	if err != nil {
@@ -88,6 +106,9 @@ func (h *PedigreeHandler) Create(c *gin.Context) {
 // Update updates a pedigree
 func (h *PedigreeHandler) Update(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := h.requirePedigreeAccess(c, id); !ok {
+		return
+	}
 
 	var req model.PedigreeUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -113,6 +134,9 @@ func (h *PedigreeHandler) Update(c *gin.Context) {
 // Delete deletes a pedigree
 func (h *PedigreeHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
+	if _, ok := h.requirePedigreeAccess(c, id); !ok {
+		return
+	}
 
 	if err := h.svc.Delete(id); err != nil {
 		ErrorNotFound(c, err.Error())
@@ -126,6 +150,9 @@ func (h *PedigreeHandler) Delete(c *gin.Context) {
 func (h *PedigreeHandler) SetProband(c *gin.Context) {
 	pedigreeID := c.Param("id")
 	memberID := c.Param("memberId")
+	if _, ok := h.requirePedigreeAccess(c, pedigreeID); !ok {
+		return
+	}
 
 	resp, err := h.svc.SetProband(pedigreeID, memberID)
 	if err != nil {
@@ -141,6 +168,9 @@ func (h *PedigreeHandler) SetProband(c *gin.Context) {
 // ListMembers returns all members of a pedigree
 func (h *PedigreeHandler) ListMembers(c *gin.Context) {
 	pedigreeID := c.Param("id")
+	if _, ok := h.requirePedigreeAccess(c, pedigreeID); !ok {
+		return
+	}
 
 	members, err := h.svc.ListMembers(pedigreeID)
 	if err != nil {
@@ -155,6 +185,9 @@ func (h *PedigreeHandler) ListMembers(c *gin.Context) {
 func (h *PedigreeHandler) GetMember(c *gin.Context) {
 	pedigreeID := c.Param("id")
 	memberID := c.Param("memberId")
+	if _, ok := h.requirePedigreeAccess(c, pedigreeID); !ok {
+		return
+	}
 
 	member, err := h.svc.GetMember(pedigreeID, memberID)
 	if err != nil {
@@ -168,6 +201,9 @@ func (h *PedigreeHandler) GetMember(c *gin.Context) {
 // CreateMember creates a new member
 func (h *PedigreeHandler) CreateMember(c *gin.Context) {
 	pedigreeID := c.Param("id")
+	if _, ok := h.requirePedigreeAccess(c, pedigreeID); !ok {
+		return
+	}
 
 	var req model.PedigreeMemberCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -188,6 +224,9 @@ func (h *PedigreeHandler) CreateMember(c *gin.Context) {
 func (h *PedigreeHandler) UpdateMember(c *gin.Context) {
 	pedigreeID := c.Param("id")
 	memberID := c.Param("memberId")
+	if _, ok := h.requirePedigreeAccess(c, pedigreeID); !ok {
+		return
+	}
 
 	var req model.PedigreeMemberUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -208,6 +247,9 @@ func (h *PedigreeHandler) UpdateMember(c *gin.Context) {
 func (h *PedigreeHandler) DeleteMember(c *gin.Context) {
 	pedigreeID := c.Param("id")
 	memberID := c.Param("memberId")
+	if _, ok := h.requirePedigreeAccess(c, pedigreeID); !ok {
+		return
+	}
 
 	if err := h.svc.DeleteMember(pedigreeID, memberID); err != nil {
 		ErrorNotFound(c, err.Error())

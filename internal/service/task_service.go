@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,8 @@ type TaskService struct {
 	mu              sync.RWMutex
 	running         map[string]*exec.Cmd
 }
+
+const maxTaskLogBytes = 2 << 20
 
 func NewTaskService(cfg *config.Config) *TaskService {
 	var sepClient *sepiida.Client
@@ -260,6 +263,55 @@ func ensurePathInsideBase(base, path string) error {
 	return nil
 }
 
+func resolveRegularFileInsideBase(base, path string) (string, error) {
+	baseEval, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		return "", err
+	}
+	pathEval, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	if err := ensurePathInsideBase(baseEval, pathEval); err != nil {
+		return "", err
+	}
+	info, err := os.Stat(pathEval)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("file is not regular")
+	}
+	return pathEval, nil
+}
+
+func readTaskLogFile(base, path string) (string, error) {
+	safePath, err := resolveRegularFileInsideBase(base, path)
+	if err != nil {
+		return "", err
+	}
+	f, err := os.Open(safePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxTaskLogBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > maxTaskLogBytes {
+		return "", fmt.Errorf("log file exceeds maximum size of %d MB", maxTaskLogBytes>>20)
+	}
+	return string(data), nil
+}
+
+func actorCanUseOwnedResource(actor model.OverlayActor, ownerID uint) bool {
+	if actor.Role == string(model.SystemRoleSuperAdmin) {
+		return true
+	}
+	return ownerID != 0 && ownerID == actor.UserID
+}
+
 // CreateTask creates a new task. It resolves data file paths from the linked Sample,
 // UploadJob, and Pipeline configuration, injecting them into WDL inputs.
 // If the upload job is not yet completed, the task enters waiting_for_data status.
@@ -286,68 +338,97 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	if inputs == nil {
 		inputs = make(map[string]interface{})
 	}
+	if err := validateActorTaskFileInputs(s.cfg, actor, inputs); err != nil {
+		return nil, err
+	}
 
 	var sampleIDRef uint
+	var uploadJob *model.UploadJob
 
 	if req.SampleID != "" {
 		sample, err := s.sampleRepo.FindByUUID(req.SampleID)
-		if err == nil {
-			sampleIDRef = sample.ID
+		if err != nil {
+			return nil, fmt.Errorf("sample not found: %s", req.SampleID)
+		}
+		if !actorCanUseOwnedResource(actor, sample.CreatedBy) {
+			return nil, fmt.Errorf("sample not found: %s", req.SampleID)
+		}
+		sampleIDRef = sample.ID
 
-			if matchedPair := sample.GetMatchedPair(); matchedPair != nil {
-				if _, exists := inputs["fastq_r1"]; !exists && matchedPair.R1Path != "" {
-					inputs["fastq_r1"] = matchedPair.R1Path
+		if matchedPair := sample.GetMatchedPair(); matchedPair != nil {
+			if _, exists := inputs["fastq_r1"]; !exists && matchedPair.R1Path != "" {
+				if err := validateActorFileReference(s.cfg, actor, "sample r1_path", matchedPair.R1Path); err != nil {
+					return nil, err
 				}
-				if _, exists := inputs["fastq_r2"]; !exists && matchedPair.R2Path != "" {
-					inputs["fastq_r2"] = matchedPair.R2Path
+				inputs["fastq_r1"] = matchedPair.R1Path
+			}
+			if _, exists := inputs["fastq_r2"]; !exists && matchedPair.R2Path != "" {
+				if err := validateActorFileReference(s.cfg, actor, "sample r2_path", matchedPair.R2Path); err != nil {
+					return nil, err
 				}
+				inputs["fastq_r2"] = matchedPair.R2Path
 			}
 		}
 	}
 
 	if req.PipelineID != "" {
 		pipeline, err := s.pipelineRepo.FindByStringID(req.PipelineID)
-		if err == nil {
-			if pipeline.BEDFile != "" {
-				if _, exists := inputs["bed_file"]; !exists {
-					inputs["bed_file"] = pipeline.BEDFile
+		if err != nil {
+			return nil, fmt.Errorf("pipeline not found: %s", req.PipelineID)
+		}
+		if !actorCanUseOwnedResource(actor, pipeline.CreatedBy) {
+			return nil, fmt.Errorf("pipeline not found: %s", req.PipelineID)
+		}
+		if pipeline.BEDFile != "" {
+			if _, exists := inputs["bed_file"]; !exists {
+				if err := validateActorFileReference(s.cfg, actor, "pipeline bed_file", pipeline.BEDFile); err != nil {
+					return nil, err
 				}
+				inputs["bed_file"] = pipeline.BEDFile
 			}
-			if pipeline.ReferenceGenome != "" {
-				if _, exists := inputs["reference_genome"]; !exists {
-					inputs["reference_genome"] = pipeline.ReferenceGenome
-				}
+		}
+		if pipeline.ReferenceGenome != "" {
+			if _, exists := inputs["reference_genome"]; !exists {
+				inputs["reference_genome"] = pipeline.ReferenceGenome
 			}
-			if pipeline.CNVBaseline != "" {
-				if _, exists := inputs["cnv_baseline"]; !exists {
-					inputs["cnv_baseline"] = pipeline.CNVBaseline
+		}
+		if pipeline.CNVBaseline != "" {
+			if _, exists := inputs["cnv_baseline"]; !exists {
+				if err := validateActorFileReference(s.cfg, actor, "pipeline cnv_baseline", pipeline.CNVBaseline); err != nil {
+					return nil, err
 				}
+				inputs["cnv_baseline"] = pipeline.CNVBaseline
 			}
 		}
 	}
 
 	if req.UploadJobID != "" {
-		uploadJob, err := s.uploadJobRepo.FindByUUID(req.UploadJobID)
-		if err == nil {
-			files, _ := s.uploadFileRepo.FindByJobID(uploadJob.ID)
-			for _, f := range files {
-				switch f.ReadType {
-				case model.ReadTypeRead1:
-					if _, exists := inputs["fastq_r1"]; !exists {
-						inputs["fastq_r1"] = f.StorageKey
-					}
-				case model.ReadTypeRead2:
-					if _, exists := inputs["fastq_r2"]; !exists {
-						inputs["fastq_r2"] = f.StorageKey
-					}
-				case model.ReadTypeSingle:
-					if _, exists := inputs["fastq_r1"]; !exists {
-						inputs["fastq_r1"] = f.StorageKey
-					}
-				case model.ReadTypeBed:
-					if _, exists := inputs["bed_file"]; !exists {
-						inputs["bed_file"] = f.StorageKey
-					}
+		var err error
+		uploadJob, err = s.uploadJobRepo.FindByUUID(req.UploadJobID)
+		if err != nil {
+			return nil, fmt.Errorf("upload job not found: %s", req.UploadJobID)
+		}
+		if !actorCanUseOwnedResource(actor, uploadJob.UserID) {
+			return nil, fmt.Errorf("upload job not found: %s", req.UploadJobID)
+		}
+		files, _ := s.uploadFileRepo.FindByJobID(uploadJob.ID)
+		for _, f := range files {
+			switch f.ReadType {
+			case model.ReadTypeRead1:
+				if _, exists := inputs["fastq_r1"]; !exists {
+					inputs["fastq_r1"] = f.StorageKey
+				}
+			case model.ReadTypeRead2:
+				if _, exists := inputs["fastq_r2"]; !exists {
+					inputs["fastq_r2"] = f.StorageKey
+				}
+			case model.ReadTypeSingle:
+				if _, exists := inputs["fastq_r1"]; !exists {
+					inputs["fastq_r1"] = f.StorageKey
+				}
+			case model.ReadTypeBed:
+				if _, exists := inputs["bed_file"]; !exists {
+					inputs["bed_file"] = f.StorageKey
 				}
 			}
 		}
@@ -367,11 +448,8 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	configFile := s.getConfigFile(executor, "")
 
 	taskStatus := model.TaskStatusQueued
-	if req.UploadJobID != "" {
-		uploadJob, err := s.uploadJobRepo.FindByUUID(req.UploadJobID)
-		if err == nil && uploadJob.Status != model.UploadJobStatusCompleted {
-			taskStatus = model.TaskStatusWaitingData
-		}
+	if uploadJob != nil && uploadJob.Status != model.UploadJobStatusCompleted {
+		taskStatus = model.TaskStatusWaitingData
 	}
 
 	now := time.Now()
@@ -933,20 +1011,22 @@ func (s *TaskService) GetTaskLogs(ctx context.Context, id string) (string, error
 		return "", fmt.Errorf("task not found: %s", id)
 	}
 
+	taskOutputDir := filepath.Join(s.cfg.Task.OutputDir, task.UUID)
 	if task.LogPath != "" {
-		data, err := os.ReadFile(task.LogPath)
-		if err == nil {
-			return string(data), nil
+		if logs, err := readTaskLogFile(taskOutputDir, task.LogPath); err == nil {
+			return logs, nil
 		}
 	}
 
 	if task.UUID != "" {
 		lastLink := filepath.Join(s.cfg.Task.OutputDir, task.UUID, "_LAST")
 		if target, err := os.Readlink(lastLink); err == nil {
-			workflowLog := filepath.Join(s.cfg.Task.OutputDir, task.UUID, target, "workflow.log")
-			data, err := os.ReadFile(workflowLog)
-			if err == nil {
-				return string(data), nil
+			lastDir := filepath.Join(taskOutputDir, target)
+			workflowLog := filepath.Join(lastDir, "workflow.log")
+			if logs, err := readTaskLogFile(taskOutputDir, workflowLog); err == nil {
+				return logs, nil
+			} else if strings.Contains(err.Error(), "escapes base directory") || strings.Contains(err.Error(), "not regular") {
+				return "", fmt.Errorf("invalid log symlink target")
 			}
 		}
 	}
@@ -996,6 +1076,9 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 			return false, "failed to parse input JSON"
 		}
 	}
+	if inputs == nil {
+		inputs = make(map[string]interface{})
+	}
 
 	if task.UploadJobID != "" {
 		uploadJob, err := s.uploadJobRepo.FindByUUID(task.UploadJobID)
@@ -1004,6 +1087,27 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 		}
 		if uploadJob.Status != model.UploadJobStatusCompleted {
 			return false, fmt.Sprintf("upload job status is %s", uploadJob.Status)
+		}
+		files, err := s.uploadFileRepo.FindByJobID(uploadJob.ID)
+		if err != nil {
+			return false, "upload files not found"
+		}
+		for _, f := range files {
+			if f.Status != model.FileStatusCompleted {
+				return false, fmt.Sprintf("upload file %s status is %s", f.UUID, f.Status)
+			}
+			if strings.TrimSpace(f.StorageKey) == "" {
+				return false, fmt.Sprintf("upload file %s has no storage path", f.UUID)
+			}
+		}
+		if applyUploadFilesToInputs(inputs, files) {
+			data, err := json.Marshal(inputs)
+			if err != nil {
+				return false, "failed to update input JSON"
+			}
+			task.InputJSON = string(data)
+			task.UpdatedAt = time.Now()
+			_ = s.repo.Update(task)
 		}
 	}
 
@@ -1026,6 +1130,43 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 	}
 
 	return true, ""
+}
+
+func applyUploadFilesToInputs(inputs map[string]interface{}, files []model.UploadFile) bool {
+	changed := false
+	set := func(key, value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if current, ok := inputs[key].(string); ok {
+			current = strings.TrimSpace(current)
+			if current == value {
+				return
+			}
+			if filepath.IsAbs(current) {
+				if _, err := os.Stat(current); err == nil {
+					return
+				}
+			}
+		}
+		inputs[key] = value
+		changed = true
+	}
+
+	for _, f := range files {
+		switch f.ReadType {
+		case model.ReadTypeRead1:
+			set("fastq_r1", f.StorageKey)
+		case model.ReadTypeRead2:
+			set("fastq_r2", f.StorageKey)
+		case model.ReadTypeSingle:
+			set("fastq_r1", f.StorageKey)
+		case model.ReadTypeBed:
+			set("bed_file", f.StorageKey)
+		}
+	}
+	return changed
 }
 
 func (s *TaskService) stageDataFiles(task *model.Task) error {

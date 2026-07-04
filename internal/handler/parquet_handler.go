@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/repository"
@@ -31,9 +33,8 @@ func NewParquetHandler(cfg *config.Config) *ParquetHandler {
 func (h *ParquetHandler) ListTables(c *gin.Context) {
 	taskID := c.Param("id")
 
-	task, err := h.taskRepo.FindByUUID(taskID)
-	if err != nil {
-		ErrorNotFound(c, "Task not found")
+	task, ok := requireTaskAccess(c, h.taskRepo, taskID)
+	if !ok {
 		return
 	}
 
@@ -59,6 +60,10 @@ func (h *ParquetHandler) ListTables(c *gin.Context) {
 func (h *ParquetHandler) GetTableRows(c *gin.Context) {
 	taskID := c.Param("id")
 	tableName := c.Param("table")
+	if err := validateParquetTableName(tableName); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
 
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "100")
@@ -75,9 +80,8 @@ func (h *ParquetHandler) GetTableRows(c *gin.Context) {
 		return
 	}
 
-	task, err := h.taskRepo.FindByUUID(taskID)
-	if err != nil {
-		ErrorNotFound(c, "Task not found")
+	task, ok := requireTaskAccess(c, h.taskRepo, taskID)
+	if !ok {
 		return
 	}
 
@@ -94,4 +98,14 @@ func (h *ParquetHandler) GetTableRows(c *gin.Context) {
 
 	result.Table = tableName
 	Success(c, result)
+}
+
+func validateParquetTableName(tableName string) error {
+	if tableName == "" || tableName == "." || tableName == ".." {
+		return fmt.Errorf("invalid parquet table name")
+	}
+	if strings.ContainsAny(tableName, `/\`) || filepath.IsAbs(tableName) {
+		return fmt.Errorf("invalid parquet table name")
+	}
+	return nil
 }

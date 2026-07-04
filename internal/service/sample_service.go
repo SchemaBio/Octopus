@@ -26,9 +26,15 @@ func NewSampleService(cfg *config.Config) *SampleService {
 }
 
 // CreateSample creates a new sample
-func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreateRequest, userID uint) (*model.Sample, error) {
+func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreateRequest, actor model.OverlayActor) (*model.Sample, error) {
 	if s.repo.ExistsByInternalID(req.InternalID) {
 		return nil, nil // Already exists
+	}
+	if err := validateActorFileReference(s.cfg, actor, "r1_path", req.R1Path); err != nil {
+		return nil, err
+	}
+	if err := validateActorFileReference(s.cfg, actor, "r2_path", req.R2Path); err != nil {
+		return nil, err
 	}
 
 	sample := &model.Sample{
@@ -41,7 +47,7 @@ func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreat
 		ClinicalDiagnosis: req.ClinicalDiagnosis,
 		Remark:            req.Remark,
 		Status:            model.SampleStatusPending,
-		CreatedBy:         userID,
+		CreatedBy:         actor.UserID,
 	}
 
 	if sample.Gender == "" {
@@ -95,9 +101,15 @@ func (s *SampleService) ListSamples(ctx context.Context, query *model.SampleList
 }
 
 // UpdateSample updates a sample
-func (s *SampleService) UpdateSample(ctx context.Context, id string, req *model.SampleUpdateRequest) (*model.Sample, error) {
+func (s *SampleService) UpdateSample(ctx context.Context, id string, req *model.SampleUpdateRequest, actor model.OverlayActor) (*model.Sample, error) {
 	sample, err := s.repo.FindByUUID(id)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateActorFileReference(s.cfg, actor, "r1_path", req.R1Path); err != nil {
+		return nil, err
+	}
+	if err := validateActorFileReference(s.cfg, actor, "r2_path", req.R2Path); err != nil {
 		return nil, err
 	}
 

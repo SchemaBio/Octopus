@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -187,6 +188,32 @@ func NewUserHandler(cfg *config.Config) *UserHandler {
 	}
 }
 
+func validateSystemRole(role model.SystemRole) error {
+	if role == "" || role == model.SystemRoleUser || role == model.SystemRoleSuperAdmin {
+		return nil
+	}
+	return fmt.Errorf("invalid system role")
+}
+
+func validateUserSelfMutation(currentID, targetID uint, req *model.UserUpdateRequest, deleting bool) error {
+	if currentID != targetID {
+		return nil
+	}
+	if deleting {
+		return fmt.Errorf("cannot delete your own account")
+	}
+	if req == nil {
+		return nil
+	}
+	if req.IsActive != nil && !*req.IsActive {
+		return fmt.Errorf("cannot deactivate your own account")
+	}
+	if req.SystemRole != "" && req.SystemRole != model.SystemRoleSuperAdmin {
+		return fmt.Errorf("cannot remove your own super-admin role")
+	}
+	return nil
+}
+
 // ListUsers returns paginated user list
 func (h *UserHandler) ListUsers(c *gin.Context) {
 	var query model.UserListQuery
@@ -234,6 +261,10 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
+	if err := validateSystemRole(req.SystemRole); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
 
 	// Register via service
 	regReq := &model.RegisterRequest{
@@ -278,6 +309,19 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
+	if err := validateSystemRole(req.SystemRole); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	currentID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := validateUserSelfMutation(currentID, uint(id), &req, false); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
 
 	user, err := h.svc.UpdateUser(uint(id), &req)
 	if err != nil {
@@ -293,6 +337,15 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		ErrorBadRequest(c, "invalid user ID")
+		return
+	}
+	currentID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := validateUserSelfMutation(currentID, uint(id), nil, true); err != nil {
+		ErrorBadRequest(c, err.Error())
 		return
 	}
 

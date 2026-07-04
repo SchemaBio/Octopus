@@ -2,17 +2,26 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 )
 
+const (
+	maxStatusUpdatesPerRequest = 1000
+	maxStatusNameLength        = 64
+	maxStatusTableNameLength   = 128
+)
+
 // StatusManager handles report/review status for parquet data
 type StatusManager struct {
-	cfg    *config.Config
-	mu     sync.RWMutex
+	cfg *config.Config
+	mu  sync.RWMutex
 }
 
 // NewStatusManager creates a new status manager
@@ -34,7 +43,7 @@ type RowStatus struct {
 
 // StatusData represents the full status data structure
 type StatusData struct {
-	UUID   string                 `json:"uuid"`
+	UUID   string                  `json:"uuid"`
 	Tables map[string]*TableStatus `json:"tables"`
 }
 
@@ -87,6 +96,15 @@ func (s *StatusManager) readStatus(uuid string) (*StatusData, error) {
 
 // UpdateStatus updates status for specific rows
 func (s *StatusManager) UpdateStatus(uuid string, updates []StatusUpdate) error {
+	if len(updates) > maxStatusUpdatesPerRequest {
+		return fmt.Errorf("too many status updates: maximum is %d", maxStatusUpdatesPerRequest)
+	}
+	for i, update := range updates {
+		if err := validateStatusUpdate(update); err != nil {
+			return fmt.Errorf("invalid status update at index %d: %w", i, err)
+		}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -98,12 +116,13 @@ func (s *StatusManager) UpdateStatus(uuid string, updates []StatusUpdate) error 
 
 	// Apply updates
 	for _, update := range updates {
-		if status.Tables[update.Table] == nil {
-			status.Tables[update.Table] = &TableStatus{Rows: []RowStatus{}}
+		tableName := strings.TrimSpace(update.Table)
+		if status.Tables[tableName] == nil {
+			status.Tables[tableName] = &TableStatus{Rows: []RowStatus{}}
 		}
 
 		// Find or create row status
-		table := status.Tables[update.Table]
+		table := status.Tables[tableName]
 		found := false
 		for i, row := range table.Rows {
 			if row.RowIndex == update.RowIndex {
@@ -140,6 +159,12 @@ func (s *StatusManager) InitializeStatus(uuid string, tables map[string]int) err
 	}
 
 	for tableName, rowCount := range tables {
+		if err := validateStatusTableName(tableName); err != nil {
+			return fmt.Errorf("invalid status table %q: %w", tableName, err)
+		}
+		if rowCount < 0 {
+			return fmt.Errorf("invalid negative row count for table %q", tableName)
+		}
 		rows := make([]RowStatus, rowCount)
 		for i := 0; i < rowCount; i++ {
 			rows[i] = RowStatus{
@@ -152,6 +177,53 @@ func (s *StatusManager) InitializeStatus(uuid string, tables map[string]int) err
 	}
 
 	return s.saveStatus(uuid, status)
+}
+
+func validateStatusUpdate(update StatusUpdate) error {
+	if err := validateStatusTableName(update.Table); err != nil {
+		return err
+	}
+	if update.RowIndex < 0 {
+		return fmt.Errorf("row_index must be non-negative")
+	}
+	if !isSafeStatusValue(update.ReportStatus) {
+		return fmt.Errorf("report_status is too long or contains control characters")
+	}
+	if !isSafeStatusValue(update.ReviewStatus) {
+		return fmt.Errorf("review_status is too long or contains control characters")
+	}
+	return nil
+}
+
+func validateStatusTableName(table string) error {
+	table = strings.TrimSpace(table)
+	if table == "" {
+		return fmt.Errorf("table is required")
+	}
+	if len(table) > maxStatusTableNameLength {
+		return fmt.Errorf("table is too long")
+	}
+	if table == "." || table == ".." || strings.ContainsAny(table, `/\`) {
+		return fmt.Errorf("table contains invalid path characters")
+	}
+	for _, r := range table {
+		if !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '.') {
+			return fmt.Errorf("table contains invalid characters")
+		}
+	}
+	return nil
+}
+
+func isSafeStatusValue(value string) bool {
+	if len(value) > maxStatusNameLength {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }
 
 // saveStatus saves status data to file
@@ -210,9 +282,9 @@ func (s *StatusManager) GetCombinedData(uuid string, parquetGen *ParquetGenerato
 
 	// Combine
 	result := map[string]interface{}{
-		"uuid":    uuid,
-		"schema":  schemaPreview,
-		"status":  status,
+		"uuid":   uuid,
+		"schema": schemaPreview,
+		"status": status,
 	}
 
 	return result, nil

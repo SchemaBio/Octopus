@@ -111,6 +111,16 @@ func (r *TaskRepository) CountByStatusAndProject(projectID uint) (map[model.Task
 func (r *TaskRepository) PaginateByQuery(query *model.TaskListQuery) ([]model.Task, int64, error) {
 	db := r.db.Model(&model.Task{})
 
+	if !query.IncludeAll {
+		switch {
+		case query.ExternalOrgID != "":
+			db = db.Where("external_org_id = ?", query.ExternalOrgID)
+		case query.CreatedBy != 0:
+			db = db.Where("created_by = ?", query.CreatedBy)
+		default:
+			db = db.Where("1 = 0")
+		}
+	}
 	if query.Status != "" {
 		db = db.Where("status = ?", query.Status)
 	}

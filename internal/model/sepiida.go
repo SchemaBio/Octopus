@@ -26,17 +26,17 @@ type SepiidaWorkflow struct {
 	OutputsJSON string        `json:"outputs_json,omitempty"`
 	AgentID     string        `json:"agent_id,omitempty"`
 	// Archive metadata fields
-	Archived         bool       `json:"archived,omitempty"`
-	ArchivedAt       *time.Time `json:"archived_at,omitempty"`
-	ArchiveBase      string     `json:"archive_base,omitempty"`
-	BasePath         string     `json:"base_path,omitempty"`
-	ArchivePrefix    string     `json:"archive_prefix,omitempty"`
-	ObjectPrefix     string     `json:"object_prefix,omitempty"`
-	KeyPrefix        string     `json:"key_prefix,omitempty"`
-	OutputsResolvedKey string   `json:"outputs_resolved_key,omitempty"`
-	ArchivedCount    int        `json:"archived_count,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	Archived           bool       `json:"archived,omitempty"`
+	ArchivedAt         *time.Time `json:"archived_at,omitempty"`
+	ArchiveBase        string     `json:"archive_base,omitempty"`
+	BasePath           string     `json:"base_path,omitempty"`
+	ArchivePrefix      string     `json:"archive_prefix,omitempty"`
+	ObjectPrefix       string     `json:"object_prefix,omitempty"`
+	KeyPrefix          string     `json:"key_prefix,omitempty"`
+	OutputsResolvedKey string     `json:"outputs_resolved_key,omitempty"`
+	ArchivedCount      int        `json:"archived_count,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // SepiidaTask represents task status from Sepiida

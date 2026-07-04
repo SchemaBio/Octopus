@@ -43,9 +43,11 @@ func main() {
 		if adminPassword == "" {
 			adminPassword = "admin123"
 		}
-		if cfg.Server.Mode == "release" && adminPassword == "admin123" {
-			fmt.Fprintf(os.Stderr, "FATAL: DEFAULT_ADMIN_PASSWORD must be set to a strong value when CREATE_DEFAULT_ADMIN=true in release mode\n")
-			os.Exit(1)
+		if cfg.Server.Mode == "release" {
+			if err := service.ValidateStrongAdminPassword(adminPassword); err != nil {
+				fmt.Fprintf(os.Stderr, "FATAL: DEFAULT_ADMIN_PASSWORD must be strong when CREATE_DEFAULT_ADMIN=true in release mode: %v\n", err)
+				os.Exit(1)
+			}
 		}
 
 		userSvc := service.NewUserService(cfg)

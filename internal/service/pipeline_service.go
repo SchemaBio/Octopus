@@ -24,9 +24,15 @@ func NewPipelineService(cfg *config.Config) *PipelineService {
 }
 
 // CreatePipeline creates a new pipeline
-func (s *PipelineService) CreatePipeline(ctx context.Context, req *model.PipelineCreateRequest, userID uint) (*model.Pipeline, error) {
+func (s *PipelineService) CreatePipeline(ctx context.Context, req *model.PipelineCreateRequest, actor model.OverlayActor) (*model.Pipeline, error) {
 	if s.repo.ExistsByName(req.Name) {
 		return nil, nil // Already exists
+	}
+	if err := validateActorFileReference(s.cfg, actor, "bed_file", req.BEDFile); err != nil {
+		return nil, err
+	}
+	if err := validateActorFileReference(s.cfg, actor, "cnv_baseline", req.CNVBaseline); err != nil {
+		return nil, err
 	}
 
 	pipeline := &model.Pipeline{
@@ -39,7 +45,7 @@ func (s *PipelineService) CreatePipeline(ctx context.Context, req *model.Pipelin
 		ReferenceGenome: req.ReferenceGenome,
 		CNVBaseline:     req.CNVBaseline,
 		Status:          model.PipelineStatusActive,
-		CreatedBy:       userID,
+		CreatedBy:       actor.UserID,
 	}
 
 	if err := s.repo.Create(pipeline); err != nil {
@@ -73,9 +79,15 @@ func (s *PipelineService) ListPipelines(ctx context.Context, query *model.Pipeli
 }
 
 // UpdatePipeline updates a pipeline
-func (s *PipelineService) UpdatePipeline(ctx context.Context, id string, req *model.PipelineUpdateRequest) (*model.Pipeline, error) {
+func (s *PipelineService) UpdatePipeline(ctx context.Context, id string, req *model.PipelineUpdateRequest, actor model.OverlayActor) (*model.Pipeline, error) {
 	pipeline, err := s.repo.FindByUUID(id)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateActorFileReference(s.cfg, actor, "bed_file", req.BEDFile); err != nil {
+		return nil, err
+	}
+	if err := validateActorFileReference(s.cfg, actor, "cnv_baseline", req.CNVBaseline); err != nil {
 		return nil, err
 	}
 

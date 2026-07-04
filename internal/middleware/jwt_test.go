@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bioinfo/schema-platform/internal/config"
+	"github.com/bioinfo/schema-platform/internal/model"
 	"github.com/gin-gonic/gin"
 )
 
@@ -101,5 +102,38 @@ func TestJWTAuthFallsBackWhenExternalSecretDoesNotMatch(t *testing.T) {
 
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("expected fallback JWT auth to reject missing token, got %d", resp.Code)
+	}
+}
+
+func TestRequireAdminRejectsMalformedRoleWithoutPanic(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("role", 123)
+		c.Next()
+	})
+	router.GET("/admin", RequireAdmin(), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected malformed role to be forbidden, got %d", resp.Code)
+	}
+}
+
+func TestGetCurrentUserRejectsMalformedContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("user_id", "not-a-uint")
+	c.Set("email", "user@example.com")
+	c.Set("role", string(model.SystemRoleUser))
+
+	if _, _, _, ok := GetCurrentUser(c); ok {
+		t.Fatal("expected malformed user_id to be rejected")
 	}
 }

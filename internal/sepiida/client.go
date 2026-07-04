@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/bioinfo/schema-platform/internal/model"
@@ -12,9 +14,9 @@ import (
 
 // Client is the Sepiida API client
 type Client struct {
-	baseURL   string
-	queryKey  string
-	timeout   time.Duration
+	baseURL  string
+	queryKey string
+	timeout  time.Duration
 }
 
 // NewClient creates a new Sepiida client
@@ -35,8 +37,11 @@ func (c *Client) SetTimeout(timeout time.Duration) {
 func (c *Client) doRequest(method, path string) ([]byte, error) {
 	client := &http.Client{Timeout: c.timeout}
 
-	url := c.baseURL + path
-	req, err := http.NewRequest(method, url, nil)
+	endpoint, err := joinURL(c.baseURL, path)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(method, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -50,7 +55,7 @@ func (c *Client) doRequest(method, path string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -64,7 +69,7 @@ func (c *Client) doRequest(method, path string) ([]byte, error) {
 
 // GetWorkflowByUUID queries workflow by UUID
 func (c *Client) GetWorkflowByUUID(uuid string) (*model.SepiidaWorkflow, error) {
-	body, err := c.doRequest("GET", "/api/v1/workflow?uuid="+uuid)
+	body, err := c.doRequest("GET", "/api/v1/workflow?"+url.Values{"uuid": {uuid}}.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +88,7 @@ func (c *Client) GetWorkflowByUUID(uuid string) (*model.SepiidaWorkflow, error) 
 
 // GetWorkflowByID queries workflow by ID
 func (c *Client) GetWorkflowByID(id string) (*model.SepiidaWorkflow, error) {
-	body, err := c.doRequest("GET", "/api/v1/workflow?id="+id)
+	body, err := c.doRequest("GET", "/api/v1/workflow?"+url.Values{"id": {id}}.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +107,7 @@ func (c *Client) GetWorkflowByID(id string) (*model.SepiidaWorkflow, error) {
 
 // GetWorkflowTasks queries tasks for a workflow
 func (c *Client) GetWorkflowTasks(workflowID string) ([]model.SepiidaTask, error) {
-	body, err := c.doRequest("GET", "/api/v1/workflow/tasks?id="+workflowID)
+	body, err := c.doRequest("GET", "/api/v1/workflow/tasks?"+url.Values{"id": {workflowID}}.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +157,11 @@ func (c *Client) GetWorkflowWithTasks(uuid string) (*model.SepiidaWorkflow, []mo
 // Health checks Sepiida server health
 func (c *Client) Health() error {
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(c.baseURL + "/health")
+	endpoint, err := joinURL(c.baseURL, "/health")
+	if err != nil {
+		return err
+	}
+	resp, err := client.Get(endpoint)
 	if err != nil {
 		return fmt.Errorf("sepiida health check failed: %w", err)
 	}
@@ -163,4 +172,27 @@ func (c *Client) Health() error {
 	}
 
 	return nil
+}
+
+func joinURL(baseURL, endpointPath string) (string, error) {
+	base, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return "", err
+	}
+	if base.Scheme != "http" && base.Scheme != "https" {
+		return "", fmt.Errorf("unsupported Sepiida URL scheme %q", base.Scheme)
+	}
+	if base.Host == "" {
+		return "", fmt.Errorf("invalid Sepiida base URL")
+	}
+	ref, err := url.Parse(endpointPath)
+	if err != nil {
+		return "", err
+	}
+	if ref.IsAbs() {
+		return "", fmt.Errorf("Sepiida request path must be relative")
+	}
+	base.Path = strings.TrimRight(base.Path, "/") + "/" + strings.TrimLeft(ref.Path, "/")
+	base.RawQuery = ref.RawQuery
+	return base.String(), nil
 }

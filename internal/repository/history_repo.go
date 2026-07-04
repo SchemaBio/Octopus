@@ -21,6 +21,67 @@ func NewHistoryRepository() *HistoryRepository {
 	}
 }
 
+func (r *HistoryRepository) scopedHistory(modelValue interface{}, table string, query *model.HistoryListQuery) *gorm.DB {
+	db := r.db.Model(modelValue).Where(table+".reviewed = ?", true)
+	if query != nil && !query.IncludeAll {
+		db = db.Joins("JOIN tasks ON tasks.uuid = " + table + ".task_id")
+		if query.ExternalOrgID != "" {
+			db = db.Where("tasks.external_org_id = ?", query.ExternalOrgID)
+		} else {
+			db = db.Where("tasks.created_by = ?", query.CreatedBy)
+		}
+	}
+	return db
+}
+
+func (r *HistoryRepository) scopedSNVDetectionRecords(gene, hgvsc, hgvsp string, query *model.HistoryListQuery) []model.DetectionRecord {
+	type row struct {
+		ID              string
+		TaskID          string
+		TaskName        string
+		Pipeline        string
+		PipelineVersion string
+		SampleID        string
+		InternalID      string
+		ReviewedAt      string
+		ReviewedBy      string
+	}
+
+	db := r.db.Model(&model.SNVIndel{}).
+		Select(`result_snv_indels.id, result_snv_indels.task_id, tasks.name as task_name,
+			tasks.pipeline, tasks.pipeline_version, tasks.sample_id, tasks.internal_id,
+			result_snv_indels.reviewed_at, result_snv_indels.reviewed_by`).
+		Joins("JOIN tasks ON tasks.uuid = result_snv_indels.task_id").
+		Where("result_snv_indels.gene = ? AND result_snv_indels.hgvsc = ? AND result_snv_indels.hgvsp = ? AND result_snv_indels.reviewed = ?",
+			gene, hgvsc, hgvsp, true)
+	if query != nil && !query.IncludeAll {
+		if query.ExternalOrgID != "" {
+			db = db.Where("tasks.external_org_id = ?", query.ExternalOrgID)
+		} else {
+			db = db.Where("tasks.created_by = ?", query.CreatedBy)
+		}
+	}
+
+	var rows []row
+	db.Scan(&rows)
+
+	records := make([]model.DetectionRecord, len(rows))
+	for i, row := range rows {
+		records[i] = model.DetectionRecord{
+			RecordID:        row.ID,
+			TaskID:          row.TaskID,
+			TaskName:        row.TaskName,
+			Pipeline:        row.Pipeline,
+			PipelineVersion: row.PipelineVersion,
+			SampleID:        row.SampleID,
+			InternalID:      row.InternalID,
+			ReviewedAt:      row.ReviewedAt,
+			ReviewedBy:      row.ReviewedBy,
+		}
+	}
+	return records
+}
+
 // GroupedSNVRow is the raw row from GROUP BY query
 type GroupedSNVRow struct {
 	Gene               string
@@ -40,8 +101,7 @@ type GroupedSNVRow struct {
 // GetGroupedSNVIndels returns grouped SNV/Indel history
 func (r *HistoryRepository) GetGroupedSNVIndels(query *model.HistoryListQuery) ([]model.GroupedSNVIndel, int64, error) {
 	// First, get grouped results using raw SQL
-	baseQuery := r.db.Model(&model.SNVIndel{}).
-		Where("reviewed = ?", true).
+	baseQuery := r.scopedHistory(&model.SNVIndel{}, "result_snv_indels", query).
 		Select(`
 			gene, hgvsc, hgvsp, transcript, acmg_classification, consequence,
 			rs_id, clinvar_id, gnomad_af,
@@ -58,8 +118,7 @@ func (r *HistoryRepository) GetGroupedSNVIndels(query *model.HistoryListQuery) (
 
 	// Count distinct groups
 	var total int64
-	countQuery := r.db.Model(&model.SNVIndel{}).
-		Where("reviewed = ?", true).
+	countQuery := r.scopedHistory(&model.SNVIndel{}, "result_snv_indels", query).
 		Select("COUNT(DISTINCT gene || '-' || hgvsc || '-' || hgvsp)")
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
@@ -107,7 +166,7 @@ func (r *HistoryRepository) GetGroupedSNVIndels(query *model.HistoryListQuery) (
 	results := make([]model.GroupedSNVIndel, len(rows))
 	for i, row := range rows {
 		groupID := row.Gene + "-" + row.HGVSc + "-" + row.HGVSp
-		records := r.getSNVDetectionRecords(row.Gene, row.HGVSc, row.HGVSp)
+		records := r.scopedSNVDetectionRecords(row.Gene, row.HGVSc, row.HGVSp, query)
 		results[i] = model.GroupedSNVIndel{
 			GroupID:            groupID,
 			Gene:               row.Gene,
@@ -129,46 +188,6 @@ func (r *HistoryRepository) GetGroupedSNVIndels(query *model.HistoryListQuery) (
 	return results, total, nil
 }
 
-func (r *HistoryRepository) getSNVDetectionRecords(gene, hgvsc, hgvsp string) []model.DetectionRecord {
-	type row struct {
-		ID              string
-		TaskID          string
-		TaskName        string
-		Pipeline        string
-		PipelineVersion string
-		SampleID        string
-		InternalID      string
-		ReviewedAt      string
-		ReviewedBy      string
-	}
-
-	var rows []row
-	r.db.Model(&model.SNVIndel{}).
-		Select(`result_snv_indels.id, result_snv_indels.task_id, tasks.name as task_name,
-			tasks.pipeline, tasks.pipeline_version, tasks.sample_id, tasks.internal_id,
-			result_snv_indels.reviewed_at, result_snv_indels.reviewed_by`).
-		Joins("LEFT JOIN tasks ON tasks.uuid = result_snv_indels.task_id").
-		Where("result_snv_indels.gene = ? AND result_snv_indels.hgvsc = ? AND result_snv_indels.hgvsp = ? AND result_snv_indels.reviewed = ?",
-			gene, hgvsc, hgvsp, true).
-		Scan(&rows)
-
-	records := make([]model.DetectionRecord, len(rows))
-	for i, row := range rows {
-		records[i] = model.DetectionRecord{
-			RecordID:        row.ID,
-			TaskID:          row.TaskID,
-			TaskName:        row.TaskName,
-			Pipeline:        row.Pipeline,
-			PipelineVersion: row.PipelineVersion,
-			SampleID:        row.SampleID,
-			InternalID:      row.InternalID,
-			ReviewedAt:      row.ReviewedAt,
-			ReviewedBy:      row.ReviewedBy,
-		}
-	}
-	return records
-}
-
 // GetGroupedCNVSegments returns grouped CNV segment history
 func (r *HistoryRepository) GetGroupedCNVSegments(query *model.HistoryListQuery) ([]model.GroupedCNVSegment, int64, error) {
 	type row struct {
@@ -185,7 +204,7 @@ func (r *HistoryRepository) GetGroupedCNVSegments(query *model.HistoryListQuery)
 		LastAt        string
 	}
 
-	base := r.db.Model(&model.CNVSegment{}).Where("reviewed = ?", true).
+	base := r.scopedHistory(&model.CNVSegment{}, "result_cnv_segments", query).
 		Select(`chromosome, start_position, end_position, length, type, copy_number, genes, confidence,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
 		Group("chromosome, start_position, end_position, type")
@@ -196,7 +215,7 @@ func (r *HistoryRepository) GetGroupedCNVSegments(query *model.HistoryListQuery)
 	}
 
 	var total int64
-	r.db.Model(&model.CNVSegment{}).Where("reviewed = ?", true).
+	r.scopedHistory(&model.CNVSegment{}, "result_cnv_segments", query).
 		Select("COUNT(DISTINCT chromosome || '-' || start_position || '-' || end_position || '-' || type)").Count(&total)
 
 	page, pageSize := normalizePage(query)
@@ -248,7 +267,7 @@ func (r *HistoryRepository) GetGroupedCNVExons(query *model.HistoryListQuery) ([
 		LastAt        string
 	}
 
-	base := r.db.Model(&model.CNVExon{}).Where("reviewed = ?", true).
+	base := r.scopedHistory(&model.CNVExon{}, "result_cnv_exons", query).
 		Select(`gene, transcript, exon, chromosome, start_position, end_position, type, copy_number, ratio, confidence,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
 		Group("gene, transcript, exon, type")
@@ -259,7 +278,7 @@ func (r *HistoryRepository) GetGroupedCNVExons(query *model.HistoryListQuery) ([
 	}
 
 	var total int64
-	r.db.Model(&model.CNVExon{}).Where("reviewed = ?", true).
+	r.scopedHistory(&model.CNVExon{}, "result_cnv_exons", query).
 		Select("COUNT(DISTINCT gene || '-' || transcript || '-' || exon || '-' || type)").Count(&total)
 
 	page, pageSize := normalizePage(query)
@@ -311,7 +330,7 @@ func (r *HistoryRepository) GetGroupedSTRs(query *model.HistoryListQuery) ([]mod
 		LastAt         string
 	}
 
-	base := r.db.Model(&model.STR{}).Where("reviewed = ?", true).
+	base := r.scopedHistory(&model.STR{}, "result_strs", query).
 		Select(`gene, transcript, locus, repeat_unit, normal_range_min, normal_range_max, status,
 			MIN(repeat_count) as min_count, MAX(repeat_count) as max_count,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
@@ -323,7 +342,7 @@ func (r *HistoryRepository) GetGroupedSTRs(query *model.HistoryListQuery) ([]mod
 	}
 
 	var total int64
-	r.db.Model(&model.STR{}).Where("reviewed = ?", true).
+	r.scopedHistory(&model.STR{}, "result_strs", query).
 		Select("COUNT(DISTINCT gene || '-' || locus)").Count(&total)
 
 	page, pageSize := normalizePage(query)
@@ -372,7 +391,7 @@ func (r *HistoryRepository) GetGroupedMEIs(query *model.HistoryListQuery) ([]mod
 		LastAt     string
 	}
 
-	base := r.db.Model(&model.MEIVariant{}).Where("reviewed = ?", true).
+	base := r.scopedHistory(&model.MEIVariant{}, "result_mei_variants", query).
 		Select(`chromosome, position, gene, te_type, direction, length, impact,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
 		Group("chromosome, position, gene, te_type")
@@ -383,7 +402,7 @@ func (r *HistoryRepository) GetGroupedMEIs(query *model.HistoryListQuery) ([]mod
 	}
 
 	var total int64
-	r.db.Model(&model.MEIVariant{}).Where("reviewed = ?", true).
+	r.scopedHistory(&model.MEIVariant{}, "result_mei_variants", query).
 		Select("COUNT(DISTINCT chromosome || '-' || position || '-' || gene || '-' || te_type)").Count(&total)
 
 	page, pageSize := normalizePage(query)
@@ -397,18 +416,18 @@ func (r *HistoryRepository) GetGroupedMEIs(query *model.HistoryListQuery) ([]mod
 	results := make([]model.GroupedMEI, len(rows))
 	for i, rw := range rows {
 		results[i] = model.GroupedMEI{
-			GroupID:            fmt.Sprintf("%s-%d-%s-%s", rw.Chromosome, rw.Position, rw.Gene, rw.TEType),
-			Chromosome:         rw.Chromosome,
-			Position:           rw.Position,
-			Gene:               rw.Gene,
-			TEType:             rw.TEType,
-			Direction:          rw.Direction,
-			Length:             rw.Length,
-			Impact:             rw.Impact,
-			DetectionCount:     rw.Count,
-			FirstDetectedAt:    rw.FirstAt,
-			LastDetectedAt:     rw.LastAt,
-			Records:            []model.DetectionRecord{},
+			GroupID:         fmt.Sprintf("%s-%d-%s-%s", rw.Chromosome, rw.Position, rw.Gene, rw.TEType),
+			Chromosome:      rw.Chromosome,
+			Position:        rw.Position,
+			Gene:            rw.Gene,
+			TEType:          rw.TEType,
+			Direction:       rw.Direction,
+			Length:          rw.Length,
+			Impact:          rw.Impact,
+			DetectionCount:  rw.Count,
+			FirstDetectedAt: rw.FirstAt,
+			LastDetectedAt:  rw.LastAt,
+			Records:         []model.DetectionRecord{},
 		}
 	}
 
@@ -432,7 +451,7 @@ func (r *HistoryRepository) GetGroupedMTVariants(query *model.HistoryListQuery) 
 		LastAt            string
 	}
 
-	base := r.db.Model(&model.MitochondrialVariant{}).Where("reviewed = ?", true).
+	base := r.scopedHistory(&model.MitochondrialVariant{}, "result_mt_variants", query).
 		Select(`position, ref, alt, gene, pathogenicity, associated_disease, haplogroup,
 			MIN(heteroplasmy) as min_het, MAX(heteroplasmy) as max_het,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
@@ -444,7 +463,7 @@ func (r *HistoryRepository) GetGroupedMTVariants(query *model.HistoryListQuery) 
 	}
 
 	var total int64
-	r.db.Model(&model.MitochondrialVariant{}).Where("reviewed = ?", true).
+	r.scopedHistory(&model.MitochondrialVariant{}, "result_mt_variants", query).
 		Select("COUNT(DISTINCT position || '-' || ref || '-' || alt)").Count(&total)
 
 	page, pageSize := normalizePage(query)
@@ -493,7 +512,7 @@ func (r *HistoryRepository) GetGroupedUPDRegions(query *model.HistoryListQuery) 
 		LastAt        string
 	}
 
-	base := r.db.Model(&model.UPDRegion{}).Where("reviewed = ?", true).
+	base := r.scopedHistory(&model.UPDRegion{}, "result_upd_regions", query).
 		Select(`chromosome, start_position, end_position, length, type, genes, parent_of_origin,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
 		Group("chromosome, start_position, end_position, type")
@@ -504,7 +523,7 @@ func (r *HistoryRepository) GetGroupedUPDRegions(query *model.HistoryListQuery) 
 	}
 
 	var total int64
-	r.db.Model(&model.UPDRegion{}).Where("reviewed = ?", true).
+	r.scopedHistory(&model.UPDRegion{}, "result_upd_regions", query).
 		Select("COUNT(DISTINCT chromosome || '-' || start_position || '-' || end_position || '-' || type)").Count(&total)
 
 	page, pageSize := normalizePage(query)
@@ -551,6 +570,9 @@ func normalizePage(query *model.HistoryListQuery) (int, int) {
 	pageSize := query.PageSize
 	if pageSize < 1 {
 		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
 	}
 	return page, pageSize
 }

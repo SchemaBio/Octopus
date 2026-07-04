@@ -15,29 +15,32 @@ type DetectionRecord struct {
 
 // HistoryListQuery is the common query for history endpoints
 type HistoryListQuery struct {
-	Search     string `form:"searchQuery"`
-	Page       int    `form:"page"`
-	PageSize   int    `form:"pageSize"`
-	SortColumn string `form:"sortColumn"`
-	SortDir    string `form:"sortDirection"`
+	Search        string `form:"searchQuery"`
+	Page          int    `form:"page"`
+	PageSize      int    `form:"pageSize"`
+	SortColumn    string `form:"sortColumn"`
+	SortDir       string `form:"sortDirection"`
+	CreatedBy     uint   `json:"-"`
+	ExternalOrgID string `json:"-"`
+	IncludeAll    bool   `json:"-"`
 }
 
 // GroupedSNVIndel represents a grouped SNV/Indel in history
 type GroupedSNVIndel struct {
-	GroupID            string              `json:"groupId"`
-	Gene               string              `json:"gene"`
-	HGVSc              string              `json:"hgvsc"`
-	HGVSp              string              `json:"hgvsp"`
-	Transcript         string              `json:"transcript"`
-	ACMGClassification ACMGClassification  `json:"acmgClassification"`
-	Consequence        string              `json:"consequence"`
-	RsID               string              `json:"rsId,omitempty"`
-	ClinvarID          string              `json:"clinvarId,omitempty"`
-	GnomadAF           *float64            `json:"gnomadAF,omitempty"`
-	DetectionCount     int                 `json:"detectionCount"`
-	FirstDetectedAt    string              `json:"firstDetectedAt"`
-	LastDetectedAt     string              `json:"lastDetectedAt"`
-	Records            []DetectionRecord   `json:"records"`
+	GroupID            string             `json:"groupId"`
+	Gene               string             `json:"gene"`
+	HGVSc              string             `json:"hgvsc"`
+	HGVSp              string             `json:"hgvsp"`
+	Transcript         string             `json:"transcript"`
+	ACMGClassification ACMGClassification `json:"acmgClassification"`
+	Consequence        string             `json:"consequence"`
+	RsID               string             `json:"rsId,omitempty"`
+	ClinvarID          string             `json:"clinvarId,omitempty"`
+	GnomadAF           *float64           `json:"gnomadAF,omitempty"`
+	DetectionCount     int                `json:"detectionCount"`
+	FirstDetectedAt    string             `json:"firstDetectedAt"`
+	LastDetectedAt     string             `json:"lastDetectedAt"`
+	Records            []DetectionRecord  `json:"records"`
 }
 
 // GroupedCNVSegment represents a grouped CNV segment in history
@@ -112,20 +115,20 @@ type GroupedMEI struct {
 
 // GroupedMTVariant represents a grouped MT variant in history
 type GroupedMTVariant struct {
-	GroupID          string                   `json:"groupId"`
-	Position         int64                    `json:"position"`
-	Ref              string                   `json:"ref"`
-	Alt              string                   `json:"alt"`
-	Gene             string                   `json:"gene"`
-	Pathogenicity    string                     `json:"pathogenicity"`
-	AssociatedDisease string                  `json:"associatedDisease"`
-	Haplogroup       string                   `json:"haplogroup,omitempty"`
-	MinHeteroplasmy  float64                  `json:"minHeteroplasmy"`
-	MaxHeteroplasmy  float64                  `json:"maxHeteroplasmy"`
-	DetectionCount   int                      `json:"detectionCount"`
-	FirstDetectedAt  string                   `json:"firstDetectedAt"`
-	LastDetectedAt   string                   `json:"lastDetectedAt"`
-	Records          []DetectionRecord        `json:"records"`
+	GroupID           string            `json:"groupId"`
+	Position          int64             `json:"position"`
+	Ref               string            `json:"ref"`
+	Alt               string            `json:"alt"`
+	Gene              string            `json:"gene"`
+	Pathogenicity     string            `json:"pathogenicity"`
+	AssociatedDisease string            `json:"associatedDisease"`
+	Haplogroup        string            `json:"haplogroup,omitempty"`
+	MinHeteroplasmy   float64           `json:"minHeteroplasmy"`
+	MaxHeteroplasmy   float64           `json:"maxHeteroplasmy"`
+	DetectionCount    int               `json:"detectionCount"`
+	FirstDetectedAt   string            `json:"firstDetectedAt"`
+	LastDetectedAt    string            `json:"lastDetectedAt"`
+	Records           []DetectionRecord `json:"records"`
 }
 
 // GroupedUPDRegion represents a grouped UPD region in history

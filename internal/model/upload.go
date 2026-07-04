@@ -104,7 +104,7 @@ type UploadFileResponse struct {
 	ID           string     `json:"id"`
 	JobID        string     `json:"job_id"`
 	FileName     string     `json:"file_name"`
-	StorageKey   string     `json:"storage_key"`
+	StorageKey   string     `json:"storage_key,omitempty"`
 	FileSize     int64      `json:"file_size"`
 	ReadType     ReadType   `json:"read_type"`
 	Status       FileStatus `json:"status"`
@@ -145,14 +145,13 @@ func UploadJobToResponse(job *UploadJob, files []UploadFileResponse) UploadJobRe
 
 func UploadFileToResponse(file *UploadFile) UploadFileResponse {
 	return UploadFileResponse{
-		ID:         file.UUID,
-		JobID:      file.JobUUID,
-		FileName:   file.FileName,
-		StorageKey: file.StorageKey,
-		FileSize:   file.FileSize,
-		ReadType:   file.ReadType,
-		Status:     file.Status,
-		CreatedAt:  file.CreatedAt.Format(time.RFC3339),
+		ID:        file.UUID,
+		JobID:     file.JobUUID,
+		FileName:  file.FileName,
+		FileSize:  file.FileSize,
+		ReadType:  file.ReadType,
+		Status:    file.Status,
+		CreatedAt: file.CreatedAt.Format(time.RFC3339),
 	}
 }
 

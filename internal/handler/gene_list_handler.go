@@ -33,6 +33,9 @@ func (h *GeneListHandler) List(c *gin.Context) {
 	if query.PageSize == 0 {
 		query.PageSize = 10
 	}
+	if !applyCreatedByListScope(c, &query.CreatedBy, &query.IncludeAll) {
+		return
+	}
 
 	resp, err := h.svc.List(&query)
 	if err != nil {
@@ -46,6 +49,15 @@ func (h *GeneListHandler) List(c *gin.Context) {
 // Get returns a single gene list
 func (h *GeneListHandler) Get(c *gin.Context) {
 	id := c.Param("id")
+
+	geneList, err := h.svc.GetModel(id)
+	if err != nil {
+		ErrorNotFound(c, err.Error())
+		return
+	}
+	if !requireOwnerAccess(c, geneList.CreatedBy, "Gene list") {
+		return
+	}
 
 	resp, err := h.svc.Get(id)
 	if err != nil {
@@ -92,6 +104,14 @@ func (h *GeneListHandler) Update(c *gin.Context) {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
+	geneList, err := h.svc.GetModel(id)
+	if err != nil {
+		ErrorNotFound(c, err.Error())
+		return
+	}
+	if !requireOwnerAccess(c, geneList.CreatedBy, "Gene list") {
+		return
+	}
 
 	resp, err := h.svc.Update(id, &req)
 	if err != nil {
@@ -105,6 +125,14 @@ func (h *GeneListHandler) Update(c *gin.Context) {
 // Delete deletes a gene list
 func (h *GeneListHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
+	geneList, err := h.svc.GetModel(id)
+	if err != nil {
+		ErrorNotFound(c, err.Error())
+		return
+	}
+	if !requireOwnerAccess(c, geneList.CreatedBy, "Gene list") {
+		return
+	}
 
 	if err := h.svc.Delete(id); err != nil {
 		ErrorNotFound(c, err.Error())

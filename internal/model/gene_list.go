@@ -9,9 +9,9 @@ import (
 type GeneListCategory string
 
 const (
-	GeneListCategoryCore     GeneListCategory = "core"
+	GeneListCategoryCore      GeneListCategory = "core"
 	GeneListCategoryImportant GeneListCategory = "important"
-	GeneListCategoryOptional GeneListCategory = "optional"
+	GeneListCategoryOptional  GeneListCategory = "optional"
 )
 
 // GeneList represents a gene panel/list
@@ -60,9 +60,11 @@ type GeneListUpdateRequest struct {
 
 // GeneListListQuery is the query parameters for listing gene lists
 type GeneListListQuery struct {
-	Page     int    `form:"page" binding:"min=1"`
-	PageSize int    `form:"page_size" binding:"min=1,max=100"`
-	Search   string `form:"search"`
+	Page       int    `form:"page" binding:"min=1"`
+	PageSize   int    `form:"page_size" binding:"min=1,max=100"`
+	Search     string `form:"search"`
+	CreatedBy  uint   `json:"-"`
+	IncludeAll bool   `json:"-"`
 }
 
 // GeneListListResponse is the response for listing gene lists

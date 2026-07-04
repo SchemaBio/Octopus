@@ -154,3 +154,25 @@ func TestGenerateReportDownloadReturnsAPIError(t *testing.T) {
 		t.Fatalf("expected upstream error, got %v", err)
 	}
 }
+
+func TestReportDownloadBodyRejectsChunkedOversize(t *testing.T) {
+	body := newMaxBytesReadCloser(io.NopCloser(io.LimitReader(infiniteByteReader{}, maxReportDownloadBytes+1)), maxReportDownloadBytes)
+	defer body.Close()
+
+	_, err := io.Copy(io.Discard, body)
+	if err == nil {
+		t.Fatal("expected oversized chunked response body to fail")
+	}
+	if !strings.Contains(err.Error(), ErrReportDownloadTooLarge.Error()) {
+		t.Fatalf("expected size error, got %v", err)
+	}
+}
+
+type infiniteByteReader struct{}
+
+func (infiniteByteReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'a'
+	}
+	return len(p), nil
+}

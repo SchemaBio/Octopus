@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,8 @@ import (
 type Archiver struct {
 	cfg *config.Config
 }
+
+const maxArchiveOutputsJSONBytes = 10 << 20
 
 func NewArchiver(cfg *config.Config) *Archiver {
 	return &Archiver{cfg: cfg}
@@ -62,7 +65,8 @@ func (a *Archiver) ListArchivedFiles(uuid string) ([]string, error) {
 	}
 
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		info, err := entry.Info()
+		if err == nil && info.Mode().IsRegular() {
 			files = append(files, entry.Name())
 		}
 	}
@@ -84,8 +88,7 @@ func (a *Archiver) QueryOutputByKey(uuid string, key string) (*OutputQueryResult
 		return result, fmt.Errorf("archive directory not configured")
 	}
 
-	resolvedPath := filepath.Join(archiveDir, "outputs.resolved.json")
-	resolvedData, err := os.ReadFile(resolvedPath)
+	resolvedData, err := a.readArchiveJSONFile(archiveDir, "outputs.resolved.json")
 	if err != nil {
 		return result, fmt.Errorf("outputs.resolved.json not found in archive for UUID: %s", uuid)
 	}
@@ -120,15 +123,15 @@ func (a *Archiver) QueryOutputByKey(uuid string, key string) (*OutputQueryResult
 			result.Path = v
 			fileName := filepath.Base(v)
 			archiveFilePath := filepath.Join(archiveDir, fileName)
-			if _, err := os.Stat(archiveFilePath); err == nil {
-				result.ArchivePath = archiveFilePath
+			if safePath, err := resolveArchiveRegularFile(archiveDir, archiveFilePath); err == nil {
+				result.ArchivePath = safePath
 				result.Exists = true
 			} else {
 				dirName := filepath.Base(filepath.Dir(v))
 				altFileName := dirName + "_" + fileName
 				altArchivePath := filepath.Join(archiveDir, altFileName)
-				if _, err := os.Stat(altArchivePath); err == nil {
-					result.ArchivePath = altArchivePath
+				if safePath, err := resolveArchiveRegularFile(archiveDir, altArchivePath); err == nil {
+					result.ArchivePath = safePath
 					result.Exists = true
 				}
 			}
@@ -145,8 +148,7 @@ func (a *Archiver) ListOutputKeys(uuid string) ([]string, error) {
 		return nil, fmt.Errorf("archive directory not configured")
 	}
 
-	resolvedPath := filepath.Join(archiveDir, "outputs.resolved.json")
-	resolvedData, err := os.ReadFile(resolvedPath)
+	resolvedData, err := a.readArchiveJSONFile(archiveDir, "outputs.resolved.json")
 	if err != nil {
 		return nil, fmt.Errorf("outputs.resolved.json not found in archive for UUID: %s", uuid)
 	}
@@ -159,6 +161,29 @@ func (a *Archiver) ListOutputKeys(uuid string) ([]string, error) {
 	keys := []string{}
 	collectResolvedKeys(parsed, "", &keys)
 	return keys, nil
+}
+
+// ReadOutputs reads the full archived outputs JSON for display purposes.
+// It prefers outputs.resolved.json and falls back to outputs.json, while keeping
+// the read bounded to the task archive directory and a fixed maximum size.
+func (a *Archiver) ReadOutputs(uuid string) (map[string]interface{}, error) {
+	archiveDir := a.GetArchiveDir(uuid)
+	if archiveDir == "" {
+		return nil, fmt.Errorf("archive directory not configured")
+	}
+
+	data, err := a.readArchiveJSONFile(archiveDir, "outputs.resolved.json")
+	if err != nil {
+		data, err = a.readArchiveJSONFile(archiveDir, "outputs.json")
+	}
+	if err != nil {
+		return nil, err
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse outputs JSON: %w", err)
+	}
+	return parsed, nil
 }
 
 func collectResolvedKeys(m map[string]interface{}, prefix string, keys *[]string) {
@@ -185,4 +210,65 @@ func isFileExtension(s string) bool {
 		}
 	}
 	return false
+}
+
+func (a *Archiver) readArchiveJSONFile(archiveDir, name string) ([]byte, error) {
+	if name != filepath.Base(name) || name == "." || name == ".." {
+		return nil, fmt.Errorf("invalid archive file name")
+	}
+	filePath, err := resolveArchiveRegularFile(archiveDir, filepath.Join(archiveDir, name))
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxArchiveOutputsJSONBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxArchiveOutputsJSONBytes {
+		return nil, fmt.Errorf("archive JSON exceeds maximum size of %d MB", maxArchiveOutputsJSONBytes>>20)
+	}
+	return data, nil
+}
+
+func resolveArchiveRegularFile(archiveDir, filePath string) (string, error) {
+	baseEval, err := filepath.EvalSymlinks(archiveDir)
+	if err != nil {
+		return "", err
+	}
+	fileEval, err := filepath.EvalSymlinks(filePath)
+	if err != nil {
+		return "", err
+	}
+	if !archivePathInsideBase(baseEval, fileEval) {
+		return "", fmt.Errorf("archive file escapes archive directory")
+	}
+	info, err := os.Stat(fileEval)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("archive file is not regular")
+	}
+	return fileEval, nil
+}
+
+func archivePathInsideBase(base, path string) bool {
+	baseAbs, err := filepath.Abs(base)
+	if err != nil {
+		return false
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(baseAbs, pathAbs)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel)
 }
