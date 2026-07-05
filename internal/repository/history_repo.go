@@ -103,8 +103,13 @@ func (r *HistoryRepository) GetGroupedSNVIndels(query *model.HistoryListQuery) (
 	// First, get grouped results using raw SQL
 	baseQuery := r.scopedHistory(&model.SNVIndel{}, "result_snv_indels", query).
 		Select(`
-			gene, hgvsc, hgvsp, transcript, acmg_classification, consequence,
-			rs_id, clinvar_id, gnomad_af,
+			gene, hgvsc, hgvsp,
+			MIN(transcript) AS transcript,
+			MIN(acmg_classification) AS acmg_classification,
+			MIN(consequence) AS consequence,
+			MIN(rs_id) AS rs_id,
+			MIN(clinvar_dn) AS clinvar_id,
+			MIN(gnomad_af) AS gnomad_af,
 			COUNT(*) as detection_count,
 			MIN(reviewed_at) as first_detected_at,
 			MAX(reviewed_at) as last_detected_at
@@ -205,18 +210,34 @@ func (r *HistoryRepository) GetGroupedCNVSegments(query *model.HistoryListQuery)
 	}
 
 	base := r.scopedHistory(&model.CNVSegment{}, "result_cnv_segments", query).
-		Select(`chromosome, start_position, end_position, length, type, copy_number, genes, confidence,
+		Select(`chromosome, start_position, end_position,
+			GREATEST(end_position - start_position + 1, 0) AS length,
+			type,
+			CAST(ROUND(AVG(COALESCE(copy_ratio, CASE WHEN type = 'DUP' THEN 1.5 ELSE 0.5 END)) * 2) AS INTEGER) AS copy_number,
+			MIN(COALESCE(NULLIF(dosage_genes, ''), NULLIF(gen_cc_ad_genes, ''), '[]')) AS genes,
+			AVG(COALESCE(weight, 1.0)) AS confidence,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
 		Group("chromosome, start_position, end_position, type")
 
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
-		base = base.Where("chromosome LIKE ? OR genes LIKE ?", s, s)
+		base = base.Where(
+			"chromosome LIKE ? OR dosage_genes LIKE ? OR gen_cc_ad_genes LIKE ? OR iscn LIKE ? OR classification LIKE ?",
+			s, s, s, s, s,
+		)
 	}
 
 	var total int64
-	r.scopedHistory(&model.CNVSegment{}, "result_cnv_segments", query).
-		Select("COUNT(DISTINCT chromosome || '-' || start_position || '-' || end_position || '-' || type)").Count(&total)
+	countQuery := r.scopedHistory(&model.CNVSegment{}, "result_cnv_segments", query).
+		Select("COUNT(DISTINCT chromosome || '-' || start_position || '-' || end_position || '-' || type)")
+	if query.Search != "" {
+		s := "%" + query.Search + "%"
+		countQuery = countQuery.Where(
+			"chromosome LIKE ? OR dosage_genes LIKE ? OR gen_cc_ad_genes LIKE ? OR iscn LIKE ? OR classification LIKE ?",
+			s, s, s, s, s,
+		)
+	}
+	countQuery.Count(&total)
 
 	page, pageSize := normalizePage(query)
 
@@ -268,18 +289,30 @@ func (r *HistoryRepository) GetGroupedCNVExons(query *model.HistoryListQuery) ([
 	}
 
 	base := r.scopedHistory(&model.CNVExon{}, "result_cnv_exons", query).
-		Select(`gene, transcript, exon, chromosome, start_position, end_position, type, copy_number, ratio, confidence,
+		Select(`gene, transcript, CAST(exon_count AS TEXT) AS exon,
+			MIN(chromosome) AS chromosome,
+			MIN(start_position) AS start_position,
+			MAX(end_position) AS end_position,
+			type,
+			CAST(ROUND(AVG(COALESCE(copy_ratio, 1.0)) * 2) AS INTEGER) AS copy_number,
+			AVG(COALESCE(copy_ratio, depth_ratio, ratio2, 1.0)) AS ratio,
+			AVG(COALESCE(weight, quality, 1.0)) AS confidence,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
-		Group("gene, transcript, exon, type")
+		Group("gene, transcript, exon_count, type")
 
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
-		base = base.Where("gene LIKE ? OR exon LIKE ?", s, s)
+		base = base.Where("gene LIKE ? OR transcript LIKE ? OR CAST(exon_count AS TEXT) LIKE ?", s, s, s)
 	}
 
 	var total int64
-	r.scopedHistory(&model.CNVExon{}, "result_cnv_exons", query).
-		Select("COUNT(DISTINCT gene || '-' || transcript || '-' || exon || '-' || type)").Count(&total)
+	countQuery := r.scopedHistory(&model.CNVExon{}, "result_cnv_exons", query).
+		Select("COUNT(DISTINCT gene || '-' || transcript || '-' || exon_count || '-' || type)")
+	if query.Search != "" {
+		s := "%" + query.Search + "%"
+		countQuery = countQuery.Where("gene LIKE ? OR transcript LIKE ? OR CAST(exon_count AS TEXT) LIKE ?", s, s, s)
+	}
+	countQuery.Count(&total)
 
 	page, pageSize := normalizePage(query)
 
@@ -331,19 +364,31 @@ func (r *HistoryRepository) GetGroupedSTRs(query *model.HistoryListQuery) ([]mod
 	}
 
 	base := r.scopedHistory(&model.STR{}, "result_strs", query).
-		Select(`gene, transcript, locus, repeat_unit, normal_range_min, normal_range_max, status,
-			MIN(repeat_count) as min_count, MAX(repeat_count) as max_count,
+		Select(`gene, '' AS transcript, chromosome || ':' || position AS locus, repeat_unit,
+			0 AS normal_range_min, normal_range_max, status,
+			MIN(ref_repeats) as min_count, MAX(ref_repeats) as max_count,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
-		Group("gene, locus")
+		Group("gene, chromosome, position, repeat_unit, normal_range_max, status")
 
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
-		base = base.Where("gene LIKE ? OR locus LIKE ?", s, s)
+		base = base.Where(
+			"gene LIKE ? OR chromosome LIKE ? OR repeat_unit LIKE ? OR disease LIKE ? OR inheritance LIKE ?",
+			s, s, s, s, s,
+		)
 	}
 
 	var total int64
-	r.scopedHistory(&model.STR{}, "result_strs", query).
-		Select("COUNT(DISTINCT gene || '-' || locus)").Count(&total)
+	countQuery := r.scopedHistory(&model.STR{}, "result_strs", query).
+		Select("COUNT(DISTINCT gene || '-' || chromosome || '-' || position)")
+	if query.Search != "" {
+		s := "%" + query.Search + "%"
+		countQuery = countQuery.Where(
+			"gene LIKE ? OR chromosome LIKE ? OR repeat_unit LIKE ? OR disease LIKE ? OR inheritance LIKE ?",
+			s, s, s, s, s,
+		)
+	}
+	countQuery.Count(&total)
 
 	page, pageSize := normalizePage(query)
 
@@ -392,7 +437,10 @@ func (r *HistoryRepository) GetGroupedMEIs(query *model.HistoryListQuery) ([]mod
 	}
 
 	base := r.scopedHistory(&model.MEIVariant{}, "result_mei_variants", query).
-		Select(`chromosome, position, gene, te_type, direction, length, impact,
+		Select(`chromosome, position, gene, te_type,
+			MIN(direction) AS direction,
+			CAST(ROUND(AVG(avg_soft_clip_length)) AS BIGINT) AS length,
+			MIN(COALESCE(NULLIF(impact, ''), NULLIF(location, ''), NULLIF(consequence, ''))) AS impact,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
 		Group("chromosome, position, gene, te_type")
 
@@ -452,19 +500,34 @@ func (r *HistoryRepository) GetGroupedMTVariants(query *model.HistoryListQuery) 
 	}
 
 	base := r.scopedHistory(&model.MitochondrialVariant{}, "result_mt_variants", query).
-		Select(`position, ref, alt, gene, pathogenicity, associated_disease, haplogroup,
+		Select(`position, ref, alt,
+			MIN(gene) AS gene,
+			MIN(COALESCE(NULLIF(clinvar_sig, ''), 'VUS')) AS pathogenicity,
+			MIN(COALESCE(NULLIF(mitophen_phenotypes, ''), NULLIF(clinvar_dn, ''), '')) AS associated_disease,
+			'' AS haplogroup,
 			MIN(heteroplasmy) as min_het, MAX(heteroplasmy) as max_het,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
 		Group("position, ref, alt")
 
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
-		base = base.Where("gene LIKE ? OR associated_disease LIKE ?", s, s)
+		base = base.Where(
+			"gene LIKE ? OR mt_gene LIKE ? OR mitophen_phenotypes LIKE ? OR clinvar_dn LIKE ? OR ref LIKE ? OR alt LIKE ?",
+			s, s, s, s, s, s,
+		)
 	}
 
 	var total int64
-	r.scopedHistory(&model.MitochondrialVariant{}, "result_mt_variants", query).
-		Select("COUNT(DISTINCT position || '-' || ref || '-' || alt)").Count(&total)
+	countQuery := r.scopedHistory(&model.MitochondrialVariant{}, "result_mt_variants", query).
+		Select("COUNT(DISTINCT position || '-' || ref || '-' || alt)")
+	if query.Search != "" {
+		s := "%" + query.Search + "%"
+		countQuery = countQuery.Where(
+			"gene LIKE ? OR mt_gene LIKE ? OR mitophen_phenotypes LIKE ? OR clinvar_dn LIKE ? OR ref LIKE ? OR alt LIKE ?",
+			s, s, s, s, s, s,
+		)
+	}
+	countQuery.Count(&total)
 
 	page, pageSize := normalizePage(query)
 

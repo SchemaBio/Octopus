@@ -88,7 +88,10 @@ func (r *ResultRepository) PaginateCNVSegments(query *model.CNVSegmentListQuery)
 	db := r.db.Model(&model.CNVSegment{}).Where("task_id = ?", query.TaskID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
-		db = db.Where("chromosome LIKE ? OR genes LIKE ?", s, s)
+		db = db.Where(
+			"chromosome LIKE ? OR dosage_genes LIKE ? OR gen_cc_ad_genes LIKE ? OR iscn LIKE ? OR classification LIKE ?",
+			s, s, s, s, s,
+		)
 	}
 	if query.Type != "" {
 		db = db.Where("type = ?", query.Type)
@@ -154,7 +157,7 @@ func (r *ResultRepository) PaginateCNVExons(query *model.CNVExonListQuery) ([]mo
 	}
 
 	var results []model.CNVExon
-	err := db.Order("gene ASC, exon ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
+	err := db.Order("gene ASC, start_position ASC, end_position ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
 }
 
@@ -182,7 +185,10 @@ func (r *ResultRepository) PaginateSTRs(query *model.STRListQuery) ([]model.STR,
 	db := r.db.Model(&model.STR{}).Where("task_id = ?", query.TaskID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
-		db = db.Where("gene LIKE ? OR locus LIKE ?", s, s)
+		db = db.Where(
+			"gene LIKE ? OR chromosome LIKE ? OR repeat_unit LIKE ? OR disease LIKE ? OR inheritance LIKE ?",
+			s, s, s, s, s,
+		)
 	}
 	if query.Status != "" {
 		db = db.Where("status = ?", query.Status)
@@ -276,7 +282,10 @@ func (r *ResultRepository) PaginateMTVariants(query *model.MTListQuery) ([]model
 	db := r.db.Model(&model.MitochondrialVariant{}).Where("task_id = ?", query.TaskID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
-		db = db.Where("gene LIKE ? OR associated_disease LIKE ?", s, s)
+		db = db.Where(
+			"gene LIKE ? OR mt_gene LIKE ? OR mitophen_phenotypes LIKE ? OR clinvar_dn LIKE ? OR ref LIKE ? OR alt LIKE ?",
+			s, s, s, s, s, s,
+		)
 	}
 
 	var total int64
