@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strings"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/middleware"
@@ -128,6 +129,17 @@ func (h *ReportHandler) GetReportDownloadURL(c *gin.Context) {
 
 // ListTemplates returns active report templates.
 func (h *ReportHandler) ListTemplates(c *gin.Context) {
+	_, _, role, ok := middleware.GetCurrentUser(c)
+	if ok && role == string(model.SystemRoleSuperAdmin) && c.Query("include_inactive") == "true" {
+		templates, err := h.svc.ListTemplatesAdmin()
+		if err != nil {
+			ErrorInternal(c, err.Error())
+			return
+		}
+		Success(c, templates)
+		return
+	}
+
 	templates, err := h.svc.ListActiveTemplates()
 	if err != nil {
 		ErrorInternal(c, err.Error())
@@ -147,9 +159,67 @@ func (h *ReportHandler) CreateTemplate(c *gin.Context) {
 
 	tmpl, err := h.svc.CreateTemplate(&req)
 	if err != nil {
-		ErrorInternal(c, err.Error())
+		writeReportTemplateError(c, err)
 		return
 	}
 
 	SuccessCreated(c, tmpl)
+}
+
+// UpdateTemplate updates a report template.
+func (h *ReportHandler) UpdateTemplate(c *gin.Context) {
+	var req model.ReportTemplateUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+
+	tmpl, err := h.svc.UpdateTemplate(c.Param("id"), &req)
+	if err != nil {
+		writeReportTemplateError(c, err)
+		return
+	}
+
+	Success(c, tmpl)
+}
+
+// UpdateTemplateStatus toggles a report template's active state.
+func (h *ReportHandler) UpdateTemplateStatus(c *gin.Context) {
+	var req model.ReportTemplateStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+
+	tmpl, err := h.svc.SetTemplateActive(c.Param("id"), req.IsActive)
+	if err != nil {
+		writeReportTemplateError(c, err)
+		return
+	}
+
+	Success(c, tmpl)
+}
+
+// DeleteTemplate deletes an inactive report template.
+func (h *ReportHandler) DeleteTemplate(c *gin.Context) {
+	if err := h.svc.DeleteTemplate(c.Param("id")); err != nil {
+		writeReportTemplateError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func writeReportTemplateError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrReportTemplateNotFound):
+		ErrorNotFound(c, err.Error())
+	case errors.Is(err, service.ErrReportTemplateNameExists):
+		ErrorConflict(c, err.Error())
+	case errors.Is(err, service.ErrReportTemplateActive):
+		ErrorBadRequest(c, err.Error())
+	case strings.Contains(err.Error(), "report API endpoint") || strings.Contains(err.Error(), "name is required"):
+		ErrorBadRequest(c, err.Error())
+	default:
+		ErrorInternal(c, err.Error())
+	}
 }

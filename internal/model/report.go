@@ -116,12 +116,29 @@ type ReportTemplateCreateRequest struct {
 	APIKey      string `json:"apiKey"`
 }
 
+// ReportTemplateUpdateRequest is the request for updating a report template.
+// APIKey is optional and only rotated when present and non-empty.
+type ReportTemplateUpdateRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	APIEndpoint string `json:"apiEndpoint"`
+	APIKey      string `json:"apiKey"`
+	IsActive    *bool  `json:"isActive"`
+}
+
+// ReportTemplateStatusRequest toggles template availability.
+type ReportTemplateStatusRequest struct {
+	IsActive bool `json:"isActive"`
+}
+
 // ReportTemplateResponse is the public-safe template payload (omits APIEndpoint and APIKey)
 type ReportTemplateResponse struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	IsActive    bool   `json:"isActive"`
+	CreatedAt   string `json:"createdAt,omitempty"`
+	UpdatedAt   string `json:"updatedAt,omitempty"`
 }
 
 // ReportTemplateAdminResponse is the template payload for admins.
@@ -132,6 +149,8 @@ type ReportTemplateAdminResponse struct {
 	APIEndpoint string `json:"apiEndpoint"`
 	HasAPIKey   bool   `json:"hasApiKey"`
 	IsActive    bool   `json:"isActive"`
+	CreatedAt   string `json:"createdAt,omitempty"`
+	UpdatedAt   string `json:"updatedAt,omitempty"`
 }
 
 // ToResponse converts a ReportTemplate to a public-safe response (omits sensitive fields)
@@ -141,6 +160,8 @@ func (t *ReportTemplate) ToResponse() ReportTemplateResponse {
 		Name:        t.Name,
 		Description: t.Description,
 		IsActive:    t.IsActive,
+		CreatedAt:   t.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:   t.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -152,5 +173,7 @@ func (t *ReportTemplate) ToAdminResponse() ReportTemplateAdminResponse {
 		APIEndpoint: t.APIEndpoint,
 		HasAPIKey:   t.APIKey != "",
 		IsActive:    t.IsActive,
+		CreatedAt:   t.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:   t.UpdatedAt.Format(time.RFC3339),
 	}
 }

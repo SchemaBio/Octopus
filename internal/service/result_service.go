@@ -2,6 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/model"
@@ -142,4 +146,110 @@ func (s *ResultService) ReviewVariant(ctx context.Context, variantType string, t
 // ReportVariant marks a variant as reported by type
 func (s *ResultService) ReportVariant(ctx context.Context, variantType string, taskID string, id string, reporter string) error {
 	return s.repo.UpdateVariantReport(variantType, taskID, id, true, reporter)
+}
+
+// ========== CNV assessment persistence ==========
+
+const maxCNVAssessmentPayloadBytes = 64 * 1024
+
+func isCNVAssessmentType(variantType string) bool {
+	return variantType == "cnv-segment" || variantType == "cnv-exon"
+}
+
+func validateCNVAssessmentPayload(payload json.RawMessage, variantID string) error {
+	if len(payload) == 0 {
+		return errors.New("assessment is required")
+	}
+	if len(payload) > maxCNVAssessmentPayloadBytes {
+		return errors.New("assessment payload is too large")
+	}
+	if !utf8.Valid(payload) {
+		return errors.New("assessment payload must be valid UTF-8 JSON")
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(payload, &parsed); err != nil {
+		return errors.New("assessment payload must be a JSON object")
+	}
+	cnvID, _ := parsed["cnvId"].(string)
+	if cnvID == "" || cnvID != variantID {
+		return errors.New("assessment cnvId does not match variant ID")
+	}
+	if _, ok := parsed["criteria"]; !ok {
+		return errors.New("assessment criteria is required")
+	}
+	classification, ok := parsed["classification"].(string)
+	if !ok {
+		return errors.New("assessment classification is required")
+	}
+	switch classification {
+	case "Pathogenic", "Likely_Pathogenic", "VUS", "Likely_Benign", "Benign":
+	default:
+		return errors.New("assessment classification is invalid")
+	}
+	return nil
+}
+
+func (s *ResultService) ListCNVAssessments(taskID, variantType, idsCSV string) ([]model.CNVAssessmentResponse, error) {
+	if !isCNVAssessmentType(variantType) {
+		return nil, errors.New("unsupported CNV assessment type")
+	}
+	ids := splitCSV(idsCSV)
+	rows, err := s.repo.ListCNVAssessments(taskID, variantType, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.CNVAssessmentResponse, len(rows))
+	for i := range rows {
+		out[i] = model.CNVAssessmentToResponse(&rows[i])
+	}
+	return out, nil
+}
+
+func (s *ResultService) GetCNVAssessment(taskID, variantType, variantID string) (*model.CNVAssessmentResponse, error) {
+	if !isCNVAssessmentType(variantType) {
+		return nil, errors.New("unsupported CNV assessment type")
+	}
+	row, err := s.repo.FindCNVAssessment(taskID, variantType, variantID)
+	if err != nil {
+		return nil, err
+	}
+	resp := model.CNVAssessmentToResponse(row)
+	return &resp, nil
+}
+
+func (s *ResultService) SaveCNVAssessment(taskID, variantType, variantID string, payload json.RawMessage, actor string) (*model.CNVAssessmentResponse, error) {
+	if !isCNVAssessmentType(variantType) {
+		return nil, errors.New("unsupported CNV assessment type")
+	}
+	if err := validateCNVAssessmentPayload(payload, variantID); err != nil {
+		return nil, err
+	}
+	exists, err := s.repo.VariantExists(variantType, taskID, variantID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.New("CNV variant not found")
+	}
+	row, err := s.repo.UpsertCNVAssessment(taskID, variantType, variantID, string(payload), actor)
+	if err != nil {
+		return nil, err
+	}
+	resp := model.CNVAssessmentToResponse(row)
+	return &resp, nil
+}
+
+func splitCSV(value string) []string {
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

@@ -185,6 +185,11 @@ type SampleUpdateRequest struct {
 	Status            SampleStatus       `json:"status"`
 }
 
+// SampleMatchUploadJobRequest binds a completed paired FASTQ upload job to a sample.
+type SampleMatchUploadJobRequest struct {
+	UploadJobID string `json:"upload_job_id" binding:"required"`
+}
+
 // SampleListQuery is the query parameters for listing samples
 type SampleListQuery struct {
 	Page       int                `form:"page" binding:"min=1"`

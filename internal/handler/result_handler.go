@@ -269,6 +269,67 @@ func (h *ResultHandler) ReportVariant(c *gin.Context) {
 	Success(c, gin.H{"reported": true})
 }
 
+// ListCNVAssessments returns saved ClinGen CNV assessments for a task/type.
+func (h *ResultHandler) ListCNVAssessments(c *gin.Context) {
+	taskID := c.Param("id")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
+	var query model.CNVAssessmentListQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	results, err := h.svc.ListCNVAssessments(taskID, query.VariantType, query.VariantIDs)
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, results)
+}
+
+// GetCNVAssessment returns one saved ClinGen CNV assessment.
+func (h *ResultHandler) GetCNVAssessment(c *gin.Context) {
+	taskID := c.Param("id")
+	variantType := c.Param("type")
+	variantID := c.Param("vid")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
+	result, err := h.svc.GetCNVAssessment(taskID, variantType, variantID)
+	if err != nil {
+		ErrorNotFound(c, "CNV assessment not found")
+		return
+	}
+	Success(c, result)
+}
+
+// SaveCNVAssessment stores one ClinGen CNV assessment payload.
+func (h *ResultHandler) SaveCNVAssessment(c *gin.Context) {
+	taskID := c.Param("id")
+	variantType := c.Param("type")
+	variantID := c.Param("vid")
+	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+		return
+	}
+	_, email, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	var req model.CNVAssessmentUpsertRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	result, err := h.svc.SaveCNVAssessment(taskID, variantType, variantID, req.Assessment, email)
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, result)
+}
+
 // setQueryDefaults sets default page and pageSize
 func setQueryDefaults(page, pageSize *int) {
 	if *page == 0 {

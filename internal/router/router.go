@@ -159,6 +159,9 @@ func New(cfg *config.Config) *gin.Engine {
 		reportTemplatesAdmin.Use(middleware.RequireAdmin())
 		{
 			reportTemplatesAdmin.POST("", reportHandler.CreateTemplate)
+			reportTemplatesAdmin.PUT("/:id", reportHandler.UpdateTemplate)
+			reportTemplatesAdmin.PUT("/:id/status", reportHandler.UpdateTemplateStatus)
+			reportTemplatesAdmin.DELETE("/:id", reportHandler.DeleteTemplate)
 		}
 
 		// ========== Result management (protected) ==========
@@ -175,6 +178,9 @@ func New(cfg *config.Config) *gin.Engine {
 			results.GET("/mt", resultHandler.ListMTVariants)
 			results.GET("/upd", resultHandler.ListUPDRegions)
 			results.GET("/roh", resultHandler.ListROHRegions)
+			results.GET("/cnv-assessments", resultHandler.ListCNVAssessments)
+			results.GET("/cnv-assessments/:type/:vid", resultHandler.GetCNVAssessment)
+			results.PUT("/cnv-assessments/:type/:vid", resultHandler.SaveCNVAssessment)
 			results.PUT("/:type/:vid/review", resultHandler.ReviewVariant)
 			results.PUT("/:type/:vid/report", resultHandler.ReportVariant)
 		}
@@ -203,6 +209,8 @@ func New(cfg *config.Config) *gin.Engine {
 			samples.GET("", sampleHandler.ListSamples)
 			samples.GET("/:id", sampleHandler.GetSample)
 			samples.PUT("/:id", sampleHandler.UpdateSample)
+			samples.POST("/:id/matched-pair/upload-job", sampleHandler.MatchFromUploadJob)
+			samples.DELETE("/:id/matched-pair", sampleHandler.ClearMatchedPair)
 			samples.DELETE("/:id", sampleHandler.DeleteSample)
 		}
 

@@ -65,6 +65,7 @@ func AutoMigrate() error {
 		&model.UPDRegion{},
 		&model.ROHRegion{},
 		&model.QCResult{},
+		&model.CNVAssessment{},
 		// Report models
 		&model.Report{},
 		&model.ReportTemplate{},

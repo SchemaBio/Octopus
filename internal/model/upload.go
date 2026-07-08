@@ -104,7 +104,7 @@ type UploadFileResponse struct {
 	ID           string     `json:"id"`
 	JobID        string     `json:"job_id"`
 	FileName     string     `json:"file_name"`
-	StorageKey   string     `json:"storage_key,omitempty"`
+	StorageKey   string     `json:"-"` // server-local path/storage key must never be serialized to browsers
 	FileSize     int64      `json:"file_size"`
 	ReadType     ReadType   `json:"read_type"`
 	Status       FileStatus `json:"status"`

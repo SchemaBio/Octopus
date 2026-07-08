@@ -41,6 +41,21 @@ func ValidateStartup(cfg *Config) error {
 			}
 		}
 	}
+	if cfg.Sepiida.Enabled {
+		if strings.TrimSpace(cfg.Sepiida.QueryKey) != "" {
+			if err := validateAbsoluteServiceURL("SEPIIDA_URL", cfg.Sepiida.ServerURL); err != nil {
+				return err
+			}
+		}
+		if cfg.Server.Mode == "release" {
+			if strings.TrimSpace(cfg.Sepiida.QueryKey) == "" {
+				return fmt.Errorf("SEPIIDA_QUERY_KEY must be set when Sepiida is enabled in release mode")
+			}
+			if err := validateSharedSecret("SEPIIDA_QUERY_KEY", cfg.Sepiida.QueryKey); err != nil {
+				return err
+			}
+		}
+	}
 	if cfg.LLM.Enabled {
 		if strings.TrimSpace(cfg.LLM.BaseURL) == "" {
 			return fmt.Errorf("LLM_BASE_URL must be set when LLM is enabled")
@@ -55,6 +70,20 @@ func ValidateStartup(cfg *Config) error {
 		}
 	}
 
+	return nil
+}
+
+func validateAbsoluteServiceURL(name, rawURL string) error {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("%s must be a valid absolute URL", name)
+	}
+	if u.User != nil {
+		return fmt.Errorf("%s must not include user info", name)
+	}
+	if !strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https") {
+		return fmt.Errorf("%s must use http or https", name)
+	}
 	return nil
 }
 

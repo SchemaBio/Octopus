@@ -14,28 +14,37 @@ import (
 
 // Client is the Sepiida API client
 type Client struct {
-	baseURL  string
-	queryKey string
-	timeout  time.Duration
+	baseURL    string
+	queryKey   string
+	timeout    time.Duration
+	httpClient *http.Client
 }
 
 // NewClient creates a new Sepiida client
 func NewClient(baseURL, queryKey string) *Client {
+	timeout := 30 * time.Second
 	return &Client{
-		baseURL:  baseURL,
-		queryKey: queryKey,
-		timeout:  30 * time.Second,
+		baseURL:    strings.TrimSpace(baseURL),
+		queryKey:   strings.TrimSpace(queryKey),
+		timeout:    timeout,
+		httpClient: &http.Client{Timeout: timeout},
 	}
 }
 
 // SetTimeout sets the HTTP timeout
 func (c *Client) SetTimeout(timeout time.Duration) {
 	c.timeout = timeout
+	c.httpClient.Timeout = timeout
 }
 
 // doRequest performs an HTTP request with authentication
 func (c *Client) doRequest(method, path string) ([]byte, error) {
-	client := &http.Client{Timeout: c.timeout}
+	if strings.TrimSpace(c.queryKey) == "" {
+		return nil, fmt.Errorf("Sepiida query key is not configured")
+	}
+	if method != http.MethodGet {
+		return nil, fmt.Errorf("unsupported Sepiida request method %q", method)
+	}
 
 	endpoint, err := joinURL(c.baseURL, path)
 	if err != nil {
@@ -49,7 +58,7 @@ func (c *Client) doRequest(method, path string) ([]byte, error) {
 	req.Header.Set("Authorization", "Bearer "+c.queryKey)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -61,7 +70,7 @@ func (c *Client) doRequest(method, path string) ([]byte, error) {
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("sepiida error (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("sepiida error (status %d)", resp.StatusCode)
 	}
 
 	return body, nil
@@ -156,22 +165,8 @@ func (c *Client) GetWorkflowWithTasks(uuid string) (*model.SepiidaWorkflow, []mo
 
 // Health checks Sepiida server health
 func (c *Client) Health() error {
-	client := &http.Client{Timeout: 5 * time.Second}
-	endpoint, err := joinURL(c.baseURL, "/health")
-	if err != nil {
-		return err
-	}
-	resp, err := client.Get(endpoint)
-	if err != nil {
-		return fmt.Errorf("sepiida health check failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("sepiida unhealthy (status %d)", resp.StatusCode)
-	}
-
-	return nil
+	_, err := c.doRequest(http.MethodGet, "/health")
+	return err
 }
 
 func joinURL(baseURL, endpointPath string) (string, error) {
@@ -185,14 +180,18 @@ func joinURL(baseURL, endpointPath string) (string, error) {
 	if base.Host == "" {
 		return "", fmt.Errorf("invalid Sepiida base URL")
 	}
+	if base.User != nil {
+		return "", fmt.Errorf("Sepiida base URL must not include user info")
+	}
 	ref, err := url.Parse(endpointPath)
 	if err != nil {
 		return "", err
 	}
-	if ref.IsAbs() {
+	if ref.IsAbs() || ref.Host != "" {
 		return "", fmt.Errorf("Sepiida request path must be relative")
 	}
 	base.Path = strings.TrimRight(base.Path, "/") + "/" + strings.TrimLeft(ref.Path, "/")
 	base.RawQuery = ref.RawQuery
+	base.Fragment = ""
 	return base.String(), nil
 }

@@ -180,6 +180,46 @@ func TestValidateStartupRejectsReleaseLLMHTTPURL(t *testing.T) {
 	}
 }
 
+func TestValidateStartupRejectsReleaseSepiidaWithoutStrongKey(t *testing.T) {
+	cfg := &Config{
+		Server: ServerConfig{Mode: "release", AllowedOrigins: "https://app.example.com"},
+		JWT:    JWTConfig{Secret: "xK9mP2vN7bQ4wR6tY8uI1oA3sD5fG0hJ", CookieSecure: true},
+		Sepiida: SepiidaConfig{
+			Enabled:   true,
+			ServerURL: "http://sepiida.internal:9090",
+		},
+	}
+
+	if err := ValidateStartup(cfg); err == nil {
+		t.Fatal("expected release Sepiida without query key to fail")
+	}
+
+	cfg.Sepiida.QueryKey = "short"
+	if err := ValidateStartup(cfg); err == nil {
+		t.Fatal("expected weak release Sepiida query key to fail")
+	}
+
+	cfg.Sepiida.QueryKey = "Q9x4N2v8P6s1T7w3R5y0U2i9O4p6A8d1"
+	if err := ValidateStartup(cfg); err != nil {
+		t.Fatalf("unexpected error for strong Sepiida query key: %v", err)
+	}
+}
+
+func TestValidateStartupRejectsSepiidaURLUserInfo(t *testing.T) {
+	cfg := &Config{
+		Server: ServerConfig{Mode: "debug"},
+		Sepiida: SepiidaConfig{
+			Enabled:   true,
+			ServerURL: "http://user:pass@sepiida.internal:9090",
+			QueryKey:  "debug-query-key",
+		},
+	}
+
+	if err := ValidateStartup(cfg); err == nil {
+		t.Fatal("expected Sepiida URL with userinfo to fail")
+	}
+}
+
 func TestValidateStartupRejectsUnsafeReleaseCORS(t *testing.T) {
 	cfg := &Config{
 		Server: ServerConfig{Mode: "release", AllowedOrigins: "*"},

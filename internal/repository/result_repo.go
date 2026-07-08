@@ -5,7 +5,9 @@ import (
 
 	"github.com/bioinfo/schema-platform/internal/database"
 	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ResultRepository provides generic result operations
@@ -572,4 +574,66 @@ func (r *ResultRepository) UpdateVariantReport(variantType, taskID, id string, r
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+// VariantExists verifies the requested variant row belongs to the current task.
+func (r *ResultRepository) VariantExists(variantType, taskID, id string) (bool, error) {
+	m, ok := variantModel[variantType]
+	if !ok {
+		return false, fmt.Errorf("unknown variant type: %s", variantType)
+	}
+	var count int64
+	if err := r.db.Model(m).Where("id = ? AND task_id = ?", id, taskID).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// ListCNVAssessments returns persisted CNV assessments scoped to a task and
+// result type. If ids is non-empty, only those variant IDs are returned.
+func (r *ResultRepository) ListCNVAssessments(taskID, variantType string, ids []string) ([]model.CNVAssessment, error) {
+	db := r.db.Where("task_id = ? AND variant_type = ?", taskID, variantType)
+	if len(ids) > 0 {
+		db = db.Where("variant_id IN ?", ids)
+	}
+	var assessments []model.CNVAssessment
+	err := db.Order("updated_at DESC").Find(&assessments).Error
+	return assessments, err
+}
+
+func (r *ResultRepository) FindCNVAssessment(taskID, variantType, variantID string) (*model.CNVAssessment, error) {
+	var assessment model.CNVAssessment
+	err := r.db.Where(
+		"task_id = ? AND variant_type = ? AND variant_id = ?",
+		taskID, variantType, variantID,
+	).First(&assessment).Error
+	return &assessment, err
+}
+
+// UpsertCNVAssessment inserts or replaces an assessment for one CNV variant.
+func (r *ResultRepository) UpsertCNVAssessment(taskID, variantType, variantID, payload, actor string) (*model.CNVAssessment, error) {
+	assessment := model.CNVAssessment{
+		ID:          uuid.New().String(),
+		TaskID:      taskID,
+		VariantType: variantType,
+		VariantID:   variantID,
+		PayloadJSON: payload,
+		CreatedBy:   actor,
+		UpdatedBy:   actor,
+	}
+	if err := r.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "task_id"},
+			{Name: "variant_type"},
+			{Name: "variant_id"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"payload_json": payload,
+			"updated_by":   actor,
+			"updated_at":   gorm.Expr("CURRENT_TIMESTAMP"),
+		}),
+	}).Create(&assessment).Error; err != nil {
+		return nil, err
+	}
+	return r.FindCNVAssessment(taskID, variantType, variantID)
 }

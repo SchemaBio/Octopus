@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/bioinfo/schema-platform/internal/config"
@@ -13,15 +14,19 @@ import (
 
 // SampleService handles sample business logic
 type SampleService struct {
-	cfg  *config.Config
-	repo *repository.SampleRepository
+	cfg            *config.Config
+	repo           *repository.SampleRepository
+	uploadJobRepo  *repository.UploadJobRepository
+	uploadFileRepo *repository.UploadFileRepository
 }
 
 // NewSampleService creates a new sample service
 func NewSampleService(cfg *config.Config) *SampleService {
 	return &SampleService{
-		cfg:  cfg,
-		repo: repository.NewSampleRepository(),
+		cfg:            cfg,
+		repo:           repository.NewSampleRepository(),
+		uploadJobRepo:  repository.NewUploadJobRepository(),
+		uploadFileRepo: repository.NewUploadFileRepository(),
 	}
 }
 
@@ -151,6 +156,69 @@ func (s *SampleService) UpdateSample(ctx context.Context, id string, req *model.
 		return nil, err
 	}
 
+	return sample, nil
+}
+
+// ClearMatchedPair removes the FASTQ matched pair from a sample.
+func (s *SampleService) ClearMatchedPair(ctx context.Context, id string) (*model.Sample, error) {
+	sample, err := s.repo.FindByUUID(id)
+	if err != nil {
+		return nil, err
+	}
+	sample.SetMatchedPair(nil)
+	if err := s.repo.Update(sample); err != nil {
+		return nil, err
+	}
+	return sample, nil
+}
+
+// MatchFromUploadJob binds a completed paired FASTQ upload job to a sample without exposing storage paths to the browser.
+func (s *SampleService) MatchFromUploadJob(ctx context.Context, id string, uploadJobID string, actor model.OverlayActor) (*model.Sample, error) {
+	sample, err := s.repo.FindByUUID(id)
+	if err != nil {
+		return nil, err
+	}
+	uploadJob, err := s.uploadJobRepo.FindByUUID(uploadJobID)
+	if err != nil {
+		return nil, fmt.Errorf("upload job not found")
+	}
+	if !actorCanUseOwnedResource(actor, uploadJob.UserID) {
+		return nil, fmt.Errorf("upload job not found")
+	}
+	if uploadJob.Status != model.UploadJobStatusCompleted {
+		return nil, fmt.Errorf("upload job status is %s", uploadJob.Status)
+	}
+
+	files, err := s.uploadFileRepo.FindByJobID(uploadJob.ID)
+	if err != nil {
+		return nil, err
+	}
+	var r1Path, r2Path string
+	for _, file := range files {
+		if file.Status != model.FileStatusCompleted {
+			continue
+		}
+		switch file.ReadType {
+		case model.ReadTypeRead1:
+			r1Path = file.StorageKey
+		case model.ReadTypeRead2:
+			r2Path = file.StorageKey
+		}
+	}
+	if r1Path == "" || r2Path == "" {
+		return nil, fmt.Errorf("upload job must contain completed read1 and read2 files")
+	}
+	if err := validateActorFileReference(s.cfg, actor, "upload job read1", r1Path); err != nil {
+		return nil, err
+	}
+	if err := validateActorFileReference(s.cfg, actor, "upload job read2", r2Path); err != nil {
+		return nil, err
+	}
+
+	sample.SetMatchedPair(&model.MatchedPair{R1Path: r1Path, R2Path: r2Path})
+	if err := s.repo.Update(sample); err != nil {
+		return nil, err
+	}
 	return sample, nil
 }
 

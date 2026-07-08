@@ -26,7 +26,12 @@ const (
 	maxReportDownloadBytes   = 50 << 20
 )
 
-var ErrReportDownloadTooLarge = errors.New("report API response exceeds maximum size")
+var (
+	ErrReportDownloadTooLarge   = errors.New("report API response exceeds maximum size")
+	ErrReportTemplateNotFound   = errors.New("report template not found")
+	ErrReportTemplateNameExists = errors.New("report template name already exists")
+	ErrReportTemplateActive     = errors.New("active report template cannot be deleted")
+)
 
 // ReportService handles report business logic
 type ReportService struct {
@@ -258,10 +263,35 @@ func (s *ReportService) ListActiveTemplates() ([]model.ReportTemplateResponse, e
 	return results, nil
 }
 
+// ListTemplatesAdmin returns all templates with admin-safe metadata.
+func (s *ReportService) ListTemplatesAdmin() ([]model.ReportTemplateAdminResponse, error) {
+	templates, err := s.templateRepo.FindAllOrdered()
+	if err != nil {
+		return nil, err
+	}
+	results := make([]model.ReportTemplateAdminResponse, len(templates))
+	for i, t := range templates {
+		results[i] = t.ToAdminResponse()
+	}
+	return results, nil
+}
+
 // CreateTemplate creates a new report template.
 func (s *ReportService) CreateTemplate(req *model.ReportTemplateCreateRequest) (*model.ReportTemplateAdminResponse, error) {
+	req.Name = strings.TrimSpace(req.Name)
+	req.Description = strings.TrimSpace(req.Description)
+	req.APIEndpoint = strings.TrimSpace(req.APIEndpoint)
+	req.APIKey = strings.TrimSpace(req.APIKey)
+	if req.Name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
 	if err := validateReportAPIEndpoint(req.APIEndpoint); err != nil {
 		return nil, err
+	}
+	if existing, err := s.templateRepo.FindAnyByName(req.Name); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return nil, ErrReportTemplateNameExists
 	}
 
 	tmpl := &model.ReportTemplate{
@@ -278,6 +308,80 @@ func (s *ReportService) CreateTemplate(req *model.ReportTemplateCreateRequest) (
 	}
 	resp := tmpl.ToAdminResponse()
 	return &resp, nil
+}
+
+// UpdateTemplate updates mutable report template metadata and optionally rotates the API key.
+func (s *ReportService) UpdateTemplate(id string, req *model.ReportTemplateUpdateRequest) (*model.ReportTemplateAdminResponse, error) {
+	tmpl, err := s.templateRepo.FindAnyByID(strings.TrimSpace(id))
+	if err != nil {
+		return nil, err
+	}
+	if tmpl == nil {
+		return nil, ErrReportTemplateNotFound
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name != "" && name != tmpl.Name {
+		if existing, err := s.templateRepo.FindAnyByName(name); err != nil {
+			return nil, err
+		} else if existing != nil && existing.ID != tmpl.ID {
+			return nil, ErrReportTemplateNameExists
+		}
+		tmpl.Name = name
+	}
+	tmpl.Description = strings.TrimSpace(req.Description)
+
+	endpoint := strings.TrimSpace(req.APIEndpoint)
+	if endpoint != "" && endpoint != tmpl.APIEndpoint {
+		if err := validateReportAPIEndpoint(endpoint); err != nil {
+			return nil, err
+		}
+		tmpl.APIEndpoint = endpoint
+	}
+	if apiKey := strings.TrimSpace(req.APIKey); apiKey != "" {
+		tmpl.APIKey = apiKey
+	}
+	if req.IsActive != nil {
+		tmpl.IsActive = *req.IsActive
+	}
+
+	if err := s.templateRepo.Update(tmpl); err != nil {
+		return nil, err
+	}
+	resp := tmpl.ToAdminResponse()
+	return &resp, nil
+}
+
+// SetTemplateActive toggles report template availability.
+func (s *ReportService) SetTemplateActive(id string, active bool) (*model.ReportTemplateAdminResponse, error) {
+	tmpl, err := s.templateRepo.FindAnyByID(strings.TrimSpace(id))
+	if err != nil {
+		return nil, err
+	}
+	if tmpl == nil {
+		return nil, ErrReportTemplateNotFound
+	}
+	tmpl.IsActive = active
+	if err := s.templateRepo.Update(tmpl); err != nil {
+		return nil, err
+	}
+	resp := tmpl.ToAdminResponse()
+	return &resp, nil
+}
+
+// DeleteTemplate deletes an inactive report template.
+func (s *ReportService) DeleteTemplate(id string) error {
+	tmpl, err := s.templateRepo.FindAnyByID(strings.TrimSpace(id))
+	if err != nil {
+		return err
+	}
+	if tmpl == nil {
+		return ErrReportTemplateNotFound
+	}
+	if tmpl.IsActive {
+		return ErrReportTemplateActive
+	}
+	return s.templateRepo.DeleteByID(tmpl.ID)
 }
 
 func validateReportAPIEndpoint(rawURL string) error {
