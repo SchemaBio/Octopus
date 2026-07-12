@@ -95,6 +95,18 @@ go mod download
 go run cmd/server/main.go
 ```
 
+### YiJian 前端联调（seed 演示数据）
+
+纯 UI 开发可连接 Supabase/本地 Postgres，关闭 Sepiida，并灌入假样本/任务/变异结果：
+
+```bash
+go run ./cmd/seed        # 幂等
+go run ./cmd/seed -reset # 清空 seed 后重插
+```
+
+完整本地开发指南：[docs/local-development.md](docs/local-development.md)  
+前端联调速查：[docs/dev-frontend.md](docs/dev-frontend.md)
+
 ## API 接口
 
 ### 认证 (公开接口)
