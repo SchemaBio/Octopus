@@ -28,6 +28,7 @@ func (h *UploadHandler) CreateJob(c *gin.Context) {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
+	orgID, _ := middleware.GetCurrentOrg(c)
 
 	var req model.UploadJobCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -35,7 +36,7 @@ func (h *UploadHandler) CreateJob(c *gin.Context) {
 		return
 	}
 
-	job, files, presignedURLs, err := h.svc.CreateJob(c.Request.Context(), userID, &req)
+	job, files, presignedURLs, err := h.svc.CreateJob(c.Request.Context(), userID, orgID, &req)
 	if err != nil {
 		ErrorInternal(c, err.Error())
 		return
@@ -90,6 +91,74 @@ func (h *UploadHandler) ListJobs(c *gin.Context) {
 	}
 
 	SuccessList(c, items, total, query.Page, query.PageSize)
+}
+
+// ListFiles returns the file-level audit list for Cuttlefish (storage_path,
+// file_size, org_id exposed for admin/monitoring only). Cross-org for
+// SUPER_ADMIN (reachable via applyExternalAuth mapping); org-scoped otherwise.
+func (h *UploadHandler) ListFiles(c *gin.Context) {
+	var query model.UploadFileListQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	if query.Page == 0 {
+		query.Page = 1
+	}
+	if query.PageSize == 0 {
+		query.PageSize = 10
+	}
+
+	userID, _, role, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	if role == string(model.SystemRoleSuperAdmin) {
+		query.IncludeAll = true
+	} else if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg && orgID != "" {
+		query.ExternalOrgID = orgID
+	} else {
+		query.UserID = userID
+	}
+
+	resp, err := h.svc.ListFiles(c.Request.Context(), &query)
+	if err != nil {
+		ErrorInternal(c, err.Error())
+		return
+	}
+	SuccessList(c, resp.Items, resp.Total, query.Page, query.PageSize)
+}
+
+// GetFileStats returns total file count and total uploaded bytes (completed
+// files) under the same scope. Separate from ListFiles because SuccessList's
+// fixed envelope cannot carry total_bytes without polluting all list endpoints.
+func (h *UploadHandler) GetFileStats(c *gin.Context) {
+	var query model.UploadFileListQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+
+	userID, _, role, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	if role == string(model.SystemRoleSuperAdmin) {
+		query.IncludeAll = true
+	} else if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg && orgID != "" {
+		query.ExternalOrgID = orgID
+	} else {
+		query.UserID = userID
+	}
+
+	total, bytes, err := h.svc.GetFileStats(c.Request.Context(), &query)
+	if err != nil {
+		ErrorInternal(c, err.Error())
+		return
+	}
+	Success(c, gin.H{"total": total, "total_bytes": bytes})
 }
 
 func (h *UploadHandler) GetJob(c *gin.Context) {

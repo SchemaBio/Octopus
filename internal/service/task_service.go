@@ -945,6 +945,26 @@ func (s *TaskService) ListTasks(ctx context.Context, query *model.TaskListQuery)
 	}, nil
 }
 
+// ListTasksAudit lists tasks with the enriched audit response shape (for
+// cross-org monitoring consumers like Cuttlefish). Reuses PaginateByQuery,
+// which now honors Search/CreatedSince/UpdatedSince filters.
+func (s *TaskService) ListTasksAudit(ctx context.Context, query *model.TaskListQuery) (*model.TaskAuditListResponse, error) {
+	tasks, total, err := s.repo.PaginateByQuery(query)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]model.TaskAuditResponse, len(tasks))
+	for i, task := range tasks {
+		items[i] = task.ToAuditResponse()
+	}
+
+	return &model.TaskAuditListResponse{
+		Total: total,
+		Items: items,
+	}, nil
+}
+
 // CancelTask cancels a running task
 func (s *TaskService) CancelTask(ctx context.Context, id string, actor model.OverlayActor) error {
 	s.mu.Lock()

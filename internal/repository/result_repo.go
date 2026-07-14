@@ -34,7 +34,7 @@ func (r *ResultRepository) PaginateSNVIndels(query *model.SNVIndelListQuery) ([]
 	db := r.db.Model(&model.SNVIndel{}).Where("task_id = ?", query.TaskID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
-		db = db.Where("gene LIKE ? OR hgvsc LIKE ? OR hgvsp LIKE ?", s, s, s)
+		db = db.Where("gene LIKE ? OR hgv_sc LIKE ? OR hgv_sp LIKE ?", s, s, s)
 	}
 	if query.Gene != "" {
 		db = db.Where("gene = ?", query.Gene)
@@ -91,7 +91,7 @@ func (r *ResultRepository) PaginateCNVSegments(query *model.CNVSegmentListQuery)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
 		db = db.Where(
-			"chromosome LIKE ? OR dosage_genes LIKE ? OR gen_cc_ad_genes LIKE ? OR iscn LIKE ? OR classification LIKE ?",
+			"chromosome LIKE ? OR dosage_genes LIKE ? OR gen_ccad_genes LIKE ? OR iscn LIKE ? OR classification LIKE ?",
 			s, s, s, s, s,
 		)
 	}

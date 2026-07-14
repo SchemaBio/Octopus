@@ -47,16 +47,17 @@ const (
 )
 
 type UploadJob struct {
-	ID        uint            `json:"-" gorm:"primaryKey"`
-	UUID      string          `json:"id" gorm:"uniqueIndex;size:36;not null"`
-	UserID    uint            `json:"user_id" gorm:"index;not null"`
-	SampleID  string          `json:"sample_id" gorm:"size:36;index"`
-	Name      string          `json:"name" gorm:"size:255;not null"`
-	FileType  UploadFileType  `json:"file_type" gorm:"size:50;not null"`
-	Provider  UploadProvider  `json:"provider" gorm:"size:20;not null;default:local"`
-	Status    UploadJobStatus `json:"status" gorm:"size:20;not null;default:pending"`
-	CreatedAt time.Time       `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt time.Time       `json:"updated_at" gorm:"type:timestamptz"`
+	ID            uint            `json:"-" gorm:"primaryKey"`
+	UUID          string          `json:"id" gorm:"uniqueIndex;size:36;not null"`
+	UserID        uint            `json:"user_id" gorm:"index;not null"`
+	ExternalOrgID string          `json:"-" gorm:"size:100;index"` // optional external tenant reference (mirrors Task.ExternalOrgID)
+	SampleID      string          `json:"sample_id" gorm:"size:36;index"`
+	Name          string          `json:"name" gorm:"size:255;not null"`
+	FileType      UploadFileType  `json:"file_type" gorm:"size:50;not null"`
+	Provider      UploadProvider  `json:"provider" gorm:"size:20;not null;default:local"`
+	Status        UploadJobStatus `json:"status" gorm:"size:20;not null;default:pending"`
+	CreatedAt     time.Time       `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt     time.Time       `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 type UploadFile struct {
@@ -153,6 +154,44 @@ func UploadFileToResponse(file *UploadFile) UploadFileResponse {
 		Status:    file.Status,
 		CreatedAt: file.CreatedAt.Format(time.RFC3339),
 	}
+}
+
+// UploadFileListQuery is the query parameters for the file-level audit list
+// endpoint (GET /upload/files). OrgID is an explicit admin cross-org filter;
+// the internal scope fields (UserID/ExternalOrgID/IncludeAll) are set by the
+// handler from the caller identity, mirroring TaskListQuery scoping.
+type UploadFileListQuery struct {
+	Page     int        `form:"page" binding:"min=1"`
+	PageSize int        `form:"page_size" binding:"min=1,max=100"`
+	Status   FileStatus `form:"status"`
+	Search   string     `form:"search"` // matches file_name ILIKE
+	OrgID    string     `form:"org_id"` // admin cross-org filter
+	// internal scope (set by handler, not bound from query):
+	UserID        uint   `json:"-"`
+	ExternalOrgID string `json:"-"`
+	IncludeAll    bool   `json:"-"`
+}
+
+// UploadFileAuditResponse mirrors UploadFileResponse but exposes audit fields
+// Cuttlefish needs (storage_path, org_id, updated_at). It is for admin/audit
+// consumers only and never reaches browsers via UploadFileResponse.
+type UploadFileAuditResponse struct {
+	ID          string     `json:"id"`
+	JobID       string     `json:"job_id"`
+	FileName    string     `json:"file_name"`
+	StoragePath string     `json:"storage_path"`
+	FileSize    int64      `json:"file_size"`
+	ReadType    ReadType   `json:"read_type"`
+	Status      FileStatus `json:"status"`
+	OrgID       string     `json:"org_id,omitempty"`
+	CreatedAt   string     `json:"created_at"`
+	UpdatedAt   string     `json:"updated_at"`
+}
+
+// UploadFileListResponse is the list envelope for the file-level audit endpoint.
+type UploadFileListResponse struct {
+	Total int64                    `json:"total"`
+	Items []UploadFileAuditResponse `json:"items"`
 }
 
 func (UploadJob) TableName() string {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/bioinfo/schema-platform/internal/config"
 	"github.com/bioinfo/schema-platform/internal/model"
@@ -66,7 +67,7 @@ func (s *UploadService) getUserStorageFolder(ctx context.Context, userID uint) (
 	return user.StorageFolder, nil
 }
 
-func (s *UploadService) CreateJob(ctx context.Context, userID uint, req *model.UploadJobCreateRequest) (*model.UploadJob, []*model.UploadFile, []string, error) {
+func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string, req *model.UploadJobCreateRequest) (*model.UploadJob, []*model.UploadFile, []string, error) {
 	if len(req.Files) == 0 {
 		return nil, nil, nil, fmt.Errorf("at least one file is required")
 	}
@@ -85,13 +86,14 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, req *model.U
 
 	jobUUID := uuid.New().String()
 	job := &model.UploadJob{
-		UUID:     jobUUID,
-		UserID:   userID,
-		SampleID: req.SampleID,
-		Name:     req.Name,
-		FileType: req.FileType,
-		Provider: model.UploadProviderLocal,
-		Status:   model.UploadJobStatusPending,
+		UUID:          jobUUID,
+		UserID:        userID,
+		ExternalOrgID: orgID,
+		SampleID:      req.SampleID,
+		Name:          req.Name,
+		FileType:      req.FileType,
+		Provider:      model.UploadProviderLocal,
+		Status:        model.UploadJobStatusPending,
 	}
 
 	if err := s.jobRepo.Create(job); err != nil {
@@ -264,6 +266,46 @@ func (s *UploadService) DeleteJob(ctx context.Context, userID uint, uuid string)
 
 func (s *UploadService) GetJobFiles(ctx context.Context, jobID uint) ([]model.UploadFile, error) {
 	return s.fileRepo.FindByJobID(jobID)
+}
+
+// ListFiles returns the file-level audit list (org/user scoped by the handler).
+func (s *UploadService) ListFiles(ctx context.Context, query *model.UploadFileListQuery) (*model.UploadFileListResponse, error) {
+	rows, total, err := s.fileRepo.PaginateFilesByQuery(query)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]model.UploadFileAuditResponse, len(rows))
+	for i, row := range rows {
+		items[i] = model.UploadFileAuditResponse{
+			ID:          row.UUID,
+			JobID:       row.JobUUID,
+			FileName:    row.FileName,
+			StoragePath: row.StorageKey,
+			FileSize:    row.FileSize,
+			ReadType:    row.ReadType,
+			Status:      row.Status,
+			OrgID:       row.OrgID,
+			CreatedAt:   row.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:   row.UpdatedAt.Format(time.RFC3339),
+		}
+	}
+
+	return &model.UploadFileListResponse{Total: total, Items: items}, nil
+}
+
+// GetFileStats returns the total count and total bytes of completed files
+// under the same scope (for the /upload/files/stats aggregate endpoint).
+func (s *UploadService) GetFileStats(ctx context.Context, query *model.UploadFileListQuery) (int64, int64, error) {
+	_, total, err := s.fileRepo.PaginateFilesByQuery(query)
+	if err != nil {
+		return 0, 0, err
+	}
+	bytes, err := s.fileRepo.SumFileSize(query)
+	if err != nil {
+		return total, 0, err
+	}
+	return total, bytes, nil
 }
 
 func (s *UploadService) GetLocalFilePath(ctx context.Context, userID uint, fileUUID string) (string, error) {

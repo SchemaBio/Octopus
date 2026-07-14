@@ -52,7 +52,7 @@ func (r *HistoryRepository) scopedSNVDetectionRecords(gene, hgvsc, hgvsp string,
 			tasks.pipeline, tasks.pipeline_version, tasks.sample_id, tasks.internal_id,
 			result_snv_indels.reviewed_at, result_snv_indels.reviewed_by`).
 		Joins("JOIN tasks ON tasks.uuid = result_snv_indels.task_id").
-		Where("result_snv_indels.gene = ? AND result_snv_indels.hgvsc = ? AND result_snv_indels.hgvsp = ? AND result_snv_indels.reviewed = ?",
+		Where("result_snv_indels.gene = ? AND result_snv_indels.hgv_sc = ? AND result_snv_indels.hgv_sp = ? AND result_snv_indels.reviewed = ?",
 			gene, hgvsc, hgvsp, true)
 	if query != nil && !query.IncludeAll {
 		if query.ExternalOrgID != "" {
@@ -103,7 +103,7 @@ func (r *HistoryRepository) GetGroupedSNVIndels(query *model.HistoryListQuery) (
 	// First, get grouped results using raw SQL
 	baseQuery := r.scopedHistory(&model.SNVIndel{}, "result_snv_indels", query).
 		Select(`
-			gene, hgvsc, hgvsp,
+			gene, hgv_sc, hgv_sp,
 			MIN(transcript) AS transcript,
 			MIN(acmg_classification) AS acmg_classification,
 			MIN(consequence) AS consequence,
@@ -114,20 +114,20 @@ func (r *HistoryRepository) GetGroupedSNVIndels(query *model.HistoryListQuery) (
 			MIN(reviewed_at) as first_detected_at,
 			MAX(reviewed_at) as last_detected_at
 		`).
-		Group("gene, hgvsc, hgvsp")
+		Group("gene, hgv_sc, hgv_sp")
 
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
-		baseQuery = baseQuery.Where("gene LIKE ? OR hgvsc LIKE ? OR hgvsp LIKE ?", s, s, s)
+		baseQuery = baseQuery.Where("gene LIKE ? OR hgv_sc LIKE ? OR hgv_sp LIKE ?", s, s, s)
 	}
 
 	// Count distinct groups
 	var total int64
 	countQuery := r.scopedHistory(&model.SNVIndel{}, "result_snv_indels", query).
-		Select("COUNT(DISTINCT gene || '-' || hgvsc || '-' || hgvsp)")
+		Select("COUNT(DISTINCT gene || '-' || hgv_sc || '-' || hgv_sp)")
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
-		countQuery = countQuery.Where("gene LIKE ? OR hgvsc LIKE ? OR hgvsp LIKE ?", s, s, s)
+		countQuery = countQuery.Where("gene LIKE ? OR hgv_sc LIKE ? OR hgv_sp LIKE ?", s, s, s)
 	}
 	countQuery.Count(&total)
 
@@ -142,7 +142,7 @@ func (r *HistoryRepository) GetGroupedSNVIndels(query *model.HistoryListQuery) (
 		case "gene":
 			orderClause = fmt.Sprintf("gene %s", dir)
 		case "hgvsc":
-			orderClause = fmt.Sprintf("hgvsc %s", dir)
+			orderClause = fmt.Sprintf("hgv_sc %s", dir)
 		case "detectionCount":
 			orderClause = fmt.Sprintf("detection_count %s", dir)
 		case "firstDetectedAt":
@@ -214,7 +214,7 @@ func (r *HistoryRepository) GetGroupedCNVSegments(query *model.HistoryListQuery)
 			GREATEST(end_position - start_position + 1, 0) AS length,
 			type,
 			CAST(ROUND(AVG(COALESCE(copy_ratio, CASE WHEN type = 'DUP' THEN 1.5 ELSE 0.5 END)) * 2) AS INTEGER) AS copy_number,
-			MIN(COALESCE(NULLIF(dosage_genes, ''), NULLIF(gen_cc_ad_genes, ''), '[]')) AS genes,
+			MIN(COALESCE(NULLIF(dosage_genes, ''), NULLIF(gen_ccad_genes, ''), '[]')) AS genes,
 			AVG(COALESCE(weight, 1.0)) AS confidence,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
 		Group("chromosome, start_position, end_position, type")
@@ -222,7 +222,7 @@ func (r *HistoryRepository) GetGroupedCNVSegments(query *model.HistoryListQuery)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
 		base = base.Where(
-			"chromosome LIKE ? OR dosage_genes LIKE ? OR gen_cc_ad_genes LIKE ? OR iscn LIKE ? OR classification LIKE ?",
+			"chromosome LIKE ? OR dosage_genes LIKE ? OR gen_ccad_genes LIKE ? OR iscn LIKE ? OR classification LIKE ?",
 			s, s, s, s, s,
 		)
 	}
@@ -233,7 +233,7 @@ func (r *HistoryRepository) GetGroupedCNVSegments(query *model.HistoryListQuery)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
 		countQuery = countQuery.Where(
-			"chromosome LIKE ? OR dosage_genes LIKE ? OR gen_cc_ad_genes LIKE ? OR iscn LIKE ? OR classification LIKE ?",
+			"chromosome LIKE ? OR dosage_genes LIKE ? OR gen_ccad_genes LIKE ? OR iscn LIKE ? OR classification LIKE ?",
 			s, s, s, s, s,
 		)
 	}

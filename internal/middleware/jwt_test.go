@@ -42,7 +42,9 @@ func TestJWTAuthAcceptsTrustedExternalAuthHeaders(t *testing.T) {
 		if !ok || !hasOrg {
 			t.Fatalf("expected external user and organization in context")
 		}
-		if userID != 42 || email != "user@example.com" || role != "org_admin" || orgID != "org-1" {
+		// Squid forwards the platform-admin overlay role; Octopus must map it
+		// to its own SUPER_ADMIN (not pass "PLATFORM_ADMIN" through verbatim).
+		if userID != 42 || email != "user@example.com" || role != string(model.SystemRoleSuperAdmin) || orgID != "org-1" {
 			t.Fatalf("unexpected context values: userID=%d email=%q role=%q orgID=%q", userID, email, role, orgID)
 		}
 		c.Status(http.StatusOK)
@@ -52,7 +54,7 @@ func TestJWTAuthAcceptsTrustedExternalAuthHeaders(t *testing.T) {
 	req.Header.Set("X-Octopus-External-Auth", "Bearer shared-overlay-secret")
 	req.Header.Set("X-Octopus-User-ID", "42")
 	req.Header.Set("X-Octopus-User-Email", "user@example.com")
-	req.Header.Set("X-Octopus-User-Role", "org_admin")
+	req.Header.Set("X-Octopus-User-Role", "PLATFORM_ADMIN")
 	req.Header.Set("X-Octopus-Org-ID", "org-1")
 	resp := httptest.NewRecorder()
 
@@ -60,6 +62,54 @@ func TestJWTAuthAcceptsTrustedExternalAuthHeaders(t *testing.T) {
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected trusted external auth to pass, got %d", resp.Code)
+	}
+}
+
+// TestJWTAuthMapsOverlayRoles asserts the trusted-overlay role translation:
+// ORG_USER -> USER, and any unrecognized role name degrades to USER
+// (least-privilege) rather than escalating or rejecting.
+func TestJWTAuthMapsOverlayRoles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cases := []struct {
+		header string
+		want   string
+	}{
+		{"ORG_USER", string(model.SystemRoleUser)},
+		{"org_user", string(model.SystemRoleUser)}, // case-insensitive
+		{"org_admin", string(model.SystemRoleUser)}, // unknown -> USER
+		{"", string(model.SystemRoleUser)},          // empty -> USER
+		{"SUPER_ADMIN", string(model.SystemRoleSuperAdmin)}, // already Octopus-shaped
+	}
+	for _, tc := range cases {
+		t.Run(tc.header, func(t *testing.T) {
+			router := gin.New()
+			router.Use(JWTAuth(testExternalAuthConfig()))
+			router.GET("/protected", func(c *gin.Context) {
+				_, _, role, ok := GetCurrentUser(c)
+				if !ok {
+					t.Fatalf("expected external user in context")
+				}
+				if role != tc.want {
+					t.Fatalf("role %q should map to %q, got %q", tc.header, tc.want, role)
+				}
+				c.Status(http.StatusOK)
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+			req.Header.Set("X-Octopus-External-Auth", "Bearer shared-overlay-secret")
+			req.Header.Set("X-Octopus-User-ID", "42")
+			req.Header.Set("X-Octopus-User-Email", "user@example.com")
+			if tc.header != "" {
+				req.Header.Set("X-Octopus-User-Role", tc.header)
+			}
+			resp := httptest.NewRecorder()
+			router.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusOK {
+				t.Fatalf("expected trusted external auth to pass, got %d", resp.Code)
+			}
+		})
 	}
 }
 

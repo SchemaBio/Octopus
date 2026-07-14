@@ -35,3 +35,36 @@ type ResultImportBatch struct {
 func (ResultImportBatch) TableName() string {
 	return "result_import_batches"
 }
+
+// ResultImportBatchListQuery is the query parameters for listing import
+// batches (GET /result-import/batches). Org scoping is applied by joining
+// to tasks (ResultImportBatch carries no org column itself).
+type ResultImportBatchListQuery struct {
+	Page     int                     `form:"page" binding:"min=1"`
+	PageSize int                     `form:"page_size" binding:"min=1,max=100"`
+	Status   ResultImportBatchStatus `form:"status"` // filter; "failed" for risk signals
+	Since    *time.Time               `form:"since"` // started_at >= since (RFC3339); nil = no filter
+	// internal scope (set by handler, not bound from query):
+	IncludeAll    bool   `json:"-"`
+	ExternalOrgID string `json:"-"`
+	UserID        uint   `json:"-"`
+}
+
+// ResultImportBatchResponse is the audit shape for an import batch.
+type ResultImportBatchResponse struct {
+	ID          uint                    `json:"id"`
+	TaskUUID    string                  `json:"task_uuid"`
+	Source      string                  `json:"source"`
+	Status      ResultImportBatchStatus `json:"status"`
+	Fingerprint string                  `json:"fingerprint"`
+	Error       string                  `json:"error,omitempty"`
+	StartedAt   string                  `json:"started_at"`
+	FinishedAt  string                  `json:"finished_at,omitempty"`
+	OrgID       string                  `json:"org_id,omitempty"` // from joined task
+}
+
+// ResultImportBatchListResponse is the list envelope for import batches.
+type ResultImportBatchListResponse struct {
+	Total int64                       `json:"total"`
+	Items []ResultImportBatchResponse `json:"items"`
+}

@@ -115,6 +115,8 @@ func New(cfg *config.Config) *gin.Engine {
 		{
 			tasks.POST("", taskHandler.CreateTask)
 			tasks.GET("", taskHandler.ListTasks)
+			tasks.GET("/audit", taskHandler.ListTasksAudit)
+			tasks.GET("/stats", taskHandler.GetTaskStats)
 			tasks.GET("/:id", taskHandler.GetTask)
 			tasks.PUT("/:id", taskHandler.UpdateTask)
 			tasks.GET("/:id/progress", taskHandler.GetTaskProgress)
@@ -310,7 +312,17 @@ func New(cfg *config.Config) *gin.Engine {
 			uploads.GET("/jobs/:uuid", uploadHandler.GetJob)
 			uploads.DELETE("/jobs/:uuid", uploadHandler.DeleteJob)
 			uploads.POST("/local/:file_uuid", uploadHandler.UploadLocal)
+			uploads.GET("/files", uploadHandler.ListFiles)
+			uploads.GET("/files/stats", uploadHandler.GetFileStats)
 			uploads.GET("/files/:file_uuid/download", uploadHandler.GetDownloadURL)
+		}
+
+		// ========== Result import batches (audit, protected) ==========
+		resultImportHandler := handler.NewResultImportHandler(cfg)
+		resultImport := v1.Group("/result-import")
+		resultImport.Use(middleware.JWTAuth(cfg))
+		{
+			resultImport.GET("/batches", resultImportHandler.ListBatches)
 		}
 	}
 

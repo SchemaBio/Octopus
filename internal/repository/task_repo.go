@@ -127,6 +127,16 @@ func (r *TaskRepository) PaginateByQuery(query *model.TaskListQuery) ([]model.Ta
 	if query.SampleID != "" {
 		db = db.Where("sample_id = ?", query.SampleID)
 	}
+	if query.Search != "" {
+		like := "%" + query.Search + "%"
+		db = db.Where("name ILIKE ? OR internal_id ILIKE ? OR error ILIKE ?", like, like, like)
+	}
+	if query.CreatedSince != nil {
+		db = db.Where("created_at >= ?", *query.CreatedSince)
+	}
+	if query.UpdatedSince != nil {
+		db = db.Where("updated_at >= ?", *query.UpdatedSince)
+	}
 
 	var total int64
 	err := db.Count(&total).Error

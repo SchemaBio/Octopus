@@ -14,6 +14,28 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// mapExternalRole translates trusted-overlay role names (forwarded by Squid,
+// e.g. PLATFORM_ADMIN / ORG_USER) into Octopus SystemRole values.
+//
+// The overlay is trusted on identity (it proved the shared secret), but role
+// strings are NOT a security boundary — the secret is. Unknown or empty
+// roles therefore collapse to USER (least privilege / fail-closed) rather
+// than escalating: we never map an unrecognized string to SUPER_ADMIN. An
+// already-Octopus-shaped role ("SUPER_ADMIN"/"USER") passes through unchanged.
+func mapExternalRole(role string) string {
+	switch strings.ToUpper(strings.TrimSpace(role)) {
+	case "PLATFORM_ADMIN", "PLATFORMADMIN":
+		return string(model.SystemRoleSuperAdmin)
+	case "ORG_USER", "ORGUSER", "USER":
+		return string(model.SystemRoleUser)
+	default:
+		if role == string(model.SystemRoleSuperAdmin) || role == string(model.SystemRoleUser) {
+			return role
+		}
+		return string(model.SystemRoleUser)
+	}
+}
+
 func applyExternalAuth(c *gin.Context, cfg *config.Config) bool {
 	if cfg == nil || !cfg.ExternalAuth.Enabled || cfg.ExternalAuth.SharedSecret == "" {
 		return false
@@ -35,10 +57,7 @@ func applyExternalAuth(c *gin.Context, cfg *config.Config) bool {
 	}
 
 	email := strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.EmailHeader))
-	role := strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.RoleHeader))
-	if role == "" {
-		role = string(model.SystemRoleUser)
-	}
+	role := mapExternalRole(c.GetHeader(cfg.ExternalAuth.RoleHeader))
 	orgID := strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.OrgIDHeader))
 
 	c.Set("user_id", uint(userID))
