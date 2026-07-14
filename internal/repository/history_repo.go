@@ -579,7 +579,7 @@ func (r *HistoryRepository) GetGroupedUPDRegions(query *model.HistoryListQuery) 
 		Select(`chromosome, start_position, end_position,
 			GREATEST(end_position - start_position + 1, 0) AS length,
 			type,
-			MIN(genes) AS genes,
+			MIN(genes::text)::jsonb AS genes,
 			MIN(parent_of_origin) AS parent_of_origin,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
 		Group("chromosome, start_position, end_position, type")
