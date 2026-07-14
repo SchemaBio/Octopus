@@ -1,7 +1,7 @@
 package repository
 
 import (
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/model"
 )
 
 // TaskRepository provides task-specific operations

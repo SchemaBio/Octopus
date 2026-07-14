@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bioinfo/schema-platform/internal/config"
-	"github.com/bioinfo/schema-platform/internal/model"
-	"github.com/bioinfo/schema-platform/internal/repository"
+	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/repository"
 )
 
 // AIFilter controls which variants are sent to the LLM

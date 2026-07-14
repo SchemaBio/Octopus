@@ -4,10 +4,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/bioinfo/schema-platform/internal/config"
-	"github.com/bioinfo/schema-platform/internal/database"
-	"github.com/bioinfo/schema-platform/internal/model"
-	"github.com/bioinfo/schema-platform/internal/repository"
+	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/database"
+	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/google/uuid"
 )
 

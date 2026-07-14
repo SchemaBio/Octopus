@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/bioinfo/schema-platform/internal/database"
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/database"
+	"github.com/SchemaBio/Octopus/internal/model"
 	"gorm.io/gorm"
 )
 

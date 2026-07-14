@@ -3,7 +3,7 @@ package handler
 import (
 	"testing"
 
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/model"
 )
 
 func TestValidateUserSelfMutationRejectsDangerousSelfChanges(t *testing.T) {

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/bioinfo/schema-platform/internal/config"
-	"github.com/bioinfo/schema-platform/internal/model"
-	"github.com/bioinfo/schema-platform/internal/repository"
+	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/repository"
 )
 
 // ResultService handles result business logic

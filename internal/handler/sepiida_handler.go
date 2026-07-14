@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/bioinfo/schema-platform/internal/config"
-	"github.com/bioinfo/schema-platform/internal/sepiida"
+	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/sepiida"
 	"github.com/gin-gonic/gin"
 )
 

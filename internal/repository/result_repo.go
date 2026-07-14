@@ -3,8 +3,8 @@ package repository
 import (
 	"fmt"
 
-	"github.com/bioinfo/schema-platform/internal/database"
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/database"
+	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

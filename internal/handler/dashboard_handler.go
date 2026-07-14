@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"github.com/bioinfo/schema-platform/internal/config"
-	"github.com/bioinfo/schema-platform/internal/database"
-	"github.com/bioinfo/schema-platform/internal/middleware"
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/database"
+	"github.com/SchemaBio/Octopus/internal/middleware"
+	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

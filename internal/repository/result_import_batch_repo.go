@@ -3,7 +3,7 @@ package repository
 import (
 	"time"
 
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/model"
 	"gorm.io/gorm"
 )
 

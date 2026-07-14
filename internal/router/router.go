@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bioinfo/schema-platform/internal/config"
-	"github.com/bioinfo/schema-platform/internal/handler"
-	"github.com/bioinfo/schema-platform/internal/middleware"
+	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/handler"
+	"github.com/SchemaBio/Octopus/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )

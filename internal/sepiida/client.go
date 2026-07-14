@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/model"
 )
 
 // Client is the Sepiida API client

@@ -4,12 +4,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bioinfo/schema-platform/internal/config"
-	"github.com/bioinfo/schema-platform/internal/database"
-	"github.com/bioinfo/schema-platform/internal/middleware"
-	"github.com/bioinfo/schema-platform/internal/model"
-	"github.com/bioinfo/schema-platform/internal/repository"
-	"github.com/bioinfo/schema-platform/internal/service"
+	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/database"
+	"github.com/SchemaBio/Octopus/internal/middleware"
+	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/repository"
+	"github.com/SchemaBio/Octopus/internal/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

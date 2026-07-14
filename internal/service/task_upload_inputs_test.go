@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/model"
 )
 
 func TestApplyUploadFilesToInputsReplacesPendingStorageKeys(t *testing.T) {

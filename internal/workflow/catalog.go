@@ -6,7 +6,7 @@ import (
 	"path"
 	"sort"
 
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/model"
 )
 
 // ImageWorkflowDir is the default WDL workflow directory inside the container.

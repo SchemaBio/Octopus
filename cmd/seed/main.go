@@ -10,10 +10,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/bioinfo/schema-platform/internal/config"
-	"github.com/bioinfo/schema-platform/internal/database"
-	"github.com/bioinfo/schema-platform/internal/model"
-	"github.com/bioinfo/schema-platform/internal/service"
+	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/database"
+	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/service"
 	"gorm.io/gorm"
 )
 

@@ -3,7 +3,7 @@ package middleware
 import (
 	"strings"
 
-	"github.com/bioinfo/schema-platform/internal/config"
+	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/gin-gonic/gin"
 )
 

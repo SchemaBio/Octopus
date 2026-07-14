@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/bioinfo/schema-platform/internal/middleware"
-	"github.com/bioinfo/schema-platform/internal/model"
-	"github.com/bioinfo/schema-platform/internal/repository"
+	"github.com/SchemaBio/Octopus/internal/middleware"
+	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/gin-gonic/gin"
 )
 

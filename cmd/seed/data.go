@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/model"
 )
 
 func ptrInt(v int) *int { return &v }

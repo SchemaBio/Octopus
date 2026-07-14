@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bioinfo/schema-platform/internal/config"
+	"github.com/SchemaBio/Octopus/internal/config"
 )
 
 // Archiver provides read-only access to archived task results.

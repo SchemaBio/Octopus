@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"github.com/bioinfo/schema-platform/internal/config"
+	"github.com/SchemaBio/Octopus/internal/config"
 )
 
 func TestStatusManagerRejectsInvalidUpdates(t *testing.T) {

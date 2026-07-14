@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bioinfo/schema-platform/internal/config"
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/gin-gonic/gin"
 )
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bioinfo/schema-platform/internal/model"
+	"github.com/SchemaBio/Octopus/internal/model"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

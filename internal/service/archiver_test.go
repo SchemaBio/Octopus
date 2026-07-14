@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bioinfo/schema-platform/internal/config"
+	"github.com/SchemaBio/Octopus/internal/config"
 )
 
 func TestResolveArchiveRegularFileRejectsOutsidePath(t *testing.T) {
