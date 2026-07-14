@@ -1,4 +1,4 @@
-module github.com/bioinfo/schema-platform
+module github.com/SchemaBio/Octopus
 
 go 1.23
 
