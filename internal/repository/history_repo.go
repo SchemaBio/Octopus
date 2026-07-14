@@ -576,7 +576,11 @@ func (r *HistoryRepository) GetGroupedUPDRegions(query *model.HistoryListQuery) 
 	}
 
 	base := r.scopedHistory(&model.UPDRegion{}, "result_upd_regions", query).
-		Select(`chromosome, start_position, end_position, length, type, genes, parent_of_origin,
+		Select(`chromosome, start_position, end_position,
+			GREATEST(end_position - start_position + 1, 0) AS length,
+			type,
+			MIN(genes) AS genes,
+			MIN(parent_of_origin) AS parent_of_origin,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
 		Group("chromosome, start_position, end_position, type")
 
@@ -586,8 +590,13 @@ func (r *HistoryRepository) GetGroupedUPDRegions(query *model.HistoryListQuery) 
 	}
 
 	var total int64
-	r.scopedHistory(&model.UPDRegion{}, "result_upd_regions", query).
-		Select("COUNT(DISTINCT chromosome || '-' || start_position || '-' || end_position || '-' || type)").Count(&total)
+	countQuery := r.scopedHistory(&model.UPDRegion{}, "result_upd_regions", query).
+		Select("COUNT(DISTINCT chromosome || '-' || start_position || '-' || end_position || '-' || type)")
+	if query.Search != "" {
+		s := "%" + query.Search + "%"
+		countQuery = countQuery.Where("chromosome LIKE ? OR genes LIKE ?", s, s)
+	}
+	countQuery.Count(&total)
 
 	page, pageSize := normalizePage(query)
 
