@@ -114,8 +114,8 @@ type UploadFileResponse struct {
 }
 
 type UploadJobListQuery struct {
-	Page     int             `form:"page" binding:"min=1"`
-	PageSize int             `form:"page_size" binding:"min=1,max=100"`
+	Page     int             `form:"page" binding:"omitempty,min=1"`
+	PageSize int             `form:"page_size" binding:"omitempty,min=1,max=100"`
 	Status   UploadJobStatus `form:"status"`
 	FileType UploadFileType  `form:"file_type"`
 }
@@ -161,8 +161,8 @@ func UploadFileToResponse(file *UploadFile) UploadFileResponse {
 // the internal scope fields (UserID/ExternalOrgID/IncludeAll) are set by the
 // handler from the caller identity, mirroring TaskListQuery scoping.
 type UploadFileListQuery struct {
-	Page     int        `form:"page" binding:"min=1"`
-	PageSize int        `form:"page_size" binding:"min=1,max=100"`
+	Page     int        `form:"page" binding:"omitempty,min=1"`
+	PageSize int        `form:"page_size" binding:"omitempty,min=1,max=100"`
 	Status   FileStatus `form:"status"`
 	Search   string     `form:"search"` // matches file_name ILIKE
 	OrgID    string     `form:"org_id"` // admin cross-org filter
@@ -190,7 +190,7 @@ type UploadFileAuditResponse struct {
 
 // UploadFileListResponse is the list envelope for the file-level audit endpoint.
 type UploadFileListResponse struct {
-	Total int64                    `json:"total"`
+	Total int64                     `json:"total"`
 	Items []UploadFileAuditResponse `json:"items"`
 }
 

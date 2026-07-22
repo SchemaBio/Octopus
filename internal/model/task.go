@@ -112,8 +112,8 @@ type TaskListQuery struct {
 	Search        string     `form:"search"`        // text across name/internal_id/error
 	CreatedSince  *time.Time `form:"created_since"` // tasks created >= since (RFC3339); nil = no filter
 	UpdatedSince  *time.Time `form:"updated_since"` // tasks updated >= since (RFC3339); nil = no filter
-	Page          int        `form:"page" binding:"min=1"`
-	PageSize      int        `form:"page_size" binding:"min=1,max=100"`
+	Page          int        `form:"page" binding:"omitempty,min=1"`
+	PageSize      int        `form:"page_size" binding:"omitempty,min=1,max=100"`
 	CreatedBy     uint       `json:"-"`
 	ExternalOrgID string     `json:"-"`
 	IncludeAll    bool       `json:"-"`
@@ -174,7 +174,7 @@ type TaskAuditResponse struct {
 	ResultImportAttempts int                `json:"result_import_attempts,omitempty"`
 	Error                string             `json:"error,omitempty"`
 	CreatedAt            string             `json:"created_at"`
-	UpdatedAt           string             `json:"updated_at,omitempty"`
+	UpdatedAt            string             `json:"updated_at,omitempty"`
 	StartedAt            string             `json:"started_at,omitempty"`
 	FinishedAt           string             `json:"finished_at,omitempty"`
 	CompletedAt          string             `json:"completedAt,omitempty"` // alias of FinishedAt for compat
@@ -219,8 +219,8 @@ func (t *Task) ToAuditResponse() TaskAuditResponse {
 
 // TaskAuditListResponse mirrors TaskListResponse for the audit endpoint.
 type TaskAuditListResponse struct {
-	Total int64                `json:"total"`
-	Items []TaskAuditResponse  `json:"items"`
+	Total int64               `json:"total"`
+	Items []TaskAuditResponse `json:"items"`
 }
 
 // TaskStatsResponse is the cross-org monitoring overview for Cuttlefish. It

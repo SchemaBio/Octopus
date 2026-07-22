@@ -65,6 +65,6 @@ type SNVIndelListQuery struct {
 	Gene           string `form:"gene"`
 	Classification string `form:"classification"`
 	GeneListID     string `form:"geneListId"`
-	Page           int    `form:"page" binding:"min=1"`
-	PageSize       int    `form:"page_size" binding:"min=1,max=100"`
+	Page           int    `form:"page" binding:"omitempty,min=1"`
+	PageSize       int    `form:"page_size" binding:"omitempty,min=1,max=100"`
 }

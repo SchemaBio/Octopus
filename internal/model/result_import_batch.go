@@ -40,10 +40,10 @@ func (ResultImportBatch) TableName() string {
 // batches (GET /result-import/batches). Org scoping is applied by joining
 // to tasks (ResultImportBatch carries no org column itself).
 type ResultImportBatchListQuery struct {
-	Page     int                     `form:"page" binding:"min=1"`
-	PageSize int                     `form:"page_size" binding:"min=1,max=100"`
+	Page     int                     `form:"page" binding:"omitempty,min=1"`
+	PageSize int                     `form:"page_size" binding:"omitempty,min=1,max=100"`
 	Status   ResultImportBatchStatus `form:"status"` // filter; "failed" for risk signals
-	Since    *time.Time               `form:"since"` // started_at >= since (RFC3339); nil = no filter
+	Since    *time.Time              `form:"since"`  // started_at >= since (RFC3339); nil = no filter
 	// internal scope (set by handler, not bound from query):
 	IncludeAll    bool   `json:"-"`
 	ExternalOrgID string `json:"-"`
