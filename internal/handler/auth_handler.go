@@ -108,6 +108,58 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	Success(c, model.UserToResponse(user))
 }
 
+// UpdateMe updates self-service profile fields for the current user.
+func (h *AuthHandler) UpdateMe(c *gin.Context) {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+
+	var req model.ProfileUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+
+	user, err := h.userService.UpdateProfile(userID, &req)
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, model.UserToResponse(user))
+}
+
+// DeleteMe deletes the current non-super-admin account after email confirmation.
+func (h *AuthHandler) DeleteMe(c *gin.Context) {
+	userID, email, role, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	if role == string(model.SystemRoleSuperAdmin) {
+		ErrorBadRequest(c, "administrator accounts cannot be deleted here")
+		return
+	}
+
+	var req model.AccountDeleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(req.Email), email) {
+		ErrorBadRequest(c, "confirmation email does not match")
+		return
+	}
+
+	if err := h.userService.DeleteUser(userID); err != nil {
+		ErrorInternal(c, "failed to delete account")
+		return
+	}
+	service.ClearTokenCookies(c, &h.cfg.JWT)
+	c.Status(http.StatusNoContent)
+}
+
 // Logout handles user logout and invalidates the presented token when possible.
 func (h *AuthHandler) Logout(c *gin.Context) {
 	for _, token := range logoutTokens(c) {

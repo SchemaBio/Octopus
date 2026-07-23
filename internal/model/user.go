@@ -97,6 +97,16 @@ type ResetPasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required,min=6"`
 }
 
+// ProfileUpdateRequest is the self-service profile update payload.
+type ProfileUpdateRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+// AccountDeleteRequest is the self-service account deletion confirmation payload.
+type AccountDeleteRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
 // UserCreateRequest is the request body for creating a user (admin)
 type UserCreateRequest struct {
 	Email      string     `json:"email" binding:"required,email"`

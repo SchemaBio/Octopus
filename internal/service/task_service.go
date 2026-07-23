@@ -39,6 +39,44 @@ type TaskService struct {
 
 const maxTaskLogBytes = 2 << 20
 
+func (s *TaskService) estimateTaskMinutes(sampleID uint, uploadJob *model.UploadJob) int {
+	if sampleID != 0 {
+		var link model.SampleDataLink
+		if err := database.GetDB().Where("sample_id = ?", sampleID).First(&link).Error; err == nil {
+			read1, read1Err := s.assetRepo.FindByID(link.Read1AssetID)
+			read2, read2Err := s.assetRepo.FindByID(link.Read2AssetID)
+			if read1Err == nil && read2Err == nil &&
+				read1.Status == model.FileStatusCompleted && read2.Status == model.FileStatusCompleted &&
+				read1.FileSize > 0 && read2.FileSize > 0 {
+				return estimateTaskMinutesFromBytes(read1.FileSize + read2.FileSize)
+			}
+		}
+	}
+
+	if uploadJob != nil && uploadJob.Status == model.UploadJobStatusCompleted {
+		files, err := s.uploadFileRepo.FindByJobID(uploadJob.ID)
+		if err == nil {
+			var read1Bytes, read2Bytes int64
+			for i := range files {
+				if files[i].Status != model.FileStatusCompleted || files[i].FileSize <= 0 {
+					continue
+				}
+				switch files[i].ReadType {
+				case model.ReadTypeRead1:
+					read1Bytes = files[i].FileSize
+				case model.ReadTypeRead2:
+					read2Bytes = files[i].FileSize
+				}
+			}
+			if read1Bytes > 0 && read2Bytes > 0 {
+				return estimateTaskMinutesFromBytes(read1Bytes + read2Bytes)
+			}
+		}
+	}
+
+	return defaultTaskEstimatedMinutes
+}
+
 func NewTaskService(cfg *config.Config) *TaskService {
 	var sepClient *sepiida.Client
 	if cfg.Sepiida.Enabled && cfg.Sepiida.QueryKey != "" {
@@ -486,7 +524,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		CreatedBy:          actor.UserID,
 		ResultImportStatus: model.ResultImportStatusPending,
 		ExternalOrgID:      actor.OrgID,
-		EstimatedMinutes:   req.EstimatedMinutes,
+		EstimatedMinutes:   s.estimateTaskMinutes(sampleIDRef, uploadJob),
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}

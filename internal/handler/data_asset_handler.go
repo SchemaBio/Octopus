@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"path/filepath"
 
@@ -63,6 +64,10 @@ func (h *DataAssetHandler) Get(c *gin.Context) {
 func (h *DataAssetHandler) Download(c *gin.Context) {
 	target, filename, err := h.svc.Download(c.Request.Context(), c.Param("uuid"), taskActorFromContext(c))
 	if err != nil {
+		if errors.Is(err, service.ErrDataAssetDownloadDisabled) {
+			Error(c, http.StatusForbidden, "Data downloads are disabled in SaaS mode")
+			return
+		}
 		ErrorNotFound(c, "Data asset not found")
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -248,6 +249,26 @@ func (s *UserService) UpdateUser(id uint, req *model.UserUpdateRequest) (*model.
 		return nil, err
 	}
 
+	return user, nil
+}
+
+// UpdateProfile updates fields a user is allowed to change for their own account.
+func (s *UserService) UpdateProfile(id uint, req *model.ProfileUpdateRequest) (*model.User, error) {
+	user, err := s.repo.FindByID(id)
+	if err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, errors.New("name is required")
+	}
+	if len([]rune(name)) > 100 {
+		return nil, errors.New("name is too long")
+	}
+	user.Name = name
+	if err := s.repo.Update(user); err != nil {
+		return nil, err
+	}
 	return user, nil
 }
 

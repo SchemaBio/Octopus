@@ -82,14 +82,13 @@ type Task struct {
 
 // TaskCreateRequest is the request body for creating a task
 type TaskCreateRequest struct {
-	SampleID         string `json:"sampleId" binding:"required"`
-	InternalID       string `json:"internalId"`
-	UploadJobID      string `json:"uploadJobId"`
-	PipelineID       string `json:"pipelineId"`
-	PipelineName     string `json:"pipelineName" binding:"required"`
-	PipelineVersion  string `json:"pipelineVersion"`
-	Remark           string `json:"remark"`
-	EstimatedMinutes int    `json:"estimatedMinutes"`
+	SampleID        string `json:"sampleId" binding:"required"`
+	InternalID      string `json:"internalId"`
+	UploadJobID     string `json:"uploadJobId"`
+	PipelineID      string `json:"pipelineId"`
+	PipelineName    string `json:"pipelineName" binding:"required"`
+	PipelineVersion string `json:"pipelineVersion"`
+	Remark          string `json:"remark"`
 	// Internal fields (not from frontend, but used internally)
 	Template   string                 `json:"template,omitempty"`
 	Executor   ExecutorType           `json:"executor,omitempty"`

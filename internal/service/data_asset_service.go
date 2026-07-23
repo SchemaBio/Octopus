@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -20,15 +21,19 @@ type DataAssetService struct {
 
 type DataAssetDownload struct{ LocalPath, URL string }
 
+var ErrDataAssetDownloadDisabled = errors.New("data downloads are disabled in SaaS mode")
+
 func NewDataAssetService(cfg *config.Config) *DataAssetService {
 	return &DataAssetService{cfg: cfg, repo: repository.NewDataAssetRepository(), files: repository.NewUploadFileRepository()}
 }
 
 func (s *DataAssetService) Config() model.DataCenterConfigResponse {
+	temporary := s.cfg.Storage.RetentionDays > 0
 	return model.DataCenterConfigResponse{
-		Provider:      model.UploadProvider(s.cfg.Storage.Provider),
-		RetentionDays: s.cfg.Storage.RetentionDays,
-		Temporary:     s.cfg.Storage.RetentionDays > 0,
+		Provider:        model.UploadProvider(s.cfg.Storage.Provider),
+		RetentionDays:   s.cfg.Storage.RetentionDays,
+		Temporary:       temporary,
+		DownloadAllowed: !temporary,
 	}
 }
 
@@ -49,6 +54,9 @@ func (s *DataAssetService) Get(uuid string, actor model.OverlayActor) (*model.Da
 }
 
 func (s *DataAssetService) Download(ctx context.Context, uuid string, actor model.OverlayActor) (*DataAssetDownload, string, error) {
+	if s.cfg.Storage.RetentionDays > 0 {
+		return nil, "", ErrDataAssetDownloadDisabled
+	}
 	asset, err := s.Get(uuid, actor)
 	if err != nil || asset.Status != model.FileStatusCompleted {
 		return nil, "", fmt.Errorf("data asset not found")

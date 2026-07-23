@@ -61,6 +61,8 @@ func New(cfg *config.Config) *gin.Engine {
 		authProtected.Use(middleware.JWTAuth(cfg))
 		{
 			authProtected.GET("/me", authHandler.Me)
+			authProtected.PUT("/me", authHandler.UpdateMe)
+			authProtected.DELETE("/me", authHandler.DeleteMe)
 		}
 
 		// ========== User management ==========
