@@ -69,6 +69,22 @@ func main() {
 	taskSvc.StartDataWaitSync(ctx, 30*time.Second)
 	fmt.Println("Data wait sync started (interval: 30s)")
 
+	assetSvc := service.NewDataAssetService(cfg)
+	assetSvc.StartRetentionCleanup(ctx, time.Hour)
+	if cfg.Storage.RetentionDays > 0 {
+		fmt.Printf("Data retention cleanup started (retention: %d days)\n", cfg.Storage.RetentionDays)
+	} else {
+		fmt.Println("Data retention cleanup disabled (data retained indefinitely)")
+	}
+	matcher := service.NewSampleMatcher()
+	matcher.Start(ctx, time.Minute)
+	fmt.Println("Sample data matcher started (interval: 1m)")
+	scanner := service.NewDataScanner(cfg)
+	scanner.Start(ctx)
+	if scanner.Enabled() {
+		fmt.Printf("Data scanner started (interval: %s)\n", cfg.Storage.ScanInterval)
+	}
+
 	fmt.Printf("Starting schema-platform server on port %s...\n", cfg.Server.Port)
 
 	// Graceful shutdown

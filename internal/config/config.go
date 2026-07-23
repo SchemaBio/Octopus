@@ -97,9 +97,24 @@ type LLMConfig struct {
 }
 
 type StorageConfig struct {
-	Provider  string // local only for the open-source Octopus backend
-	LocalDir  string // local upload root directory
-	MaxSizeMB int    // maximum upload file size in MB, 0 means unlimited
+	Provider         string // local or s3
+	LocalDir         string // local upload root directory
+	MaxSizeMB        int    // maximum upload file size in MB, 0 means unlimited
+	RetentionDays    int    // 0 keeps data indefinitely; SaaS deployments use 7
+	PresignExpiry    time.Duration
+	S3Endpoint       string
+	S3PublicEndpoint string
+	S3Region         string
+	S3Bucket         string
+	S3AccessKey      string
+	S3SecretKey      string
+	S3SessionToken   string
+	S3UsePathStyle   bool
+	ScanLocalDir     string
+	S3ScanPrefix     string
+	ScanOrgID        string
+	ScanUserID       int
+	ScanInterval     time.Duration
 }
 
 // Load loads configuration from environment and files
@@ -172,9 +187,24 @@ func Load() *Config {
 			ProxyMaxBodyBytes: int64(parseIntEnv("LLM_PROXY_MAX_BODY_MB", 2)) << 20,
 		},
 		Storage: StorageConfig{
-			Provider:  normalizeStorageProvider(getEnv("STORAGE_PROVIDER", "local")),
-			LocalDir:  getEnv("STORAGE_LOCAL_DIR", "/mnt/data/uploads"),
-			MaxSizeMB: parseIntEnv("UPLOAD_MAX_SIZE_MB", 0),
+			Provider:         normalizeStorageProvider(getEnv("STORAGE_PROVIDER", "local")),
+			LocalDir:         getEnv("STORAGE_LOCAL_DIR", "/mnt/data/uploads"),
+			MaxSizeMB:        parseIntEnv("UPLOAD_MAX_SIZE_MB", 0),
+			RetentionDays:    parseIntEnv("DATA_RETENTION_DAYS", 0),
+			PresignExpiry:    parseDuration(getEnv("STORAGE_PRESIGN_EXPIRE", "15m")),
+			S3Endpoint:       strings.TrimSpace(getEnv("S3_ENDPOINT", "")),
+			S3PublicEndpoint: strings.TrimSpace(getEnv("S3_PUBLIC_ENDPOINT", "")),
+			S3Region:         getEnv("S3_REGION", "us-east-1"),
+			S3Bucket:         strings.TrimSpace(getEnv("S3_BUCKET", "")),
+			S3AccessKey:      getEnvOrFile("S3_ACCESS_KEY", ""),
+			S3SecretKey:      getEnvOrFile("S3_SECRET_KEY", ""),
+			S3SessionToken:   getEnvOrFile("S3_SESSION_TOKEN", ""),
+			S3UsePathStyle:   getEnv("S3_USE_PATH_STYLE", "false") == "true",
+			ScanLocalDir:     strings.TrimSpace(getEnv("DATA_SCAN_LOCAL_DIR", "")),
+			S3ScanPrefix:     strings.Trim(strings.TrimSpace(getEnv("S3_SCAN_PREFIX", "")), "/"),
+			ScanOrgID:        strings.TrimSpace(getEnv("DATA_SCAN_ORG_ID", "")),
+			ScanUserID:       parseIntEnv("DATA_SCAN_USER_ID", 1),
+			ScanInterval:     parseDuration(getEnv("DATA_SCAN_INTERVAL", "1m")),
 		},
 	}
 }
@@ -222,7 +252,7 @@ func normalizeStorageProvider(provider string) string {
 	if provider == "" {
 		return "local"
 	}
-	if provider != "local" {
+	if provider != "local" && provider != "s3" {
 		return "local"
 	}
 	return provider

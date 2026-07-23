@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/SchemaBio/Octopus/internal/sepiida"
@@ -29,6 +30,7 @@ type TaskService struct {
 	importBatchRepo *repository.ResultImportBatchRepository
 	uploadJobRepo   *repository.UploadJobRepository
 	uploadFileRepo  *repository.UploadFileRepository
+	assetRepo       *repository.DataAssetRepository
 	sampleRepo      *repository.SampleRepository
 	pipelineRepo    *repository.PipelineRepository
 	mu              sync.RWMutex
@@ -51,6 +53,7 @@ func NewTaskService(cfg *config.Config) *TaskService {
 		importBatchRepo: repository.NewResultImportBatchRepository(),
 		uploadJobRepo:   repository.NewUploadJobRepository(),
 		uploadFileRepo:  repository.NewUploadFileRepository(),
+		assetRepo:       repository.NewDataAssetRepository(),
 		sampleRepo:      repository.NewSampleRepository(),
 		pipelineRepo:    repository.NewPipelineRepository(),
 		running:         make(map[string]*exec.Cmd),
@@ -344,27 +347,33 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 
 	var sampleIDRef uint
 	var uploadJob *model.UploadJob
+	needsStaging := false
 
 	if req.SampleID != "" {
-		sample, err := s.sampleRepo.FindByUUID(req.SampleID)
+		sample, err := s.sampleRepo.FindScopedByUUID(req.SampleID, actor)
 		if err != nil {
-			return nil, fmt.Errorf("sample not found: %s", req.SampleID)
-		}
-		if !actorCanUseOwnedResource(actor, sample.CreatedBy) {
 			return nil, fmt.Errorf("sample not found: %s", req.SampleID)
 		}
 		sampleIDRef = sample.ID
 
 		if matchedPair := sample.GetMatchedPair(); matchedPair != nil {
 			if _, exists := inputs["fastq_r1"]; !exists && matchedPair.R1Path != "" {
-				if err := validateActorFileReference(s.cfg, actor, "sample r1_path", matchedPair.R1Path); err != nil {
-					return nil, err
+				if filepath.IsAbs(matchedPair.R1Path) {
+					if err := validateActorFileReference(s.cfg, actor, "sample r1_path", matchedPair.R1Path); err != nil {
+						return nil, err
+					}
+				} else {
+					needsStaging = true
 				}
 				inputs["fastq_r1"] = matchedPair.R1Path
 			}
 			if _, exists := inputs["fastq_r2"]; !exists && matchedPair.R2Path != "" {
-				if err := validateActorFileReference(s.cfg, actor, "sample r2_path", matchedPair.R2Path); err != nil {
-					return nil, err
+				if filepath.IsAbs(matchedPair.R2Path) {
+					if err := validateActorFileReference(s.cfg, actor, "sample r2_path", matchedPair.R2Path); err != nil {
+						return nil, err
+					}
+				} else {
+					needsStaging = true
 				}
 				inputs["fastq_r2"] = matchedPair.R2Path
 			}
@@ -408,10 +417,13 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		if err != nil {
 			return nil, fmt.Errorf("upload job not found: %s", req.UploadJobID)
 		}
-		if !actorCanUseOwnedResource(actor, uploadJob.UserID) {
+		if actor.Role != string(model.SystemRoleSuperAdmin) && ((actor.OrgID != "" && uploadJob.ExternalOrgID != actor.OrgID) || (actor.OrgID == "" && uploadJob.UserID != actor.UserID)) {
 			return nil, fmt.Errorf("upload job not found: %s", req.UploadJobID)
 		}
 		files, _ := s.uploadFileRepo.FindByJobID(uploadJob.ID)
+		if uploadJob.Provider == model.UploadProviderS3 {
+			needsStaging = true
+		}
 		for _, f := range files {
 			switch f.ReadType {
 			case model.ReadTypeRead1:
@@ -448,7 +460,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	configFile := s.getConfigFile(executor, "")
 
 	taskStatus := model.TaskStatusQueued
-	if uploadJob != nil && uploadJob.Status != model.UploadJobStatusCompleted {
+	if needsStaging || (uploadJob != nil && uploadJob.Status != model.UploadJobStatusCompleted) {
 		taskStatus = model.TaskStatusWaitingData
 	}
 
@@ -1090,6 +1102,9 @@ func (s *TaskService) checkWaitingDataTasks() {
 }
 
 func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason string) {
+	if err := s.stageDataFiles(task); err != nil {
+		return false, err.Error()
+	}
 	var inputs map[string]interface{}
 	if task.InputJSON != "" {
 		if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
@@ -1190,7 +1205,116 @@ func applyUploadFilesToInputs(inputs map[string]interface{}, files []model.Uploa
 }
 
 func (s *TaskService) stageDataFiles(task *model.Task) error {
-	return nil
+	if task == nil {
+		return fmt.Errorf("task is required")
+	}
+	assets := make(map[uint]*model.DataAsset)
+	if task.SampleIDRef != 0 {
+		var link model.SampleDataLink
+		if err := database.GetDB().Where("sample_id = ?", task.SampleIDRef).First(&link).Error; err == nil {
+			for _, id := range []uint{link.Read1AssetID, link.Read2AssetID} {
+				if asset, err := s.assetRepo.FindByID(id); err == nil {
+					assets[id] = asset
+				}
+			}
+		}
+	}
+	if task.UploadJobID != "" {
+		if job, err := s.uploadJobRepo.FindByUUID(task.UploadJobID); err == nil {
+			if files, err := s.uploadFileRepo.FindByJobID(job.ID); err == nil {
+				for i := range files {
+					if asset, err := s.assetRepo.FindByUploadFileID(files[i].ID); err == nil {
+						assets[asset.ID] = asset
+					}
+				}
+			}
+		}
+	}
+	var remote []*model.DataAsset
+	for _, asset := range assets {
+		if asset.Provider == model.UploadProviderS3 {
+			if asset.Status != model.FileStatusCompleted {
+				return fmt.Errorf("data asset %s is not ready", asset.UUID)
+			}
+			remote = append(remote, asset)
+		}
+	}
+	if len(remote) == 0 {
+		return nil
+	}
+
+	inputDir := filepath.Join(task.OutputDir, "_inputs")
+	if err := ensurePathInsideBase(s.cfg.Task.OutputDir, inputDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(inputDir, 0750); err != nil {
+		return err
+	}
+	storage, err := newS3Storage(context.Background(), s.cfg.Storage)
+	if err != nil {
+		return err
+	}
+	var inputs map[string]interface{}
+	if task.InputJSON != "" {
+		_ = json.Unmarshal([]byte(task.InputJSON), &inputs)
+	}
+	if inputs == nil {
+		inputs = make(map[string]interface{})
+	}
+	for _, asset := range remote {
+		name := filepath.Base(strings.ReplaceAll(asset.FileName, `\`, "/"))
+		destination := filepath.Join(inputDir, asset.UUID+"-"+name)
+		if err := ensurePathInsideBase(inputDir, destination); err != nil {
+			return err
+		}
+		if info, err := os.Stat(destination); err != nil || !info.Mode().IsRegular() || info.Size() != asset.FileSize {
+			temporary := destination + ".part"
+			_ = os.Remove(temporary)
+			source, err := storage.open(context.Background(), asset.StorageKey)
+			if err != nil {
+				return fmt.Errorf("download data asset %s: %w", asset.UUID, err)
+			}
+			file, err := os.OpenFile(temporary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+			if err != nil {
+				source.Close()
+				return err
+			}
+			written, copyErr := io.Copy(file, source)
+			closeErr := file.Close()
+			source.Close()
+			if copyErr != nil || closeErr != nil || written != asset.FileSize {
+				_ = os.Remove(temporary)
+				if copyErr != nil {
+					return copyErr
+				}
+				if closeErr != nil {
+					return closeErr
+				}
+				return fmt.Errorf("downloaded size mismatch for data asset %s", asset.UUID)
+			}
+			if err := os.Rename(temporary, destination); err != nil {
+				_ = os.Remove(temporary)
+				return err
+			}
+		}
+		switch asset.ReadType {
+		case model.ReadTypeRead1:
+			inputs["fastq_r1"] = destination
+		case model.ReadTypeRead2:
+			inputs["fastq_r2"] = destination
+		case model.ReadTypeSingle:
+			inputs["fastq_r1"] = destination
+		case model.ReadTypeBed:
+			inputs["bed_file"] = destination
+		}
+	}
+	encoded, err := json.Marshal(inputs)
+	if err != nil {
+		return err
+	}
+	task.InputJSON = string(encoded)
+	task.UpdatedAt = time.Now()
+	return s.repo.Update(task)
 }
 
 func containsAny(s string, substrs ...string) bool {

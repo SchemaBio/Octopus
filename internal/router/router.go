@@ -212,6 +212,8 @@ func New(cfg *config.Config) *gin.Engine {
 			samples.GET("/:id", sampleHandler.GetSample)
 			samples.PUT("/:id", sampleHandler.UpdateSample)
 			samples.POST("/:id/matched-pair/upload-job", sampleHandler.MatchFromUploadJob)
+			samples.PUT("/:id/data-link", sampleHandler.LinkDataAssets)
+			samples.DELETE("/:id/data-link", sampleHandler.ClearMatchedPair)
 			samples.DELETE("/:id/matched-pair", sampleHandler.ClearMatchedPair)
 			samples.DELETE("/:id", sampleHandler.DeleteSample)
 		}
@@ -312,9 +314,22 @@ func New(cfg *config.Config) *gin.Engine {
 			uploads.GET("/jobs/:uuid", uploadHandler.GetJob)
 			uploads.DELETE("/jobs/:uuid", uploadHandler.DeleteJob)
 			uploads.POST("/local/:file_uuid", uploadHandler.UploadLocal)
+			uploads.POST("/files/:file_uuid/complete", uploadHandler.CompleteS3)
 			uploads.GET("/files", uploadHandler.ListFiles)
 			uploads.GET("/files/stats", uploadHandler.GetFileStats)
 			uploads.GET("/files/:file_uuid/download", uploadHandler.GetDownloadURL)
+		}
+
+		// ========== Organization data center (protected) ==========
+		dataAssetHandler := handler.NewDataAssetHandler(cfg)
+		data := v1.Group("/data")
+		data.Use(middleware.JWTAuth(cfg))
+		{
+			data.GET("/config", dataAssetHandler.Config)
+			data.GET("/assets", dataAssetHandler.List)
+			data.GET("/assets/:uuid", dataAssetHandler.Get)
+			data.GET("/assets/:uuid/download", dataAssetHandler.Download)
+			data.DELETE("/assets/:uuid", dataAssetHandler.Delete)
 		}
 
 		// ========== Result import batches (audit, protected) ==========

@@ -21,6 +21,22 @@ func (r *SampleRepository) FindByUUID(uuid string) (*model.Sample, error) {
 	return r.FindOneByCondition(map[string]interface{}{"uuid": uuid})
 }
 
+func (r *SampleRepository) FindScopedByUUID(uuid string, actor model.OverlayActor) (*model.Sample, error) {
+	db := r.db.Where("uuid = ?", uuid)
+	if actor.Role != string(model.SystemRoleSuperAdmin) {
+		if actor.OrgID != "" {
+			db = db.Where("external_org_id = ?", actor.OrgID)
+		} else {
+			db = db.Where("external_org_id = '' AND created_by = ?", actor.UserID)
+		}
+	}
+	var sample model.Sample
+	if err := db.First(&sample).Error; err != nil {
+		return nil, err
+	}
+	return &sample, nil
+}
+
 // FindByInternalID finds a sample by internal_id
 func (r *SampleRepository) FindByInternalID(internalID string) (*model.Sample, error) {
 	return r.FindOneByCondition(map[string]interface{}{"internal_id": internalID})
@@ -30,6 +46,21 @@ func (r *SampleRepository) FindByInternalID(internalID string) (*model.Sample, e
 func (r *SampleRepository) ExistsByInternalID(internalID string) bool {
 	var count int64
 	r.db.Model(&model.Sample{}).Where("internal_id = ?", internalID).Count(&count)
+	return count > 0
+}
+
+func (r *SampleRepository) ExistsByInternalIDInScope(internalID, orgID string, userID uint, excludeID uint) bool {
+	db := r.db.Model(&model.Sample{}).Where("internal_id = ?", internalID)
+	if orgID != "" {
+		db = db.Where("external_org_id = ?", orgID)
+	} else {
+		db = db.Where("external_org_id = '' AND created_by = ?", userID)
+	}
+	if excludeID != 0 {
+		db = db.Where("id <> ?", excludeID)
+	}
+	var count int64
+	db.Count(&count)
 	return count > 0
 }
 
@@ -48,8 +79,10 @@ func (r *SampleRepository) PaginateByQuery(query *model.SampleListQuery) ([]mode
 	db := r.db.Model(&model.Sample{})
 
 	if !query.IncludeAll {
-		if query.CreatedBy != 0 {
-			db = db.Where("created_by = ?", query.CreatedBy)
+		if query.OrgID != "" {
+			db = db.Where("external_org_id = ?", query.OrgID)
+		} else if query.CreatedBy != 0 {
+			db = db.Where("external_org_id = '' AND created_by = ?", query.CreatedBy)
 		} else {
 			db = db.Where("1 = 0")
 		}
@@ -87,6 +120,16 @@ func (r *SampleRepository) PaginateByQuery(query *model.SampleListQuery) ([]mode
 	offset := (page - 1) * pageSize
 	err = db.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&samples).Error
 	return samples, total, err
+}
+
+func (r *SampleRepository) FindAutoMatchable(limit int) ([]model.Sample, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	var samples []model.Sample
+	err := r.db.Where("auto_match_enabled = ? AND (match_mode IS NULL OR match_mode = '' OR match_mode = ?)", true, model.SampleMatchModeAutomatic).
+		Order("updated_at ASC").Limit(limit).Find(&samples).Error
+	return samples, err
 }
 
 // AssignProject assigns samples to a project

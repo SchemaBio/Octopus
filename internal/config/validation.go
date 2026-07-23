@@ -69,6 +69,32 @@ func ValidateStartup(cfg *Config) error {
 			}
 		}
 	}
+	if cfg.Storage.RetentionDays < 0 {
+		return fmt.Errorf("DATA_RETENTION_DAYS must be zero or greater")
+	}
+	if cfg.Storage.Provider == "s3" {
+		if strings.TrimSpace(cfg.Storage.S3Bucket) == "" {
+			return fmt.Errorf("S3_BUCKET must be set when STORAGE_PROVIDER=s3")
+		}
+		if (cfg.Storage.S3AccessKey == "") != (cfg.Storage.S3SecretKey == "") {
+			return fmt.Errorf("S3_ACCESS_KEY and S3_SECRET_KEY must be configured together")
+		}
+		if cfg.Storage.S3Endpoint != "" {
+			if err := validateAbsoluteServiceURL("S3_ENDPOINT", cfg.Storage.S3Endpoint); err != nil {
+				return err
+			}
+		}
+		if cfg.Storage.S3PublicEndpoint != "" {
+			if err := validateAbsoluteServiceURL("S3_PUBLIC_ENDPOINT", cfg.Storage.S3PublicEndpoint); err != nil {
+				return err
+			}
+			if cfg.Server.Mode == "release" {
+				if err := validateReleaseHTTPSURL("S3_PUBLIC_ENDPOINT", cfg.Storage.S3PublicEndpoint); err != nil {
+					return err
+				}
+			}
+		}
+	}
 
 	return nil
 }

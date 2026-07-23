@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -17,10 +18,11 @@ import (
 )
 
 type UploadService struct {
-	cfg      *config.Config
-	jobRepo  *repository.UploadJobRepository
-	fileRepo *repository.UploadFileRepository
-	userRepo *repository.UserRepository
+	cfg       *config.Config
+	jobRepo   *repository.UploadJobRepository
+	fileRepo  *repository.UploadFileRepository
+	assetRepo *repository.DataAssetRepository
+	userRepo  *repository.UserRepository
 }
 
 var safeUploadFilename = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+=-]{0,254}$`)
@@ -40,10 +42,11 @@ func validateUploadFilename(filename string) error {
 
 func NewUploadService(cfg *config.Config) *UploadService {
 	return &UploadService{
-		cfg:      cfg,
-		jobRepo:  repository.NewUploadJobRepository(),
-		fileRepo: repository.NewUploadFileRepository(),
-		userRepo: repository.NewUserRepository(),
+		cfg:       cfg,
+		jobRepo:   repository.NewUploadJobRepository(),
+		fileRepo:  repository.NewUploadFileRepository(),
+		assetRepo: repository.NewDataAssetRepository(),
+		userRepo:  repository.NewUserRepository(),
 	}
 }
 
@@ -84,6 +87,16 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		}
 	}
 
+	provider := model.UploadProvider(s.cfg.Storage.Provider)
+	var objectStore *s3Storage
+	if provider == model.UploadProviderS3 {
+		var err error
+		objectStore, err = newS3Storage(ctx, s.cfg.Storage)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
 	jobUUID := uuid.New().String()
 	job := &model.UploadJob{
 		UUID:          jobUUID,
@@ -92,7 +105,7 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		SampleID:      req.SampleID,
 		Name:          req.Name,
 		FileType:      req.FileType,
-		Provider:      model.UploadProviderLocal,
+		Provider:      provider,
 		Status:        model.UploadJobStatusPending,
 	}
 
@@ -110,7 +123,7 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 
 	for _, f := range req.Files {
 		fileUUID := uuid.New().String()
-		storageKey := s.buildStorageKey(storageFolder, jobUUID, f.FileName)
+		storageKey := s.buildStorageKey(provider, storageFolder, jobUUID, f.FileName)
 
 		uploadFile := &model.UploadFile{
 			UUID:       fileUUID,
@@ -126,16 +139,41 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		if err := s.fileRepo.Create(uploadFile); err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to create upload file record: %w", err)
 		}
+		var expiresAt *time.Time
+		if s.cfg.Storage.RetentionDays > 0 {
+			value := time.Now().AddDate(0, 0, s.cfg.Storage.RetentionDays)
+			expiresAt = &value
+		}
+		asset := &model.DataAsset{
+			UUID: fileUUID, ExternalOrgID: orgID, CreatedBy: userID,
+			UploadFileID: &uploadFile.ID, Provider: provider, StorageKey: storageKey,
+			FileName: f.FileName, FileSize: f.FileSize, ReadType: f.ReadType,
+			Status: model.FileStatusPending, Source: model.DataAssetSourceUpload, ExpiresAt: expiresAt,
+		}
+		if err := s.assetRepo.Create(asset); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to register data asset: %w", err)
+		}
 
 		files = append(files, uploadFile)
 
-		presignedURLs = append(presignedURLs, "")
+		if objectStore != nil {
+			url, err := objectStore.presignUpload(ctx, storageKey)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			presignedURLs = append(presignedURLs, url)
+		} else {
+			presignedURLs = append(presignedURLs, "")
+		}
 	}
 
 	return job, files, presignedURLs, nil
 }
 
-func (s *UploadService) buildStorageKey(storageFolder, jobUUID, fileName string) string {
+func (s *UploadService) buildStorageKey(provider model.UploadProvider, storageFolder, jobUUID, fileName string) string {
+	if provider == model.UploadProviderS3 {
+		return path.Join("uploads", storageFolder, jobUUID, fileName)
+	}
 	return filepath.Join(storageFolder, jobUUID, fileName)
 }
 
@@ -156,6 +194,9 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, userID uint, fileUUID
 	}
 	if job.UserID != userID {
 		return nil, fmt.Errorf("upload file does not belong to current user")
+	}
+	if job.Provider != model.UploadProviderLocal {
+		return nil, fmt.Errorf("upload job does not use local storage")
 	}
 	if err := validateUploadFilename(existingFile.FileName); err != nil {
 		return nil, err
@@ -190,10 +231,56 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, userID uint, fileUUID
 		os.Remove(filePath)
 		return nil, fmt.Errorf("failed to update file record: %w", err)
 	}
+	if asset, err := s.assetRepo.FindByUploadFileID(existingFile.ID); err == nil {
+		asset.StorageKey = filePath
+		asset.FileSize = written
+		asset.Status = model.FileStatusCompleted
+		if err := s.assetRepo.Update(asset); err != nil {
+			return nil, fmt.Errorf("failed to update data asset: %w", err)
+		}
+	}
 
 	s.syncJobStatus(job)
 
 	return existingFile, nil
+}
+
+func (s *UploadService) CompleteS3File(ctx context.Context, userID uint, fileUUID string) (*model.UploadFile, error) {
+	file, err := s.fileRepo.FindByUUID(fileUUID)
+	if err != nil {
+		return nil, fmt.Errorf("upload file not found")
+	}
+	job, err := s.jobRepo.FindByUUID(file.JobUUID)
+	if err != nil || job.UserID != userID || job.Provider != model.UploadProviderS3 {
+		return nil, fmt.Errorf("upload file not found")
+	}
+	storage, err := newS3Storage(ctx, s.cfg.Storage)
+	if err != nil {
+		return nil, err
+	}
+	size, err := storage.stat(ctx, file.StorageKey)
+	if err != nil {
+		return nil, err
+	}
+	if file.FileSize > 0 && size != file.FileSize {
+		return nil, fmt.Errorf("uploaded object size mismatch: expected %d, got %d", file.FileSize, size)
+	}
+	file.FileSize = size
+	file.Status = model.FileStatusCompleted
+	if err := s.fileRepo.Update(file); err != nil {
+		return nil, err
+	}
+	asset, err := s.assetRepo.FindByUploadFileID(file.ID)
+	if err != nil {
+		return nil, fmt.Errorf("data asset not found")
+	}
+	asset.FileSize = size
+	asset.Status = model.FileStatusCompleted
+	if err := s.assetRepo.Update(asset); err != nil {
+		return nil, err
+	}
+	s.syncJobStatus(job)
+	return file, nil
 }
 
 func (s *UploadService) syncJobStatus(job *model.UploadJob) {

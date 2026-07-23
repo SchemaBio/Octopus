@@ -17,6 +17,7 @@ type UploadProvider string
 
 const (
 	UploadProviderLocal UploadProvider = "local"
+	UploadProviderS3    UploadProvider = "s3"
 )
 
 type UploadJobStatus string
@@ -44,6 +45,8 @@ const (
 	FileStatusUploading FileStatus = "uploading"
 	FileStatusCompleted FileStatus = "completed"
 	FileStatusFailed    FileStatus = "failed"
+	FileStatusMissing   FileStatus = "missing"
+	FileStatusDeleted   FileStatus = "deleted"
 )
 
 type UploadJob struct {

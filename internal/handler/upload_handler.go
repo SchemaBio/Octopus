@@ -246,6 +246,20 @@ func (h *UploadHandler) UploadLocal(c *gin.Context) {
 	SuccessCreated(c, model.UploadFileToResponse(uploadFile))
 }
 
+func (h *UploadHandler) CompleteS3(c *gin.Context) {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	file, err := h.svc.CompleteS3File(c.Request.Context(), userID, c.Param("file_uuid"))
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, model.UploadFileToResponse(file))
+}
+
 func (h *UploadHandler) GetDownloadURL(c *gin.Context) {
 	userID, _, _, ok := middleware.GetCurrentUser(c)
 	if !ok {

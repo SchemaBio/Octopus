@@ -61,8 +61,17 @@ func (h *SampleHandler) ListSamples(c *gin.Context) {
 	if query.PageSize == 0 {
 		query.PageSize = 10
 	}
-	if !applyCreatedByListScope(c, &query.CreatedBy, &query.IncludeAll) {
+	userID, _, role, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
 		return
+	}
+	if role == string(model.SystemRoleSuperAdmin) {
+		query.IncludeAll = true
+	} else if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg {
+		query.OrgID = orgID
+	} else {
+		query.CreatedBy = userID
 	}
 
 	resp, err := h.svc.ListSamples(c.Request.Context(), &query)
@@ -78,12 +87,9 @@ func (h *SampleHandler) ListSamples(c *gin.Context) {
 func (h *SampleHandler) GetSample(c *gin.Context) {
 	id := c.Param("id")
 
-	sample, err := h.svc.GetSample(c.Request.Context(), id)
+	sample, err := h.svc.GetSampleScoped(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, "Sample not found")
-		return
-	}
-	if !requireOwnerAccess(c, sample.CreatedBy, "Sample") {
 		return
 	}
 
@@ -100,14 +106,12 @@ func (h *SampleHandler) UpdateSample(c *gin.Context) {
 		return
 	}
 
-	existing, err := h.svc.GetSample(c.Request.Context(), id)
+	existing, err := h.svc.GetSampleScoped(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, "Sample not found")
 		return
 	}
-	if !requireOwnerAccess(c, existing.CreatedBy, "Sample") {
-		return
-	}
+	_ = existing
 
 	sample, err := h.svc.UpdateSample(c.Request.Context(), id, &req, taskActorFromContext(c))
 	if err != nil {
@@ -122,16 +126,14 @@ func (h *SampleHandler) UpdateSample(c *gin.Context) {
 func (h *SampleHandler) ClearMatchedPair(c *gin.Context) {
 	id := c.Param("id")
 
-	existing, err := h.svc.GetSample(c.Request.Context(), id)
+	existing, err := h.svc.GetSampleScoped(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, "Sample not found")
 		return
 	}
-	if !requireOwnerAccess(c, existing.CreatedBy, "Sample") {
-		return
-	}
+	_ = existing
 
-	sample, err := h.svc.ClearMatchedPair(c.Request.Context(), id)
+	sample, err := h.svc.ClearMatchedPair(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, err.Error())
 		return
@@ -150,14 +152,12 @@ func (h *SampleHandler) MatchFromUploadJob(c *gin.Context) {
 		return
 	}
 
-	existing, err := h.svc.GetSample(c.Request.Context(), id)
+	existing, err := h.svc.GetSampleScoped(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, "Sample not found")
 		return
 	}
-	if !requireOwnerAccess(c, existing.CreatedBy, "Sample") {
-		return
-	}
+	_ = existing
 
 	sample, err := h.svc.MatchFromUploadJob(c.Request.Context(), id, req.UploadJobID, taskActorFromContext(c))
 	if err != nil {
@@ -168,19 +168,31 @@ func (h *SampleHandler) MatchFromUploadJob(c *gin.Context) {
 	Success(c, h.svc.SampleToDetailResponse(sample))
 }
 
+func (h *SampleHandler) LinkDataAssets(c *gin.Context) {
+	var req model.SampleDataLinkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	sample, err := h.svc.LinkDataAssets(c.Request.Context(), c.Param("id"), &req, taskActorFromContext(c))
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, h.svc.SampleToDetailResponse(sample))
+}
+
 // DeleteSample deletes a sample
 func (h *SampleHandler) DeleteSample(c *gin.Context) {
 	id := c.Param("id")
-	existing, err := h.svc.GetSample(c.Request.Context(), id)
+	existing, err := h.svc.GetSampleScoped(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, "Sample not found")
 		return
 	}
-	if !requireOwnerAccess(c, existing.CreatedBy, "Sample") {
-		return
-	}
+	_ = existing
 
-	if err := h.svc.DeleteSample(c.Request.Context(), id); err != nil {
+	if err := h.svc.DeleteSample(c.Request.Context(), id, taskActorFromContext(c)); err != nil {
 		ErrorNotFound(c, err.Error())
 		return
 	}

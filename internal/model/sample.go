@@ -2,7 +2,9 @@ package model
 
 import (
 	"encoding/json"
+	"path"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -29,6 +31,9 @@ const (
 // SampleStatus represents the status of a sample
 type SampleStatus string
 
+type SampleMatchStatus string
+type SampleMatchMode string
+
 const (
 	SampleStatusPending    SampleStatus = "pending"
 	SampleStatusProcessing SampleStatus = "processing"
@@ -36,11 +41,25 @@ const (
 	SampleStatusFailed     SampleStatus = "failed"
 )
 
+const (
+	SampleMatchUnmatched SampleMatchStatus = "unmatched"
+	SampleMatchPartial   SampleMatchStatus = "partial"
+	SampleMatchConflict  SampleMatchStatus = "conflict"
+	SampleMatchMatched   SampleMatchStatus = "matched"
+	SampleMatchMissing   SampleMatchStatus = "missing"
+)
+
+const (
+	SampleMatchModeManual    SampleMatchMode = "manual"
+	SampleMatchModeAutomatic SampleMatchMode = "automatic"
+)
+
 // Sample represents a biological sample (germline)
 type Sample struct {
 	ID                uint               `json:"-" gorm:"primaryKey"`
 	UUID              string             `json:"id" gorm:"uniqueIndex;size:36;not null"`
-	InternalID        string             `json:"internal_id" gorm:"uniqueIndex;size:100;not null"`
+	InternalID        string             `json:"internal_id" gorm:"index;size:100;not null"`
+	ExternalOrgID     string             `json:"-" gorm:"size:100;index"`
 	Gender            SampleGender       `json:"gender" gorm:"size:20;default:unknown"`
 	Age               *int               `json:"age,omitempty"`
 	SampleType        SampleTypeFrontend `json:"sample_type" gorm:"size:20;default:其他"`
@@ -55,6 +74,9 @@ type Sample struct {
 	Status            SampleStatus       `json:"status" gorm:"size:20;default:pending"`
 	ProjectID         uint               `json:"project_id" gorm:"index"`
 	CreatedBy         uint               `json:"created_by" gorm:"index"`
+	MatchStatus       SampleMatchStatus  `json:"match_status" gorm:"size:20;index;not null;default:unmatched"`
+	MatchMode         SampleMatchMode    `json:"match_mode" gorm:"size:20;index"`
+	AutoMatchEnabled  bool               `json:"auto_match_enabled" gorm:"not null;default:true"`
 	CreatedAt         time.Time          `json:"created_at" gorm:"type:timestamptz"`
 	UpdatedAt         time.Time          `json:"updated_at" gorm:"type:timestamptz"`
 }
@@ -123,6 +145,9 @@ type SampleResponse struct {
 	ClinicalDiagnosis string             `json:"clinical_diagnosis"`
 	HPOTerms          []HPOTerm          `json:"hpo_terms"`
 	MatchedPair       *MatchedPair       `json:"matched_pair,omitempty"`
+	MatchStatus       SampleMatchStatus  `json:"match_status"`
+	MatchMode         SampleMatchMode    `json:"match_mode,omitempty"`
+	AutoMatchEnabled  bool               `json:"auto_match_enabled"`
 	Remark            string             `json:"remark"`
 	Status            SampleStatus       `json:"status"`
 	CreatedAt         string             `json:"created_at"`
@@ -138,6 +163,9 @@ type SampleDetailResponse struct {
 	SampleType        SampleTypeFrontend    `json:"sample_type"`
 	Batch             string                `json:"batch"`
 	MatchedPair       *MatchedPair          `json:"matched_pair,omitempty"`
+	MatchStatus       SampleMatchStatus     `json:"match_status"`
+	MatchMode         SampleMatchMode       `json:"match_mode,omitempty"`
+	AutoMatchEnabled  bool                  `json:"auto_match_enabled"`
 	Remark            string                `json:"remark"`
 	ClinicalDiagnosis ClinicalDiagnosisInfo `json:"clinical_diagnosis"`
 	SubmissionInfo    SubmissionInfo        `json:"submission_info"`
@@ -190,6 +218,11 @@ type SampleMatchUploadJobRequest struct {
 	UploadJobID string `json:"upload_job_id" binding:"required"`
 }
 
+type SampleDataLinkRequest struct {
+	Read1AssetID string `json:"read1_asset_id" binding:"required"`
+	Read2AssetID string `json:"read2_asset_id" binding:"required"`
+}
+
 // SampleListQuery is the query parameters for listing samples
 type SampleListQuery struct {
 	Page       int                `form:"page" binding:"omitempty,min=1"`
@@ -199,6 +232,7 @@ type SampleListQuery struct {
 	SampleType SampleTypeFrontend `form:"sample_type"`
 	ProjectID  uint               `form:"project_id"`
 	CreatedBy  uint               `json:"-"`
+	OrgID      string             `json:"-"`
 	IncludeAll bool               `json:"-"`
 }
 
@@ -211,6 +245,22 @@ type SampleListResponse struct {
 // TableName specifies the table name for Sample
 func (Sample) TableName() string {
 	return "samples"
+}
+
+func (s *Sample) GetClinicalDiagnosis() string {
+	if strings.TrimSpace(s.ClinicalDiagnosis) == "" {
+		return ""
+	}
+	var info ClinicalDiagnosisInfo
+	if err := json.Unmarshal([]byte(s.ClinicalDiagnosis), &info); err == nil {
+		return info.MainDiagnosis
+	}
+	return s.ClinicalDiagnosis
+}
+
+func (s *Sample) SetClinicalDiagnosis(value string) {
+	b, _ := json.Marshal(ClinicalDiagnosisInfo{MainDiagnosis: value})
+	s.ClinicalDiagnosis = string(b)
 }
 
 // GetHPOTerms parses HPOTerms JSON
@@ -231,18 +281,31 @@ func (s *Sample) SetHPOTerms(terms []HPOTerm) {
 
 // GetMatchedPair parses MatchedPair JSON
 func (s *Sample) GetMatchedPair() *MatchedPair {
-	if s.MatchedPair == "" {
+	if value := strings.TrimSpace(s.MatchedPair); value == "" || value == "null" {
 		return nil
 	}
 	var mp MatchedPair
-	json.Unmarshal([]byte(s.MatchedPair), &mp)
+	if err := json.Unmarshal([]byte(s.MatchedPair), &mp); err != nil {
+		return nil
+	}
 	return &mp
+}
+
+// PublicMatchedPair keeps storage paths private while preserving the legacy
+// response shape consumed by clients that only need readiness and filenames.
+func (s *Sample) PublicMatchedPair() *MatchedPair {
+	pair := s.GetMatchedPair()
+	if pair == nil { return nil }
+	return &MatchedPair{
+		R1Path: path.Base(strings.ReplaceAll(pair.R1Path, `\`, "/")),
+		R2Path: path.Base(strings.ReplaceAll(pair.R2Path, `\`, "/")),
+	}
 }
 
 // SetMatchedPair sets MatchedPair JSON
 func (s *Sample) SetMatchedPair(mp *MatchedPair) {
 	if mp == nil {
-		s.MatchedPair = ""
+		s.MatchedPair = "null"
 		return
 	}
 	b, _ := json.Marshal(mp)
@@ -306,9 +369,12 @@ func SampleToResponse(s *Sample) SampleResponse {
 		Age:               s.Age,
 		SampleType:        s.SampleType,
 		Batch:             s.Batch,
-		ClinicalDiagnosis: s.ClinicalDiagnosis,
+		ClinicalDiagnosis: s.GetClinicalDiagnosis(),
 		HPOTerms:          s.GetHPOTerms(),
-		MatchedPair:       s.GetMatchedPair(),
+		MatchedPair:       s.PublicMatchedPair(),
+		MatchStatus:       s.MatchStatus,
+		MatchMode:         s.MatchMode,
+		AutoMatchEnabled:  s.AutoMatchEnabled,
 		Remark:            s.Remark,
 		Status:            s.Status,
 		CreatedAt:         s.CreatedAt.Format(time.RFC3339),
