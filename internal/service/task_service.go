@@ -239,6 +239,7 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	if changed {
 		task.UpdatedAt = time.Now()
 		s.repo.Update(task)
+		s.syncCNVBaselineOutput(task, workflow.OutputsJSON)
 		s.emitStatusEvent(task, previousStatus)
 	}
 	s.mu.Unlock()
@@ -383,7 +384,36 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		return nil, err
 	}
 
+	directAssets := make([]model.TaskDataAsset, 0, len(req.InputAssets))
+	read1Inputs := make([]string, 0)
+	read2Inputs := make([]string, 0)
+	for _, inputAsset := range req.InputAssets {
+		asset, err := s.assetRepo.FindByID(inputAsset.AssetID)
+		if err != nil || asset.Status != model.FileStatusCompleted ||
+			(actor.Role != string(model.SystemRoleSuperAdmin) && ((actor.OrgID != "" && asset.ExternalOrgID != actor.OrgID) || (actor.OrgID == "" && (asset.ExternalOrgID != "" || asset.CreatedBy != actor.UserID)))) {
+			return nil, fmt.Errorf("data asset not found")
+		}
+		directAssets = append(directAssets, model.TaskDataAsset{AssetID: asset.ID, InputRole: inputAsset.InputRole, InputIndex: inputAsset.Index})
+		switch inputAsset.InputRole {
+		case model.TaskAssetRoleCNVRead1:
+			read1Inputs = setIndexedInput(read1Inputs, inputAsset.Index, asset.StorageKey)
+		case model.TaskAssetRoleCNVRead2:
+			read2Inputs = setIndexedInput(read2Inputs, inputAsset.Index, asset.StorageKey)
+		case model.TaskAssetRoleCNVBED:
+			inputs["CNVBaseline.bed"] = asset.StorageKey
+		default:
+			return nil, fmt.Errorf("unsupported task data asset role: %s", inputAsset.InputRole)
+		}
+	}
+	if len(read1Inputs) > 0 {
+		inputs["CNVBaseline.read_1"] = read1Inputs
+	}
+	if len(read2Inputs) > 0 {
+		inputs["CNVBaseline.read_2"] = read2Inputs
+	}
+
 	var sampleIDRef uint
+	sampleDataReady := false
 	var uploadJob *model.UploadJob
 	needsStaging := false
 
@@ -394,7 +424,8 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		}
 		sampleIDRef = sample.ID
 
-		if matchedPair := sample.GetMatchedPair(); matchedPair != nil {
+		if matchedPair := sample.GetMatchedPair(); matchedPairComplete(matchedPair) {
+			sampleDataReady = true
 			if _, exists := inputs["fastq_r1"]; !exists && matchedPair.R1Path != "" {
 				if filepath.IsAbs(matchedPair.R1Path) {
 					if err := validateActorFileReference(s.cfg, actor, "sample r1_path", matchedPair.R1Path); err != nil {
@@ -498,7 +529,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	configFile := s.getConfigFile(executor, "")
 
 	taskStatus := model.TaskStatusQueued
-	if needsStaging || (uploadJob != nil && uploadJob.Status != model.UploadJobStatusCompleted) {
+	if (req.SampleID != "" && !sampleDataReady) || needsStaging || (uploadJob != nil && uploadJob.Status != model.UploadJobStatusCompleted) {
 		taskStatus = model.TaskStatusWaitingData
 	}
 
@@ -536,8 +567,22 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	if err := s.repo.Create(task); err != nil {
 		return nil, fmt.Errorf("failed to save task: %w", err)
 	}
+	for i := range directAssets {
+		directAssets[i].TaskUUID = task.UUID
+	}
+	if len(directAssets) > 0 {
+		if err := database.GetDB().Create(&directAssets).Error; err != nil {
+			_ = s.repo.DeleteByID(task.ID)
+			return nil, fmt.Errorf("failed to link task data assets: %w", err)
+		}
+	}
 
 	s.emitTaskEvent(model.OverlayTaskEventCreated, actor, task, "", "")
+	if task.Status == model.TaskStatusQueued && !req.DeferStart {
+		if started, startErr := s.StartTask(ctx, task.UUID, actor); startErr == nil {
+			return started, nil
+		}
+	}
 
 	return task, nil
 }
@@ -751,6 +796,7 @@ func (s *TaskService) launchTask(task *model.Task) {
 		task.FinishedAt = &finishedAt
 		task.UpdatedAt = finishedAt
 		s.repo.Update(task)
+		s.syncCNVBaselineOutput(task, "")
 		s.emitStatusEvent(task, previousStatus)
 		if task.Status == model.TaskStatusCompleted {
 			s.importTaskArchive(task)
@@ -1105,10 +1151,11 @@ func (s *TaskService) GetTaskLogs(ctx context.Context, id string) (string, error
 }
 
 // StartDataWaitSync starts a background goroutine that periodically checks tasks
-// in waiting_for_data status. When their upload job is completed and data files are
-// accessible, the task transitions to queued automatically.
+// in waiting_for_data status. When the sample has a complete effective R1/R2
+// match and the data is accessible, the task starts automatically.
 func (s *TaskService) StartDataWaitSync(ctx context.Context, interval time.Duration) {
 	go func() {
+		s.checkWaitingDataTasks()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
@@ -1132,17 +1179,18 @@ func (s *TaskService) checkWaitingDataTasks() {
 	for _, task := range tasks {
 		ready, _ := s.checkDataReady(&task)
 		if ready {
-			task.Status = model.TaskStatusQueued
-			task.UpdatedAt = time.Now()
-			s.repo.Update(&task)
+			actor := model.OverlayActor{UserID: task.CreatedBy, OrgID: task.ExternalOrgID}
+			if _, startErr := s.StartTask(context.Background(), task.UUID, actor); startErr != nil {
+				task.Status = model.TaskStatusQueued
+				task.Error = "automatic start deferred: " + startErr.Error()
+				task.UpdatedAt = time.Now()
+				_ = s.repo.Update(&task)
+			}
 		}
 	}
 }
 
 func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason string) {
-	if err := s.stageDataFiles(task); err != nil {
-		return false, err.Error()
-	}
 	var inputs map[string]interface{}
 	if task.InputJSON != "" {
 		if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
@@ -1151,6 +1199,27 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 	}
 	if inputs == nil {
 		inputs = make(map[string]interface{})
+	}
+	if task.SampleIDRef != 0 {
+		sample, err := s.sampleRepo.FindByID(task.SampleIDRef)
+		if err != nil {
+			return false, "sample not found"
+		}
+		matchedPair := sample.GetMatchedPair()
+		if !matchedPairComplete(matchedPair) {
+			return false, "sample is waiting for a complete R1/R2 match"
+		}
+		if applySampleMatchedPairToInputs(inputs, matchedPair) {
+			data, err := json.Marshal(inputs)
+			if err != nil {
+				return false, "failed to update input JSON"
+			}
+			task.InputJSON = string(data)
+			task.UpdatedAt = time.Now()
+			if err := s.repo.Update(task); err != nil {
+				return false, "failed to update task inputs"
+			}
+		}
 	}
 
 	if task.UploadJobID != "" {
@@ -1183,6 +1252,20 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 			_ = s.repo.Update(task)
 		}
 	}
+	if err := s.stageDataFiles(task); err != nil {
+		return false, err.Error()
+	}
+	if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
+		return false, "failed to parse staged input JSON"
+	}
+	if task.SampleIDRef != 0 {
+		if r1, ok := inputs["fastq_r1"].(string); !ok || strings.TrimSpace(r1) == "" {
+			return false, "sample R1 data is not ready"
+		}
+		if r2, ok := inputs["fastq_r2"].(string); !ok || strings.TrimSpace(r2) == "" {
+			return false, "sample R2 data is not ready"
+		}
+	}
 
 	for key, val := range inputs {
 		path, ok := val.(string)
@@ -1203,6 +1286,24 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 	}
 
 	return true, ""
+}
+
+func matchedPairComplete(pair *model.MatchedPair) bool {
+	return pair != nil && strings.TrimSpace(pair.R1Path) != "" && strings.TrimSpace(pair.R2Path) != ""
+}
+
+func applySampleMatchedPairToInputs(inputs map[string]interface{}, pair *model.MatchedPair) bool {
+	if inputs == nil || !matchedPairComplete(pair) {
+		return false
+	}
+	changed := false
+	for key, value := range map[string]string{"fastq_r1": pair.R1Path, "fastq_r2": pair.R2Path} {
+		if current, ok := inputs[key].(string); !ok || current != value {
+			inputs[key] = value
+			changed = true
+		}
+	}
+	return changed
 }
 
 func applyUploadFilesToInputs(inputs map[string]interface{}, files []model.UploadFile) bool {
@@ -1247,9 +1348,27 @@ func (s *TaskService) stageDataFiles(task *model.Task) error {
 		return fmt.Errorf("task is required")
 	}
 	assets := make(map[uint]*model.DataAsset)
+	directLinks := make(map[uint][]model.TaskDataAsset)
+	var taskAssets []model.TaskDataAsset
+	if err := database.GetDB().Where("task_uuid = ?", task.UUID).Order("input_role, input_index").Find(&taskAssets).Error; err != nil {
+		return err
+	}
+	for _, link := range taskAssets {
+		asset, err := s.assetRepo.FindByID(link.AssetID)
+		if err != nil || asset.Status != model.FileStatusCompleted {
+			return fmt.Errorf("data asset for task input is not ready")
+		}
+		assets[asset.ID] = asset
+		directLinks[asset.ID] = append(directLinks[asset.ID], link)
+	}
 	if task.SampleIDRef != 0 {
 		var link model.SampleDataLink
-		if err := database.GetDB().Where("sample_id = ?", task.SampleIDRef).First(&link).Error; err == nil {
+		db := database.GetDB()
+		err := db.Where("sample_id = ? AND match_mode = ?", task.SampleIDRef, model.SampleMatchModeManual).First(&link).Error
+		if err != nil {
+			err = db.Where("sample_id = ? AND match_mode = ?", task.SampleIDRef, model.SampleMatchModeAutomatic).First(&link).Error
+		}
+		if err == nil {
 			for _, id := range []uint{link.Read1AssetID, link.Read2AssetID} {
 				if asset, err := s.assetRepo.FindByID(id); err == nil {
 					assets[id] = asset
@@ -1335,6 +1454,12 @@ func (s *TaskService) stageDataFiles(task *model.Task) error {
 				return err
 			}
 		}
+		if links := directLinks[asset.ID]; len(links) > 0 {
+			for _, link := range links {
+				applyTaskAssetPath(inputs, link, destination)
+			}
+			continue
+		}
 		switch asset.ReadType {
 		case model.ReadTypeRead1:
 			inputs["fastq_r1"] = destination
@@ -1353,6 +1478,39 @@ func (s *TaskService) stageDataFiles(task *model.Task) error {
 	task.InputJSON = string(encoded)
 	task.UpdatedAt = time.Now()
 	return s.repo.Update(task)
+}
+
+func setIndexedInput(values []string, index int, value string) []string {
+	if index < 0 {
+		index = 0
+	}
+	for len(values) <= index {
+		values = append(values, "")
+	}
+	values[index] = value
+	return values
+}
+
+func applyTaskAssetPath(inputs map[string]interface{}, link model.TaskDataAsset, value string) {
+	switch link.InputRole {
+	case model.TaskAssetRoleCNVRead1, model.TaskAssetRoleCNVRead2:
+		key := "CNVBaseline.read_1"
+		if link.InputRole == model.TaskAssetRoleCNVRead2 {
+			key = "CNVBaseline.read_2"
+		}
+		values := make([]string, 0)
+		switch current := inputs[key].(type) {
+		case []string:
+			values = append(values, current...)
+		case []interface{}:
+			for _, item := range current {
+				values = append(values, fmt.Sprint(item))
+			}
+		}
+		inputs[key] = setIndexedInput(values, link.InputIndex, value)
+	case model.TaskAssetRoleCNVBED:
+		inputs["CNVBaseline.bed"] = value
+	}
 }
 
 func containsAny(s string, substrs ...string) bool {

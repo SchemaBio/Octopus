@@ -193,6 +193,28 @@ func (s *ReportService) httpClient() *http.Client {
 	return reportHTTPClient()
 }
 
+// ValidateTemplateEndpoint verifies URL policy, DNS/TLS, and network reachability
+// without invoking the report-generation POST operation.
+func (s *ReportService) ValidateTemplateEndpoint(ctx context.Context, endpoint, apiKey string) (int, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	if err := validateReportAPIEndpoint(endpoint); err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, endpoint, nil)
+	if err != nil {
+		return 0, err
+	}
+	if apiKey = strings.TrimSpace(apiKey); apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := s.httpClient().Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("report API endpoint is unreachable: %w", err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode, nil
+}
+
 func reportDownloadFileName(requestName, templateName, taskID, contentDisposition, contentType string) string {
 	if _, params, err := mime.ParseMediaType(contentDisposition); err == nil {
 		if filename := sanitizeReportFileName(params["filename"]); filename != "" {

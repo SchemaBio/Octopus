@@ -131,6 +131,11 @@ type ReportTemplateStatusRequest struct {
 	IsActive bool `json:"isActive"`
 }
 
+type ReportEndpointValidateRequest struct {
+	APIEndpoint string `json:"apiEndpoint" binding:"required"`
+	APIKey      string `json:"apiKey"`
+}
+
 // ReportTemplateResponse is the public-safe template payload (omits APIEndpoint and APIKey)
 type ReportTemplateResponse struct {
 	ID          string `json:"id"`

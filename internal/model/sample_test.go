@@ -26,3 +26,20 @@ func TestSampleNilMatchedPairUsesJSONNull(t *testing.T) {
 		t.Fatal("JSON null matched pair should remain nil")
 	}
 }
+
+func TestSampleManualMatchedPairOverridesAutomaticAndCanBeCleared(t *testing.T) {
+	var sample Sample
+	automatic := &MatchedPair{R1Path: "auto_R1.fastq.gz", R2Path: "auto_R2.fastq.gz"}
+	manual := &MatchedPair{R1Path: "manual_R1.fastq.gz", R2Path: "manual_R2.fastq.gz"}
+	sample.SetAutoMatchedPair(automatic)
+	sample.SetMatchedPair(manual)
+
+	if got := sample.GetMatchedPair(); got == nil || got.R1Path != manual.R1Path {
+		t.Fatalf("effective pair = %#v, want manual pair", got)
+	}
+
+	sample.SetMatchedPair(nil)
+	if got := sample.GetMatchedPair(); got == nil || got.R1Path != automatic.R1Path {
+		t.Fatalf("effective pair after clearing manual = %#v, want automatic pair", got)
+	}
+}

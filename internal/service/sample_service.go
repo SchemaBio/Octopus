@@ -48,18 +48,18 @@ func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreat
 	}
 
 	sample := &model.Sample{
-		UUID:              uuid.New().String(),
-		InternalID:        req.InternalID,
-		ExternalOrgID:     actor.OrgID,
-		Gender:            req.Gender,
-		Age:               req.Age,
-		SampleType:        req.SampleType,
-		Batch:             req.Batch,
-		Remark:            req.Remark,
-		Status:            model.SampleStatusPending,
-		CreatedBy:         actor.UserID,
-		MatchStatus:       model.SampleMatchUnmatched,
-		AutoMatchEnabled:  true,
+		UUID:             uuid.New().String(),
+		InternalID:       req.InternalID,
+		ExternalOrgID:    actor.OrgID,
+		Gender:           req.Gender,
+		Age:              req.Age,
+		SampleType:       req.SampleType,
+		Batch:            req.Batch,
+		Remark:           req.Remark,
+		Status:           model.SampleStatusPending,
+		CreatedBy:        actor.UserID,
+		MatchStatus:      model.SampleMatchUnmatched,
+		AutoMatchEnabled: true,
 	}
 
 	if sample.Gender == "" {
@@ -70,6 +70,7 @@ func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreat
 	}
 	sample.SetClinicalDiagnosis(req.ClinicalDiagnosis)
 	sample.SetMatchedPair(nil)
+	sample.SetAutoMatchedPair(nil)
 	sample.SetSubmissionInfo(model.SubmissionInfo{})
 	sample.SetProjectInfo(model.ProjectInfo{})
 	sample.SetFamilyHistory(model.FamilyHistoryInfo{})
@@ -134,7 +135,7 @@ func (s *SampleService) LinkDataAssets(ctx context.Context, id string, req *mode
 			MatchedBy: actor.UserID, MatchedAt: now,
 		}
 		if err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "sample_id"}},
+			Columns:   []clause.Column{{Name: "sample_id"}, {Name: "match_mode"}},
 			DoUpdates: clause.AssignmentColumns([]string{"external_org_id", "read1_asset_id", "read2_asset_id", "match_mode", "match_rule", "matched_by", "matched_at", "updated_at"}),
 		}).Create(&link).Error; err != nil {
 			return err
@@ -231,25 +232,40 @@ func (s *SampleService) UpdateSample(ctx context.Context, id string, req *model.
 	return sample, nil
 }
 
-// ClearMatchedPair removes the FASTQ matched pair from a sample.
+// ClearMatchedPair removes only the explicit/manual selection. If an automatic
+// pair exists, it immediately becomes the effective match again.
 func (s *SampleService) ClearMatchedPair(ctx context.Context, id string, actor model.OverlayActor) (*model.Sample, error) {
 	sample, err := s.repo.FindScopedByUUID(id, actor)
 	if err != nil {
 		return nil, err
 	}
-	sample.SetMatchedPair(nil)
-	sample.MatchStatus = model.SampleMatchUnmatched
-	sample.MatchMode = ""
-	database.GetDB().Where("sample_id = ?", sample.ID).Delete(&model.SampleDataLink{})
-	if err := s.repo.Update(sample); err != nil {
+	err = database.GetDB().Transaction(func(tx *gorm.DB) error {
+		var locked model.Sample
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, sample.ID).Error; err != nil {
+			return err
+		}
+		locked.SetMatchedPair(nil)
+		if err := tx.Where("sample_id = ? AND match_mode = ?", locked.ID, model.SampleMatchModeManual).Delete(&model.SampleDataLink{}).Error; err != nil {
+			return err
+		}
+		if locked.GetAutoMatchedPair() != nil {
+			locked.MatchStatus = model.SampleMatchMatched
+			locked.MatchMode = model.SampleMatchModeAutomatic
+		} else {
+			locked.MatchStatus = model.SampleMatchUnmatched
+			locked.MatchMode = ""
+		}
+		return tx.Save(&locked).Error
+	})
+	if err != nil {
 		return nil, err
 	}
-	return sample, nil
+	return s.repo.FindScopedByUUID(id, actor)
 }
 
 // MatchFromUploadJob binds a completed paired FASTQ upload job to a sample without exposing storage paths to the browser.
 func (s *SampleService) MatchFromUploadJob(ctx context.Context, id string, uploadJobID string, actor model.OverlayActor) (*model.Sample, error) {
-	sample, err := s.repo.FindScopedByUUID(id, actor)
+	_, err := s.repo.FindScopedByUUID(id, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +284,7 @@ func (s *SampleService) MatchFromUploadJob(ctx context.Context, id string, uploa
 	if err != nil {
 		return nil, err
 	}
-	var r1Path, r2Path string
+	var r1Path, r2Path, r1AssetUUID, r2AssetUUID string
 	for _, file := range files {
 		if file.Status != model.FileStatusCompleted {
 			continue
@@ -276,8 +292,14 @@ func (s *SampleService) MatchFromUploadJob(ctx context.Context, id string, uploa
 		switch file.ReadType {
 		case model.ReadTypeRead1:
 			r1Path = file.StorageKey
+			if asset, assetErr := s.assetRepo.FindByUploadFileID(file.ID); assetErr == nil {
+				r1AssetUUID = asset.UUID
+			}
 		case model.ReadTypeRead2:
 			r2Path = file.StorageKey
+			if asset, assetErr := s.assetRepo.FindByUploadFileID(file.ID); assetErr == nil {
+				r2AssetUUID = asset.UUID
+			}
 		}
 	}
 	if r1Path == "" || r2Path == "" {
@@ -289,14 +311,13 @@ func (s *SampleService) MatchFromUploadJob(ctx context.Context, id string, uploa
 	if err := validateActorFileReference(s.cfg, actor, "upload job read2", r2Path); err != nil {
 		return nil, err
 	}
-
-	sample.SetMatchedPair(&model.MatchedPair{R1Path: r1Path, R2Path: r2Path})
-	sample.MatchStatus = model.SampleMatchMatched
-	sample.MatchMode = model.SampleMatchModeManual
-	if err := s.repo.Update(sample); err != nil {
-		return nil, err
+	if r1AssetUUID == "" || r2AssetUUID == "" {
+		return nil, fmt.Errorf("upload job data assets not found")
 	}
-	return sample, nil
+	return s.LinkDataAssets(ctx, id, &model.SampleDataLinkRequest{
+		Read1AssetID: r1AssetUUID,
+		Read2AssetID: r2AssetUUID,
+	}, actor)
 }
 
 // DeleteSample deletes a sample

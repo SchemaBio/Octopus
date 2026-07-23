@@ -90,11 +90,13 @@ type TaskCreateRequest struct {
 	PipelineVersion string `json:"pipelineVersion"`
 	Remark          string `json:"remark"`
 	// Internal fields (not from frontend, but used internally)
-	Template   string                 `json:"template,omitempty"`
-	Executor   ExecutorType           `json:"executor,omitempty"`
-	Inputs     map[string]interface{} `json:"inputs,omitempty"`
-	ConfigFile string                 `json:"config_file,omitempty"`
-	OutputDir  string                 `json:"output_dir,omitempty"`
+	Template    string                  `json:"template,omitempty"`
+	Executor    ExecutorType            `json:"executor,omitempty"`
+	Inputs      map[string]interface{}  `json:"inputs,omitempty"`
+	ConfigFile  string                  `json:"config_file,omitempty"`
+	OutputDir   string                  `json:"output_dir,omitempty"`
+	InputAssets []TaskInputAssetRequest `json:"-"`
+	DeferStart  bool                    `json:"-"`
 }
 
 // TaskUpdateRequest is the request body for updating a task

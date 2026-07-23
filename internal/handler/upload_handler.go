@@ -38,7 +38,7 @@ func (h *UploadHandler) CreateJob(c *gin.Context) {
 
 	job, files, presignedURLs, err := h.svc.CreateJob(c.Request.Context(), userID, orgID, &req)
 	if err != nil {
-		ErrorInternal(c, err.Error())
+		ErrorBadRequest(c, err.Error())
 		return
 	}
 

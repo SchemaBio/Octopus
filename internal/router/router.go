@@ -163,6 +163,7 @@ func New(cfg *config.Config) *gin.Engine {
 		reportTemplatesAdmin.Use(middleware.RequireAdmin())
 		{
 			reportTemplatesAdmin.POST("", reportHandler.CreateTemplate)
+			reportTemplatesAdmin.POST("/validate-endpoint", reportHandler.ValidateTemplateEndpoint)
 			reportTemplatesAdmin.PUT("/:id", reportHandler.UpdateTemplate)
 			reportTemplatesAdmin.PUT("/:id/status", reportHandler.UpdateTemplateStatus)
 			reportTemplatesAdmin.DELETE("/:id", reportHandler.DeleteTemplate)
@@ -332,6 +333,15 @@ func New(cfg *config.Config) *gin.Engine {
 			data.GET("/assets/:uuid", dataAssetHandler.Get)
 			data.GET("/assets/:uuid/download", dataAssetHandler.Download)
 			data.DELETE("/assets/:uuid", dataAssetHandler.Delete)
+		}
+
+		cnvBaselineHandler := handler.NewCNVBaselineHandler(cfg)
+		cnvBaselines := v1.Group("/cnv-baselines")
+		cnvBaselines.Use(middleware.JWTAuth(cfg))
+		{
+			cnvBaselines.POST("", cnvBaselineHandler.Create)
+			cnvBaselines.GET("", cnvBaselineHandler.List)
+			cnvBaselines.GET("/:uuid", cnvBaselineHandler.Get)
 		}
 
 		// ========== Result import batches (audit, protected) ==========

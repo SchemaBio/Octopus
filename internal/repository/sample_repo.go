@@ -127,7 +127,7 @@ func (r *SampleRepository) FindAutoMatchable(limit int) ([]model.Sample, error) 
 		limit = 500
 	}
 	var samples []model.Sample
-	err := r.db.Where("auto_match_enabled = ? AND (match_mode IS NULL OR match_mode = '' OR match_mode = ?)", true, model.SampleMatchModeAutomatic).
+	err := r.db.Where("auto_match_enabled = ?", true).
 		Order("updated_at ASC").Limit(limit).Find(&samples).Error
 	return samples, err
 }

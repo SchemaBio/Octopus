@@ -39,3 +39,29 @@ func TestApplyUploadFilesToInputsIsStableWhenAlreadyCurrent(t *testing.T) {
 		t.Fatal("expected no change when task input already points to current upload file")
 	}
 }
+
+func TestMatchedPairCompleteRequiresBothReads(t *testing.T) {
+	if matchedPairComplete(nil) {
+		t.Fatal("nil pair must not be ready")
+	}
+	if matchedPairComplete(&model.MatchedPair{R1Path: "R1.fastq.gz"}) {
+		t.Fatal("partial pair must not be ready")
+	}
+	if !matchedPairComplete(&model.MatchedPair{R1Path: "R1.fastq.gz", R2Path: "R2.fastq.gz"}) {
+		t.Fatal("complete pair should be ready")
+	}
+}
+
+func TestApplySampleMatchedPairToInputsReplacesPreviousMatch(t *testing.T) {
+	inputs := map[string]interface{}{
+		"fastq_r1": "auto_R1.fastq.gz",
+		"fastq_r2": "auto_R2.fastq.gz",
+	}
+	pair := &model.MatchedPair{R1Path: "manual_R1.fastq.gz", R2Path: "manual_R2.fastq.gz"}
+	if !applySampleMatchedPairToInputs(inputs, pair) {
+		t.Fatal("expected effective sample pair to update task inputs")
+	}
+	if inputs["fastq_r1"] != pair.R1Path || inputs["fastq_r2"] != pair.R2Path {
+		t.Fatalf("unexpected sample inputs: %#v", inputs)
+	}
+}

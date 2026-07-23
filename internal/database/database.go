@@ -74,6 +74,9 @@ func AutoMigrate() error {
 		&model.UploadFile{},
 		&model.DataAsset{},
 		&model.SampleDataLink{},
+		&model.TaskDataAsset{},
+		&model.CNVBaseline{},
+		&model.CNVBaselineReadPair{},
 		// Import audit models
 		&model.ResultImportBatch{},
 	)
@@ -89,8 +92,15 @@ func AutoMigrate() error {
 
 func migrateSampleOrganizationIndexes() error {
 	statements := []string{
-		"UPDATE samples SET match_status = 'matched', match_mode = 'manual' WHERE matched_pair IS NOT NULL AND matched_pair::text NOT IN ('', 'null', '{}') AND (match_status = '' OR match_status = 'unmatched')",
+		"UPDATE samples SET manual_matched_pair = matched_pair WHERE matched_pair IS NOT NULL AND matched_pair::text NOT IN ('', 'null', '{}') AND (manual_matched_pair IS NULL OR manual_matched_pair::text IN ('', 'null', '{}')) AND (auto_matched_pair IS NULL OR auto_matched_pair::text IN ('', 'null', '{}')) AND match_mode IS DISTINCT FROM 'automatic'",
+		"UPDATE samples SET auto_matched_pair = matched_pair WHERE matched_pair IS NOT NULL AND matched_pair::text NOT IN ('', 'null', '{}') AND (manual_matched_pair IS NULL OR manual_matched_pair::text IN ('', 'null', '{}')) AND (auto_matched_pair IS NULL OR auto_matched_pair::text IN ('', 'null', '{}')) AND match_mode = 'automatic'",
+		"UPDATE samples SET match_status = 'matched', match_mode = 'manual' WHERE manual_matched_pair IS NOT NULL AND manual_matched_pair::text NOT IN ('', 'null', '{}')",
+		"UPDATE samples SET match_status = 'matched', match_mode = 'automatic' WHERE (manual_matched_pair IS NULL OR manual_matched_pair::text IN ('', 'null', '{}')) AND auto_matched_pair IS NOT NULL AND auto_matched_pair::text NOT IN ('', 'null', '{}')",
+		"UPDATE samples SET manual_matched_pair = 'null'::jsonb WHERE manual_matched_pair IS NULL",
+		"UPDATE samples SET auto_matched_pair = 'null'::jsonb WHERE auto_matched_pair IS NULL",
 		"UPDATE samples SET match_mode = '' WHERE match_mode IS NULL",
+		"DROP INDEX IF EXISTS idx_sample_data_links_sample_id",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_data_link_mode ON sample_data_links (sample_id, match_mode)",
 		"DROP INDEX IF EXISTS idx_samples_internal_id",
 		"DROP INDEX IF EXISTS uni_samples_internal_id",
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_samples_org_internal_id ON samples (external_org_id, internal_id) WHERE external_org_id <> ''",

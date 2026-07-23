@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // Gender represents gender
@@ -64,12 +66,14 @@ type Sample struct {
 	Age               *int               `json:"age,omitempty"`
 	SampleType        SampleTypeFrontend `json:"sample_type" gorm:"size:20;default:其他"`
 	Batch             string             `json:"batch" gorm:"size:100"`
-	ClinicalDiagnosis string             `json:"clinical_diagnosis" gorm:"type:jsonb"` // JSON
-	HPOTerms          string             `json:"-" gorm:"type:jsonb"`                  // JSON
-	MatchedPair       string             `json:"-" gorm:"type:jsonb"`                  // JSON
-	SubmissionInfo    string             `json:"-" gorm:"type:jsonb"`                  // JSON
-	ProjectInfo       string             `json:"-" gorm:"type:jsonb"`                  // JSON
-	FamilyHistory     string             `json:"-" gorm:"type:jsonb"`                  // JSON
+	ClinicalDiagnosis string             `json:"clinical_diagnosis" gorm:"type:jsonb"`    // JSON
+	HPOTerms          string             `json:"-" gorm:"type:jsonb"`                     // JSON
+	MatchedPair       string             `json:"-" gorm:"column:matched_pair;type:jsonb"` // Legacy JSON, retained for migration compatibility
+	AutoMatchedPair   string             `json:"-" gorm:"type:jsonb"`                     // Automatically matched FASTQ pair
+	ManualMatchedPair string             `json:"-" gorm:"type:jsonb"`                     // Explicit user-selected FASTQ pair
+	SubmissionInfo    string             `json:"-" gorm:"type:jsonb"`                     // JSON
+	ProjectInfo       string             `json:"-" gorm:"type:jsonb"`                     // JSON
+	FamilyHistory     string             `json:"-" gorm:"type:jsonb"`                     // JSON
 	Remark            string             `json:"remark" gorm:"type:text"`
 	Status            SampleStatus       `json:"status" gorm:"size:20;default:pending"`
 	ProjectID         uint               `json:"project_id" gorm:"index"`
@@ -79,6 +83,19 @@ type Sample struct {
 	AutoMatchEnabled  bool               `json:"auto_match_enabled" gorm:"not null;default:true"`
 	CreatedAt         time.Time          `json:"created_at" gorm:"type:timestamptz"`
 	UpdatedAt         time.Time          `json:"updated_at" gorm:"type:timestamptz"`
+}
+
+func (s *Sample) BeforeSave(_ *gorm.DB) error {
+	if strings.TrimSpace(s.MatchedPair) == "" {
+		s.MatchedPair = "null"
+	}
+	if strings.TrimSpace(s.AutoMatchedPair) == "" {
+		s.AutoMatchedPair = "null"
+	}
+	if strings.TrimSpace(s.ManualMatchedPair) == "" {
+		s.ManualMatchedPair = "null"
+	}
+	return nil
 }
 
 // HPOTerm represents an HPO term
@@ -279,37 +296,73 @@ func (s *Sample) SetHPOTerms(terms []HPOTerm) {
 	s.HPOTerms = string(b)
 }
 
-// GetMatchedPair parses MatchedPair JSON
-func (s *Sample) GetMatchedPair() *MatchedPair {
-	if value := strings.TrimSpace(s.MatchedPair); value == "" || value == "null" {
+func parseMatchedPair(value string) *MatchedPair {
+	if value = strings.TrimSpace(value); value == "" || value == "null" || value == "{}" {
 		return nil
 	}
 	var mp MatchedPair
-	if err := json.Unmarshal([]byte(s.MatchedPair), &mp); err != nil {
+	if err := json.Unmarshal([]byte(value), &mp); err != nil {
 		return nil
 	}
 	return &mp
+}
+
+// GetMatchedPair returns the effective pair. Explicit manual selection always
+// takes precedence over the independently maintained automatic match.
+func (s *Sample) GetMatchedPair() *MatchedPair {
+	if pair := s.GetManualMatchedPair(); pair != nil {
+		return pair
+	}
+	if pair := s.GetAutoMatchedPair(); pair != nil {
+		return pair
+	}
+	if strings.TrimSpace(s.ManualMatchedPair) == "" && strings.TrimSpace(s.AutoMatchedPair) == "" {
+		return parseMatchedPair(s.MatchedPair)
+	}
+	return nil
+}
+
+func (s *Sample) GetAutoMatchedPair() *MatchedPair {
+	return parseMatchedPair(s.AutoMatchedPair)
+}
+
+func (s *Sample) GetManualMatchedPair() *MatchedPair {
+	return parseMatchedPair(s.ManualMatchedPair)
 }
 
 // PublicMatchedPair keeps storage paths private while preserving the legacy
 // response shape consumed by clients that only need readiness and filenames.
 func (s *Sample) PublicMatchedPair() *MatchedPair {
 	pair := s.GetMatchedPair()
-	if pair == nil { return nil }
+	if pair == nil {
+		return nil
+	}
 	return &MatchedPair{
 		R1Path: path.Base(strings.ReplaceAll(pair.R1Path, `\`, "/")),
 		R2Path: path.Base(strings.ReplaceAll(pair.R2Path, `\`, "/")),
 	}
 }
 
-// SetMatchedPair sets MatchedPair JSON
-func (s *Sample) SetMatchedPair(mp *MatchedPair) {
+func marshalMatchedPair(mp *MatchedPair) string {
 	if mp == nil {
-		s.MatchedPair = "null"
-		return
+		return "null"
 	}
 	b, _ := json.Marshal(mp)
-	s.MatchedPair = string(b)
+	return string(b)
+}
+
+// SetMatchedPair is the compatibility setter for explicit/manual matches.
+func (s *Sample) SetMatchedPair(mp *MatchedPair) {
+	s.SetManualMatchedPair(mp)
+	s.MatchedPair = marshalMatchedPair(mp)
+}
+
+func (s *Sample) SetAutoMatchedPair(mp *MatchedPair) {
+	s.AutoMatchedPair = marshalMatchedPair(mp)
+}
+
+func (s *Sample) SetManualMatchedPair(mp *MatchedPair) {
+	s.ManualMatchedPair = marshalMatchedPair(mp)
 }
 
 // GetSubmissionInfo parses SubmissionInfo JSON

@@ -27,6 +27,27 @@ type UploadService struct {
 
 var safeUploadFilename = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+=-]{0,254}$`)
 
+const maxBEDUploadBytes int64 = 20 << 20
+
+func normalizeReferenceGenome(value string) (string, error) {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "GRCH37", "HG19":
+		return model.ReferenceGenomeGRCh37, nil
+	case "GRCH38", "HG38":
+		return model.ReferenceGenomeGRCh38, nil
+	default:
+		return "", fmt.Errorf("reference_genome must be GRCh37 or GRCh38")
+	}
+}
+
+func safeStorageSegment(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return regexp.MustCompile(`[^A-Za-z0-9._-]+`).ReplaceAllString(value, "_")
+}
+
 func validateUploadFilename(filename string) error {
 	if filename == "" {
 		return fmt.Errorf("filename is required")
@@ -75,6 +96,19 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		return nil, nil, nil, fmt.Errorf("at least one file is required")
 	}
 
+	if req.FileType == model.UploadFileTypeBed {
+		genome, err := normalizeReferenceGenome(req.ReferenceGenome)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		req.ReferenceGenome = genome
+		if len(req.Files) != 1 || req.Files[0].ReadType != model.ReadTypeBed {
+			return nil, nil, nil, fmt.Errorf("a BED upload must contain exactly one bed file")
+		}
+	} else {
+		req.ReferenceGenome = ""
+	}
+
 	for _, f := range req.Files {
 		if err := validateUploadFilename(f.FileName); err != nil {
 			return nil, nil, nil, err
@@ -84,6 +118,15 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		}
 		if s.cfg.Storage.MaxSizeMB > 0 && f.FileSize > int64(s.cfg.Storage.MaxSizeMB)*1024*1024 {
 			return nil, nil, nil, fmt.Errorf("file %s exceeds maximum size of %d MB", f.FileName, s.cfg.Storage.MaxSizeMB)
+		}
+		if req.FileType == model.UploadFileTypeBed {
+			lowerName := strings.ToLower(f.FileName)
+			if !strings.HasSuffix(lowerName, ".bed") && !strings.HasSuffix(lowerName, ".bed.gz") {
+				return nil, nil, nil, fmt.Errorf("BED file must use .bed or .bed.gz extension")
+			}
+			if f.FileSize > maxBEDUploadBytes {
+				return nil, nil, nil, fmt.Errorf("BED file exceeds maximum size of 20 MB")
+			}
 		}
 	}
 
@@ -99,14 +142,15 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 
 	jobUUID := uuid.New().String()
 	job := &model.UploadJob{
-		UUID:          jobUUID,
-		UserID:        userID,
-		ExternalOrgID: orgID,
-		SampleID:      req.SampleID,
-		Name:          req.Name,
-		FileType:      req.FileType,
-		Provider:      provider,
-		Status:        model.UploadJobStatusPending,
+		UUID:            jobUUID,
+		UserID:          userID,
+		ExternalOrgID:   orgID,
+		SampleID:        req.SampleID,
+		Name:            req.Name,
+		FileType:        req.FileType,
+		ReferenceGenome: req.ReferenceGenome,
+		Provider:        provider,
+		Status:          model.UploadJobStatusPending,
 	}
 
 	if err := s.jobRepo.Create(job); err != nil {
@@ -123,7 +167,7 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 
 	for _, f := range req.Files {
 		fileUUID := uuid.New().String()
-		storageKey := s.buildStorageKey(provider, storageFolder, jobUUID, f.FileName)
+		storageKey := s.buildStorageKey(provider, orgID, storageFolder, jobUUID, req.FileType, req.ReferenceGenome, f.FileName)
 
 		uploadFile := &model.UploadFile{
 			UUID:       fileUUID,
@@ -148,7 +192,8 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 			UUID: fileUUID, ExternalOrgID: orgID, CreatedBy: userID,
 			UploadFileID: &uploadFile.ID, Provider: provider, StorageKey: storageKey,
 			FileName: f.FileName, FileSize: f.FileSize, ReadType: f.ReadType,
-			Status: model.FileStatusPending, Source: model.DataAssetSourceUpload, ExpiresAt: expiresAt,
+			ReferenceGenome: req.ReferenceGenome,
+			Status:          model.FileStatusPending, Source: model.DataAssetSourceUpload, ExpiresAt: expiresAt,
 		}
 		if err := s.assetRepo.Create(asset); err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to register data asset: %w", err)
@@ -170,7 +215,14 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 	return job, files, presignedURLs, nil
 }
 
-func (s *UploadService) buildStorageKey(provider model.UploadProvider, storageFolder, jobUUID, fileName string) string {
+func (s *UploadService) buildStorageKey(provider model.UploadProvider, orgID, storageFolder, jobUUID string, fileType model.UploadFileType, referenceGenome, fileName string) string {
+	if fileType == model.UploadFileTypeBed {
+		scope := safeStorageSegment(orgID, "user-"+storageFolder)
+		if provider == model.UploadProviderS3 {
+			return path.Join("organizations", scope, "bed", referenceGenome, jobUUID, fileName)
+		}
+		return filepath.Join("bed", referenceGenome, scope, jobUUID, fileName)
+	}
 	if provider == model.UploadProviderS3 {
 		return path.Join("uploads", storageFolder, jobUUID, fileName)
 	}
@@ -181,11 +233,6 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, userID uint, fileUUID
 	existingFile, err := s.fileRepo.FindByUUID(fileUUID)
 	if err != nil {
 		return nil, fmt.Errorf("upload file record not found: %w", err)
-	}
-
-	storageFolder, err := s.getUserStorageFolder(ctx, userID)
-	if err != nil {
-		return nil, err
 	}
 
 	job, err := s.jobRepo.FindByUUID(existingFile.JobUUID)
@@ -202,12 +249,19 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, userID uint, fileUUID
 		return nil, err
 	}
 
-	dir := filepath.Join(s.cfg.Storage.LocalDir, storageFolder, job.UUID)
+	storagePath := existingFile.StorageKey
+	if !filepath.IsAbs(storagePath) {
+		storagePath = filepath.Join(s.cfg.Storage.LocalDir, storagePath)
+	}
+	if err := ensurePathInsideBase(s.cfg.Storage.LocalDir, storagePath); err != nil {
+		return nil, err
+	}
+	dir := filepath.Dir(storagePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create upload directory: %w", err)
 	}
 
-	filePath := filepath.Join(dir, existingFile.FileName)
+	filePath := storagePath
 	f, err := os.Create(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file: %w", err)
@@ -222,6 +276,10 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, userID uint, fileUUID
 	if s.cfg.Storage.MaxSizeMB > 0 && written > int64(s.cfg.Storage.MaxSizeMB)*1024*1024 {
 		os.Remove(filePath)
 		return nil, fmt.Errorf("file exceeds maximum size of %d MB", s.cfg.Storage.MaxSizeMB)
+	}
+	if job.FileType == model.UploadFileTypeBed && written > maxBEDUploadBytes {
+		os.Remove(filePath)
+		return nil, fmt.Errorf("BED file exceeds maximum size of 20 MB")
 	}
 
 	existingFile.StorageKey = filePath
@@ -265,6 +323,9 @@ func (s *UploadService) CompleteS3File(ctx context.Context, userID uint, fileUUI
 	if file.FileSize > 0 && size != file.FileSize {
 		return nil, fmt.Errorf("uploaded object size mismatch: expected %d, got %d", file.FileSize, size)
 	}
+	if job.FileType == model.UploadFileTypeBed && size > maxBEDUploadBytes {
+		return nil, fmt.Errorf("BED file exceeds maximum size of 20 MB")
+	}
 	file.FileSize = size
 	file.Status = model.FileStatusCompleted
 	if err := s.fileRepo.Update(file); err != nil {
@@ -297,7 +358,11 @@ func (s *UploadService) syncJobStatus(job *model.UploadJob) {
 	} else {
 		job.Status = model.UploadJobStatusUploading
 	}
-	s.jobRepo.Update(job)
+	if err := s.jobRepo.Update(job); err == nil && allComplete {
+		// Reconcile immediately after the pair finishes uploading. The periodic
+		// matcher remains as a fallback for scanned or externally registered data.
+		NewSampleMatcher().run(context.Background())
+	}
 }
 
 func (s *UploadService) GetJob(ctx context.Context, userID uint, uuid string) (*model.UploadJob, []model.UploadFile, error) {

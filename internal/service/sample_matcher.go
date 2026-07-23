@@ -19,6 +19,8 @@ var fastqPairPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)^(.+?)[._-]([12])$`),
 }
 
+var uploadUUIDPrefix = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_(.+)$`)
+
 type SampleMatcher struct {
 	samples *repository.SampleRepository
 	assets  *repository.DataAssetRepository
@@ -84,13 +86,13 @@ func (m *SampleMatcher) matchSample(ctx context.Context, sample *model.Sample) {
 	case len(read1) == 1 && len(read2) == 1:
 		_ = m.autoLink(sample.ID, &read1[0], &read2[0])
 	case len(read1) > 1 || len(read2) > 1:
-		m.updateStatus(sample, model.SampleMatchConflict)
+		m.clearAutoMatch(sample.ID, model.SampleMatchConflict)
 	case len(read1)+len(read2) > 0:
-		m.updateStatus(sample, model.SampleMatchPartial)
-	case sample.MatchMode == model.SampleMatchModeAutomatic && sample.GetMatchedPair() != nil:
-		m.updateStatus(sample, model.SampleMatchMissing)
+		m.clearAutoMatch(sample.ID, model.SampleMatchPartial)
+	case sample.GetAutoMatchedPair() != nil:
+		m.clearAutoMatch(sample.ID, model.SampleMatchMissing)
 	default:
-		m.updateStatus(sample, model.SampleMatchUnmatched)
+		m.clearAutoMatch(sample.ID, model.SampleMatchUnmatched)
 	}
 }
 
@@ -100,7 +102,7 @@ func (m *SampleMatcher) autoLink(sampleID uint, read1, read2 *model.DataAsset) e
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sample, sampleID).Error; err != nil {
 			return err
 		}
-		if sample.MatchMode == model.SampleMatchModeManual || !sample.AutoMatchEnabled {
+		if !sample.AutoMatchEnabled {
 			return nil
 		}
 		now := time.Now()
@@ -111,25 +113,42 @@ func (m *SampleMatcher) autoLink(sampleID uint, read1, read2 *model.DataAsset) e
 			MatchedAt: now,
 		}
 		if err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "sample_id"}},
+			Columns:   []clause.Column{{Name: "sample_id"}, {Name: "match_mode"}},
 			DoUpdates: clause.AssignmentColumns([]string{"external_org_id", "read1_asset_id", "read2_asset_id", "match_mode", "match_rule", "matched_by", "matched_at", "updated_at"}),
 		}).Create(&link).Error; err != nil {
 			return err
 		}
-		sample.SetMatchedPair(&model.MatchedPair{R1Path: read1.StorageKey, R2Path: read2.StorageKey})
-		sample.MatchStatus = model.SampleMatchMatched
-		sample.MatchMode = model.SampleMatchModeAutomatic
+		sample.SetAutoMatchedPair(&model.MatchedPair{R1Path: read1.StorageKey, R2Path: read2.StorageKey})
+		if sample.GetManualMatchedPair() != nil {
+			sample.MatchStatus = model.SampleMatchMatched
+			sample.MatchMode = model.SampleMatchModeManual
+		} else {
+			sample.MatchStatus = model.SampleMatchMatched
+			sample.MatchMode = model.SampleMatchModeAutomatic
+		}
 		return tx.Save(&sample).Error
 	})
 }
 
-func (m *SampleMatcher) updateStatus(sample *model.Sample, status model.SampleMatchStatus) {
-	if sample.MatchMode == model.SampleMatchModeManual || sample.MatchStatus == status {
-		return
-	}
-	database.GetDB().Model(&model.Sample{}).
-		Where("id = ? AND (match_mode IS NULL OR match_mode <> ?)", sample.ID, model.SampleMatchModeManual).
-		Update("match_status", status)
+func (m *SampleMatcher) clearAutoMatch(sampleID uint, status model.SampleMatchStatus) {
+	_ = database.GetDB().Transaction(func(tx *gorm.DB) error {
+		var sample model.Sample
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sample, sampleID).Error; err != nil {
+			return err
+		}
+		sample.SetAutoMatchedPair(nil)
+		if err := tx.Where("sample_id = ? AND match_mode = ?", sample.ID, model.SampleMatchModeAutomatic).Delete(&model.SampleDataLink{}).Error; err != nil {
+			return err
+		}
+		if sample.GetManualMatchedPair() != nil {
+			sample.MatchStatus = model.SampleMatchMatched
+			sample.MatchMode = model.SampleMatchModeManual
+		} else {
+			sample.MatchStatus = status
+			sample.MatchMode = ""
+		}
+		return tx.Save(&sample).Error
+	})
 }
 
 func parseFASTQPairName(name string) (string, model.ReadType, bool) {
@@ -147,9 +166,16 @@ func parseFASTQPairName(name string) (string, model.ReadType, bool) {
 			continue
 		}
 		if matches[2] == "1" {
-			return matches[1], model.ReadTypeRead1, true
+			return fastqSampleKey(matches[1]), model.ReadTypeRead1, true
 		}
-		return matches[1], model.ReadTypeRead2, true
+		return fastqSampleKey(matches[1]), model.ReadTypeRead2, true
 	}
 	return "", "", false
+}
+
+func fastqSampleKey(key string) string {
+	if matches := uploadUUIDPrefix.FindStringSubmatch(key); len(matches) == 2 {
+		return matches[1]
+	}
+	return key
 }

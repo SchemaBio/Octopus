@@ -166,6 +166,20 @@ func (h *ReportHandler) CreateTemplate(c *gin.Context) {
 	SuccessCreated(c, tmpl)
 }
 
+func (h *ReportHandler) ValidateTemplateEndpoint(c *gin.Context) {
+	var req model.ReportEndpointValidateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	status, err := h.svc.ValidateTemplateEndpoint(c.Request.Context(), req.APIEndpoint, req.APIKey)
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, gin.H{"reachable": true, "status_code": status})
+}
+
 // UpdateTemplate updates a report template.
 func (h *ReportHandler) UpdateTemplate(c *gin.Context) {
 	var req model.ReportTemplateUpdateRequest

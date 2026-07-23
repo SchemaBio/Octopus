@@ -4,11 +4,11 @@ import "time"
 
 type SampleDataLink struct {
 	ID            uint            `json:"-" gorm:"primaryKey"`
-	SampleID      uint            `json:"-" gorm:"uniqueIndex;not null"`
+	SampleID      uint            `json:"-" gorm:"uniqueIndex:idx_sample_data_link_mode;not null"`
 	ExternalOrgID string          `json:"-" gorm:"size:100;index"`
 	Read1AssetID  uint            `json:"-" gorm:"index;not null"`
 	Read2AssetID  uint            `json:"-" gorm:"index;not null"`
-	MatchMode     SampleMatchMode `json:"match_mode" gorm:"size:20;index;not null"`
+	MatchMode     SampleMatchMode `json:"match_mode" gorm:"size:20;index;uniqueIndex:idx_sample_data_link_mode;not null"`
 	MatchRule     string          `json:"match_rule,omitempty" gorm:"size:100"`
 	MatchedBy     uint            `json:"matched_by" gorm:"index"`
 	MatchedAt     time.Time       `json:"matched_at" gorm:"type:timestamptz"`

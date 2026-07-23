@@ -59,6 +59,9 @@ func (r *DataAssetRepository) Paginate(query *model.DataAssetListQuery) ([]model
 	if query.ReadType != "" {
 		db = db.Where("read_type = ?", query.ReadType)
 	}
+	if query.ReferenceGenome != "" {
+		db = db.Where("reference_genome = ?", query.ReferenceGenome)
+	}
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
