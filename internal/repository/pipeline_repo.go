@@ -2,6 +2,7 @@ package repository
 
 import (
 	"github.com/SchemaBio/Octopus/internal/model"
+	"gorm.io/gorm"
 )
 
 // PipelineRepository provides pipeline-specific operations
@@ -27,10 +28,31 @@ func (r *PipelineRepository) FindByName(name string) (*model.Pipeline, error) {
 }
 
 // ExistsByName checks if a pipeline name exists
-func (r *PipelineRepository) ExistsByName(name string) bool {
+func (r *PipelineRepository) ExistsByName(name string, actor model.OverlayActor, excludeID string) bool {
 	var count int64
-	r.db.Model(&model.Pipeline{}).Where("name = ?", name).Count(&count)
+	db := r.db.Model(&model.Pipeline{}).Where("name = ?", name)
+	if excludeID != "" {
+		db = db.Where("id <> ?", excludeID)
+	}
+	db = scopePipeline(db, actor)
+	db.Count(&count)
 	return count > 0
+}
+
+func (r *PipelineRepository) FindScopedByUUID(id string, actor model.OverlayActor) (*model.Pipeline, error) {
+	var pipeline model.Pipeline
+	err := scopePipeline(r.db.Where("id = ?", id), actor).First(&pipeline).Error
+	return &pipeline, err
+}
+
+func scopePipeline(db *gorm.DB, actor model.OverlayActor) *gorm.DB {
+	if actor.Role == string(model.SystemRoleSuperAdmin) {
+		return db
+	}
+	if actor.OrgID != "" {
+		return db.Where("external_org_id = ? OR (external_org_id = '' AND created_by = ?)", actor.OrgID, actor.UserID)
+	}
+	return db.Where("external_org_id = '' AND created_by = ?", actor.UserID)
 }
 
 // PaginateByQuery paginates pipelines with filters
@@ -38,8 +60,10 @@ func (r *PipelineRepository) PaginateByQuery(query *model.PipelineListQuery) ([]
 	db := r.db.Model(&model.Pipeline{})
 
 	if !query.IncludeAll {
-		if query.CreatedBy != 0 {
-			db = db.Where("created_by = ?", query.CreatedBy)
+		if query.ExternalOrgID != "" {
+			db = db.Where("external_org_id = ? OR (external_org_id = '' AND created_by = ?)", query.ExternalOrgID, query.CreatedBy)
+		} else if query.CreatedBy != 0 {
+			db = db.Where("external_org_id = '' AND created_by = ?", query.CreatedBy)
 		} else {
 			db = db.Where("1 = 0")
 		}

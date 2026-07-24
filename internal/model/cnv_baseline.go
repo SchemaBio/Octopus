@@ -8,9 +8,10 @@ const (
 )
 
 const (
-	TaskAssetRoleCNVRead1 = "cnv_baseline_read1"
-	TaskAssetRoleCNVRead2 = "cnv_baseline_read2"
-	TaskAssetRoleCNVBED   = "cnv_baseline_bed"
+	TaskAssetRoleCNVRead1    = "cnv_baseline_read1"
+	TaskAssetRoleCNVRead2    = "cnv_baseline_read2"
+	TaskAssetRoleCNVBED      = "cnv_baseline_bed"
+	TaskAssetRoleAnalysisBED = "analysis_bed"
 )
 
 // CNVBaseline tracks one baseline-generation workflow and its final output.
@@ -22,6 +23,8 @@ type CNVBaseline struct {
 	BEDAssetID      uint      `json:"-" gorm:"index;not null"`
 	TaskUUID        string    `json:"task_id" gorm:"uniqueIndex;size:36;not null"`
 	OutputPath      string    `json:"output_path,omitempty" gorm:"size:1000"`
+	InputBytes      int64     `json:"input_bytes" gorm:"not null;default:0"`
+	CreditsCharged  int       `json:"credits_charged" gorm:"not null;default:0"`
 	ExternalOrgID   string    `json:"-" gorm:"size:100;index"`
 	CreatedBy       uint      `json:"-" gorm:"index;not null"`
 	CreatedAt       time.Time `json:"created_at" gorm:"type:timestamptz"`
@@ -74,6 +77,9 @@ type CNVBaselineResponse struct {
 	Status          TaskStatus                    `json:"status"`
 	Progress        int                           `json:"progress"`
 	OutputPath      string                        `json:"output_path,omitempty"`
+	InputBytes      int64                         `json:"input_bytes"`
+	CreditCost      int                           `json:"credit_cost"`
+	CreditsCharged  int                           `json:"credits_charged"`
 	Error           string                        `json:"error,omitempty"`
 	CreatedAt       string                        `json:"created_at"`
 	UpdatedAt       string                        `json:"updated_at"`

@@ -29,11 +29,16 @@ func NewDataAssetService(cfg *config.Config) *DataAssetService {
 
 func (s *DataAssetService) Config() model.DataCenterConfigResponse {
 	temporary := s.cfg.Storage.RetentionDays > 0
+	var maxFileSizeBytes int64
+	if temporary {
+		maxFileSizeBytes = model.SaaSMaxUploadFileBytes
+	}
 	return model.DataCenterConfigResponse{
-		Provider:        model.UploadProvider(s.cfg.Storage.Provider),
-		RetentionDays:   s.cfg.Storage.RetentionDays,
-		Temporary:       temporary,
-		DownloadAllowed: !temporary,
+		Provider:         model.UploadProvider(s.cfg.Storage.Provider),
+		RetentionDays:    s.cfg.Storage.RetentionDays,
+		Temporary:        temporary,
+		DownloadAllowed:  !temporary,
+		MaxFileSizeBytes: maxFileSizeBytes,
 	}
 }
 

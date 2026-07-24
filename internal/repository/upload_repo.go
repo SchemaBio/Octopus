@@ -87,17 +87,19 @@ func (r *UploadFileRepository) UpdateFileSize(id uint, fileSize int64) error {
 // UploadFileAuditRow is the scanned row for the file-level audit list: the
 // UploadFile columns plus the owning job's org (joined from upload_jobs).
 type UploadFileAuditRow struct {
-	UUID       string
-	JobID      uint
-	JobUUID    string
-	FileName   string
-	StorageKey string
-	FileSize   int64
-	ReadType   model.ReadType
-	Status     model.FileStatus
-	OrgID      string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	UUID                       string
+	JobID                      uint
+	JobUUID                    string
+	FileName                   string
+	StorageKey                 string
+	FileSize                   int64
+	ReadType                   model.ReadType
+	Status                     model.FileStatus
+	OrgID                      string
+	UploadPolicyVersion        string
+	UploadPolicyAcknowledgedAt *time.Time
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
 }
 
 // PaginateFilesByQuery lists upload files at file level (not nested in jobs)
@@ -146,7 +148,8 @@ func (r *UploadFileRepository) PaginateFilesByQuery(q *model.UploadFileListQuery
 	offset := (page - 1) * pageSize
 	err := db.Select(`upload_files.uuid, upload_files.job_id, upload_files.job_uuid, upload_files.file_name,
 		upload_files.storage_key, upload_files.file_size, upload_files.read_type, upload_files.status,
-		upload_jobs.external_org_id AS org_id, upload_files.created_at, upload_files.updated_at`).
+		upload_jobs.external_org_id AS org_id, upload_jobs.upload_policy_version,
+		upload_jobs.upload_policy_acknowledged_at, upload_files.created_at, upload_files.updated_at`).
 		Order("upload_files.created_at DESC").Offset(offset).Limit(pageSize).Scan(&rows).Error
 	return rows, total, err
 }

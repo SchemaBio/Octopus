@@ -35,16 +35,10 @@ func (h *PipelineHandler) CreatePipeline(c *gin.Context) {
 
 	pipeline, err := h.svc.CreatePipeline(c.Request.Context(), &req, taskActorFromContext(c))
 	if err != nil {
-		ErrorInternal(c, err.Error())
+		ErrorBadRequest(c, err.Error())
 		return
 	}
-
-	if pipeline == nil {
-		ErrorConflict(c, "Pipeline name already exists")
-		return
-	}
-
-	SuccessCreated(c, pipeline.ToResponse())
+	SuccessCreated(c, pipeline)
 }
 
 // ListPipelines returns paginated pipeline list
@@ -64,6 +58,9 @@ func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	if !applyCreatedByListScope(c, &query.CreatedBy, &query.IncludeAll) {
 		return
 	}
+	if orgID, ok := middleware.GetCurrentOrg(c); ok && orgID != "" && !query.IncludeAll {
+		query.ExternalOrgID = orgID
+	}
 
 	resp, err := h.svc.ListPipelines(c.Request.Context(), &query)
 	if err != nil {
@@ -78,16 +75,12 @@ func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 func (h *PipelineHandler) GetPipeline(c *gin.Context) {
 	id := c.Param("id")
 
-	pipeline, err := h.svc.GetPipeline(c.Request.Context(), id)
+	pipeline, err := h.svc.GetPipeline(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, "Pipeline not found")
 		return
 	}
-	if !requireOwnerAccess(c, pipeline.CreatedBy, "Pipeline") {
-		return
-	}
-
-	Success(c, pipeline.ToResponse())
+	Success(c, pipeline)
 }
 
 // UpdatePipeline updates pipeline information
@@ -100,37 +93,18 @@ func (h *PipelineHandler) UpdatePipeline(c *gin.Context) {
 		return
 	}
 
-	existing, err := h.svc.GetPipeline(c.Request.Context(), id)
-	if err != nil {
-		ErrorNotFound(c, "Pipeline not found")
-		return
-	}
-	if !requireOwnerAccess(c, existing.CreatedBy, "Pipeline") {
-		return
-	}
-
 	pipeline, err := h.svc.UpdatePipeline(c.Request.Context(), id, &req, taskActorFromContext(c))
 	if err != nil {
-		ErrorNotFound(c, err.Error())
+		ErrorBadRequest(c, err.Error())
 		return
 	}
-
-	Success(c, pipeline.ToResponse())
+	Success(c, pipeline)
 }
 
 // DeletePipeline deletes a pipeline
 func (h *PipelineHandler) DeletePipeline(c *gin.Context) {
 	id := c.Param("id")
-	existing, err := h.svc.GetPipeline(c.Request.Context(), id)
-	if err != nil {
-		ErrorNotFound(c, "Pipeline not found")
-		return
-	}
-	if !requireOwnerAccess(c, existing.CreatedBy, "Pipeline") {
-		return
-	}
-
-	if err := h.svc.DeletePipeline(c.Request.Context(), id); err != nil {
+	if err := h.svc.DeletePipeline(c.Request.Context(), id, taskActorFromContext(c)); err != nil {
 		ErrorNotFound(c, err.Error())
 		return
 	}

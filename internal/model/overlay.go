@@ -103,3 +103,23 @@ type OverlayTaskEventRequest struct {
 	OccurredAt     time.Time           `json:"occurred_at"`
 	Message        string              `json:"message,omitempty"`
 }
+
+type OverlayCreditChargeRequest struct {
+	Actor       OverlayActor `json:"actor"`
+	OrgID       string       `json:"org_id,omitempty"`
+	ReferenceID string       `json:"reference_id"`
+	Credits     int          `json:"credits"`
+	Description string       `json:"description,omitempty"`
+}
+
+type OverlayCreditRefundRequest struct {
+	Actor       OverlayActor `json:"actor"`
+	OrgID       string       `json:"org_id,omitempty"`
+	ReferenceID string       `json:"reference_id"`
+}
+
+type OverlayCreditResponse struct {
+	Allowed bool   `json:"allowed"`
+	Reason  string `json:"reason,omitempty"`
+	Balance int    `json:"balance,omitempty"`
+}

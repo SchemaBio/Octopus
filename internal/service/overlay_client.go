@@ -78,6 +78,41 @@ func (c *OverlayClient) EmitTaskEvent(ctx context.Context, req model.OverlayTask
 	return nil
 }
 
+func (c *OverlayClient) ChargeCredits(ctx context.Context, req model.OverlayCreditChargeRequest) error {
+	if c == nil {
+		return nil
+	}
+	var resp model.OverlayCreditResponse
+	status, body, err := c.postJSON(ctx, "/api/v1/overlay/credits/charge", req, &resp)
+	if err != nil {
+		return fmt.Errorf("overlay credit charge failed: %w", err)
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("overlay credit charge returned %d: %s", status, strings.TrimSpace(string(body)))
+	}
+	if !resp.Allowed {
+		if resp.Reason == "" {
+			resp.Reason = "credit charge denied"
+		}
+		return fmt.Errorf("%s", resp.Reason)
+	}
+	return nil
+}
+
+func (c *OverlayClient) RefundCredits(ctx context.Context, req model.OverlayCreditRefundRequest) error {
+	if c == nil {
+		return nil
+	}
+	status, body, err := c.postJSON(ctx, "/api/v1/overlay/credits/refund", req, nil)
+	if err != nil {
+		return err
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("overlay credit refund returned %d: %s", status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 func (c *OverlayClient) postJSON(ctx context.Context, path string, payload interface{}, out interface{}) (int, []byte, error) {
 	endpoint, err := joinOverlayURL(c.cfg.BaseURL, path)
 	if err != nil {

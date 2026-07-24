@@ -17,13 +17,22 @@ type CNVBaselineService struct {
 	assets  *repository.DataAssetRepository
 	tasks   *repository.TaskRepository
 	taskSvc *TaskService
+	overlay *OverlayClient
 }
 
 func NewCNVBaselineService(cfg *config.Config) *CNVBaselineService {
 	return &CNVBaselineService{
 		repo: repository.NewCNVBaselineRepository(), assets: repository.NewDataAssetRepository(),
-		tasks: repository.NewTaskRepository(), taskSvc: NewTaskService(cfg),
+		tasks: repository.NewTaskRepository(), taskSvc: NewTaskService(cfg), overlay: NewOverlayClient(cfg.Overlay),
 	}
+}
+
+func baselineCreditCost(inputBytes int64) int {
+	const gib = int64(1024 * 1024 * 1024)
+	if inputBytes <= 0 {
+		return 0
+	}
+	return int((inputBytes + gib - 1) / gib)
 }
 
 func validateBaselineGenome(value string) (string, error) {
@@ -80,6 +89,7 @@ func (s *CNVBaselineService) Create(ctx context.Context, req *model.CNVBaselineC
 	inputAssets := []model.TaskInputAssetRequest{{AssetID: bed.ID, InputRole: model.TaskAssetRoleCNVBED, Index: 0}}
 	pairs := make([]model.CNVBaselineReadPair, len(req.Read1AssetIDs))
 	seen := make(map[string]bool)
+	var inputBytes int64
 	for i := range req.Read1AssetIDs {
 		r1ID, r2ID := strings.TrimSpace(req.Read1AssetIDs[i]), strings.TrimSpace(req.Read2AssetIDs[i])
 		if r1ID == "" || r2ID == "" || seen[r1ID] || seen[r2ID] {
@@ -94,6 +104,10 @@ func (s *CNVBaselineService) Create(ctx context.Context, req *model.CNVBaselineC
 		if err != nil {
 			return nil, err
 		}
+		if r1.FileSize <= 0 || r2.FileSize <= 0 {
+			return nil, fmt.Errorf("selected R1/R2 data assets must have a known positive file size")
+		}
+		inputBytes += r1.FileSize + r2.FileSize
 		pairs[i] = model.CNVBaselineReadPair{PairIndex: i, Read1AssetID: r1.ID, Read2AssetID: r2.ID}
 		inputAssets = append(inputAssets,
 			model.TaskInputAssetRequest{AssetID: r1.ID, InputRole: model.TaskAssetRoleCNVRead1, Index: i},
@@ -112,12 +126,29 @@ func (s *CNVBaselineService) Create(ctx context.Context, req *model.CNVBaselineC
 	if err != nil {
 		return nil, err
 	}
+	creditCost := baselineCreditCost(inputBytes)
+	creditsCharged := 0
+	if s.overlay != nil {
+		if err := s.overlay.ChargeCredits(ctx, model.OverlayCreditChargeRequest{
+			Actor: actor, OrgID: actor.OrgID, ReferenceID: task.UUID, Credits: creditCost,
+			Description: fmt.Sprintf("CNV baseline %s: %d bytes, %d credits", name, inputBytes, creditCost),
+		}); err != nil {
+			s.taskSvc.DiscardDraftTask(task)
+			return nil, fmt.Errorf("CNV baseline credit charge failed: %w", err)
+		}
+		creditsCharged = creditCost
+	}
 
 	baseline := &model.CNVBaseline{
 		UUID: uuid.New().String(), Name: name, ReferenceGenome: genome, BEDAssetID: bed.ID,
-		TaskUUID: task.UUID, ExternalOrgID: actor.OrgID, CreatedBy: actor.UserID,
+		TaskUUID: task.UUID, InputBytes: inputBytes, CreditsCharged: creditsCharged,
+		ExternalOrgID: actor.OrgID, CreatedBy: actor.UserID,
 	}
 	if err := s.repo.Create(baseline, pairs); err != nil {
+		if s.overlay != nil {
+			_ = s.overlay.RefundCredits(ctx, model.OverlayCreditRefundRequest{Actor: actor, OrgID: actor.OrgID, ReferenceID: task.UUID})
+		}
+		s.taskSvc.DiscardDraftTask(task)
 		return nil, fmt.Errorf("failed to save CNV baseline task: %w", err)
 	}
 	if started, startErr := s.taskSvc.StartTask(ctx, task.UUID, actor); startErr == nil {
@@ -179,6 +210,7 @@ func (s *CNVBaselineService) toResponse(baseline *model.CNVBaseline, task *model
 		ID: baseline.UUID, Name: baseline.Name, ReferenceGenome: baseline.ReferenceGenome,
 		BED: model.CNVBaselineAssetResponse{ID: bed.UUID, FileName: bed.FileName}, ReadPairs: readPairs,
 		TaskID: task.UUID, Status: task.Status, Progress: task.Progress, OutputPath: baseline.OutputPath,
+		InputBytes: baseline.InputBytes, CreditCost: baselineCreditCost(baseline.InputBytes), CreditsCharged: baseline.CreditsCharged,
 		Error: task.Error, CreatedAt: baseline.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt: baseline.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}, nil

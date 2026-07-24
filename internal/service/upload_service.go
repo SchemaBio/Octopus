@@ -95,6 +95,9 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 	if len(req.Files) == 0 {
 		return nil, nil, nil, fmt.Errorf("at least one file is required")
 	}
+	if err := validateUploadPolicyAcknowledgement(s.cfg.Storage.RetentionDays, req.UploadPolicyAcknowledged); err != nil {
+		return nil, nil, nil, err
+	}
 
 	if req.FileType == model.UploadFileTypeBed {
 		genome, err := normalizeReferenceGenome(req.ReferenceGenome)
@@ -115,6 +118,9 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		}
 		if f.FileSize <= 0 {
 			return nil, nil, nil, fmt.Errorf("file size must be positive")
+		}
+		if err := validateSaaSUploadFileSize(s.cfg.Storage.RetentionDays, f.FileName, f.FileSize); err != nil {
+			return nil, nil, nil, err
 		}
 		if s.cfg.Storage.MaxSizeMB > 0 && f.FileSize > int64(s.cfg.Storage.MaxSizeMB)*1024*1024 {
 			return nil, nil, nil, fmt.Errorf("file %s exceeds maximum size of %d MB", f.FileName, s.cfg.Storage.MaxSizeMB)
@@ -151,6 +157,11 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		ReferenceGenome: req.ReferenceGenome,
 		Provider:        provider,
 		Status:          model.UploadJobStatusPending,
+	}
+	if s.cfg.Storage.RetentionDays > 0 {
+		acknowledgedAt := time.Now().UTC()
+		job.UploadPolicyVersion = model.DataUploadPolicyVersion
+		job.UploadPolicyAcknowledgedAt = &acknowledgedAt
 	}
 
 	if err := s.jobRepo.Create(job); err != nil {
@@ -213,6 +224,20 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 	}
 
 	return job, files, presignedURLs, nil
+}
+
+func validateUploadPolicyAcknowledgement(retentionDays int, acknowledged bool) error {
+	if retentionDays > 0 && !acknowledged {
+		return fmt.Errorf("upload policy acknowledgement is required")
+	}
+	return nil
+}
+
+func validateSaaSUploadFileSize(retentionDays int, fileName string, fileSize int64) error {
+	if retentionDays > 0 && fileSize > model.SaaSMaxUploadFileBytes {
+		return fmt.Errorf("file %s exceeds SaaS maximum size of 20 GB", fileName)
+	}
+	return nil
 }
 
 func (s *UploadService) buildStorageKey(provider model.UploadProvider, orgID, storageFolder, jobUUID string, fileType model.UploadFileType, referenceGenome, fileName string) string {
@@ -430,16 +455,18 @@ func (s *UploadService) ListFiles(ctx context.Context, query *model.UploadFileLi
 	items := make([]model.UploadFileAuditResponse, len(rows))
 	for i, row := range rows {
 		items[i] = model.UploadFileAuditResponse{
-			ID:          row.UUID,
-			JobID:       row.JobUUID,
-			FileName:    row.FileName,
-			StoragePath: row.StorageKey,
-			FileSize:    row.FileSize,
-			ReadType:    row.ReadType,
-			Status:      row.Status,
-			OrgID:       row.OrgID,
-			CreatedAt:   row.CreatedAt.Format(time.RFC3339),
-			UpdatedAt:   row.UpdatedAt.Format(time.RFC3339),
+			ID:                         row.UUID,
+			JobID:                      row.JobUUID,
+			FileName:                   row.FileName,
+			StoragePath:                row.StorageKey,
+			FileSize:                   row.FileSize,
+			ReadType:                   row.ReadType,
+			Status:                     row.Status,
+			OrgID:                      row.OrgID,
+			UploadPolicyVersion:        row.UploadPolicyVersion,
+			UploadPolicyAcknowledgedAt: row.UploadPolicyAcknowledgedAt,
+			CreatedAt:                  row.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:                  row.UpdatedAt.Format(time.RFC3339),
 		}
 	}
 

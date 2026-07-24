@@ -99,3 +99,24 @@ func TestOverlayClientEmitTaskEventPostsEvent(t *testing.T) {
 		t.Fatalf("expected event emission to succeed: %v", err)
 	}
 }
+
+func TestOverlayClientChargesFixedCredits(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/overlay/credits/charge" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var req model.OverlayCreditChargeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if req.ReferenceID != "baseline-task" || req.Credits != 6 {
+			t.Fatalf("unexpected charge request: %+v", req)
+		}
+		_ = json.NewEncoder(w).Encode(model.OverlayCreditResponse{Allowed: true, Balance: 94})
+	}))
+	defer server.Close()
+	client := testOverlayClient(server.URL, false)
+	if err := client.ChargeCredits(t.Context(), model.OverlayCreditChargeRequest{ReferenceID: "baseline-task", Credits: 6}); err != nil {
+		t.Fatalf("expected fixed credit charge to succeed: %v", err)
+	}
+}

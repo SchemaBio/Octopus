@@ -33,6 +33,7 @@ type TaskService struct {
 	assetRepo       *repository.DataAssetRepository
 	sampleRepo      *repository.SampleRepository
 	pipelineRepo    *repository.PipelineRepository
+	baselineRepo    *repository.CNVBaselineRepository
 	mu              sync.RWMutex
 	running         map[string]*exec.Cmd
 }
@@ -94,6 +95,7 @@ func NewTaskService(cfg *config.Config) *TaskService {
 		assetRepo:       repository.NewDataAssetRepository(),
 		sampleRepo:      repository.NewSampleRepository(),
 		pipelineRepo:    repository.NewPipelineRepository(),
+		baselineRepo:    repository.NewCNVBaselineRepository(),
 		running:         make(map[string]*exec.Cmd),
 	}
 
@@ -354,6 +356,44 @@ func actorCanUseOwnedResource(actor model.OverlayActor, ownerID uint) bool {
 	return ownerID != 0 && ownerID == actor.UserID
 }
 
+func (s *TaskService) resolveAnalysisPipeline(req *model.TaskCreateRequest, actor model.OverlayActor) (*model.Pipeline, error) {
+	setGenome := func(genome string) {
+		if req.Inputs == nil {
+			req.Inputs = make(map[string]interface{})
+		}
+		req.Inputs["reference_genome"] = genome
+	}
+	switch req.PipelineID {
+	case model.BuiltinPipelineWESSingleID:
+		req.PipelineName, req.PipelineVersion, req.Template = "WES单样本分析", "builtin-v1", "single"
+		setGenome("hg19")
+		return nil, nil
+	case model.BuiltinPipelineWESFamilyID:
+		req.PipelineName, req.PipelineVersion, req.Template = "WES家系分析", "builtin-v1", "trio"
+		setGenome("hg19")
+		return nil, nil
+	case model.BuiltinPipelineWESSingleHG38ID:
+		req.PipelineName, req.PipelineVersion, req.Template = "WES单样本分析（hg38）", "builtin-v1", "single"
+		setGenome("hg38")
+		return nil, nil
+	case model.BuiltinPipelineWESFamilyHG38ID:
+		req.PipelineName, req.PipelineVersion, req.Template = "WES家系分析（hg38）", "builtin-v1", "trio"
+		setGenome("hg38")
+		return nil, nil
+	case "":
+		return nil, fmt.Errorf("pipelineId is required")
+	}
+
+	pipeline, err := s.pipelineRepo.FindScopedByUUID(req.PipelineID, actor)
+	if err != nil || pipeline.Status != model.PipelineStatusActive || !isAllowedPipelineBase(pipeline.BaseType) {
+		return nil, fmt.Errorf("pipeline not found: %s", req.PipelineID)
+	}
+	req.PipelineName = pipeline.Name
+	req.PipelineVersion = pipeline.Version
+	req.Template = model.PipelineTemplate(pipeline.BaseType)
+	return pipeline, nil
+}
+
 // CreateTask creates a new task. It resolves data file paths from the linked Sample,
 // UploadJob, and Pipeline configuration, injecting them into WDL inputs.
 // If the upload job is not yet completed, the task enters waiting_for_data status.
@@ -361,6 +401,16 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	executor := model.ExecutorType(s.cfg.Task.DefaultExecutor)
 	if executor != model.ExecutorLocal {
 		executor = model.ExecutorLocal
+	}
+	var selectedPipeline *model.Pipeline
+	var err error
+	// InputAssets is server-only and is used by the CNV baseline workflow. All
+	// browser-created analysis tasks must resolve one allowed pipeline ID here.
+	if len(req.InputAssets) == 0 {
+		selectedPipeline, err = s.resolveAnalysisPipeline(req, actor)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := validateTemplateName(req.Template); err != nil {
 		return nil, err
@@ -449,33 +499,29 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		}
 	}
 
-	if req.PipelineID != "" {
-		pipeline, err := s.pipelineRepo.FindByStringID(req.PipelineID)
-		if err != nil {
-			return nil, fmt.Errorf("pipeline not found: %s", req.PipelineID)
-		}
-		if !actorCanUseOwnedResource(actor, pipeline.CreatedBy) {
-			return nil, fmt.Errorf("pipeline not found: %s", req.PipelineID)
-		}
-		if pipeline.BEDFile != "" {
+	if selectedPipeline != nil {
+		if selectedPipeline.BEDAssetID != nil {
+			bed, err := s.assetRepo.FindByID(*selectedPipeline.BEDAssetID)
+			if err != nil || bed.Status != model.FileStatusCompleted || bed.ReadType != model.ReadTypeBed {
+				return nil, fmt.Errorf("pipeline BED data asset is not available")
+			}
 			if _, exists := inputs["bed_file"]; !exists {
-				if err := validateActorFileReference(s.cfg, actor, "pipeline bed_file", pipeline.BEDFile); err != nil {
-					return nil, err
-				}
-				inputs["bed_file"] = pipeline.BEDFile
+				inputs["bed_file"] = bed.StorageKey
 			}
+			directAssets = append(directAssets, model.TaskDataAsset{AssetID: bed.ID, InputRole: model.TaskAssetRoleAnalysisBED, InputIndex: 0})
 		}
-		if pipeline.ReferenceGenome != "" {
+		if selectedPipeline.ReferenceGenome != "" {
 			if _, exists := inputs["reference_genome"]; !exists {
-				inputs["reference_genome"] = pipeline.ReferenceGenome
+				inputs["reference_genome"] = selectedPipeline.ReferenceGenome
 			}
 		}
-		if pipeline.CNVBaseline != "" {
+		if selectedPipeline.CNVBaselineID != nil {
+			baseline, err := s.baselineRepo.FindByID(*selectedPipeline.CNVBaselineID)
+			if err != nil || strings.TrimSpace(baseline.OutputPath) == "" {
+				return nil, fmt.Errorf("pipeline CNV baseline is not available")
+			}
 			if _, exists := inputs["cnv_baseline"]; !exists {
-				if err := validateActorFileReference(s.cfg, actor, "pipeline cnv_baseline", pipeline.CNVBaseline); err != nil {
-					return nil, err
-				}
-				inputs["cnv_baseline"] = pipeline.CNVBaseline
+				inputs["cnv_baseline"] = baseline.OutputPath
 			}
 		}
 	}
@@ -585,6 +631,14 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	}
 
 	return task, nil
+}
+
+func (s *TaskService) DiscardDraftTask(task *model.Task) {
+	if task == nil {
+		return
+	}
+	_ = database.GetDB().Where("task_uuid = ?", task.UUID).Delete(&model.TaskDataAsset{}).Error
+	_ = s.repo.DeleteByID(task.ID)
 }
 
 // StartTask starts a queued, waiting_for_data, or failed task.
@@ -1510,6 +1564,8 @@ func applyTaskAssetPath(inputs map[string]interface{}, link model.TaskDataAsset,
 		inputs[key] = setIndexedInput(values, link.InputIndex, value)
 	case model.TaskAssetRoleCNVBED:
 		inputs["CNVBaseline.bed"] = value
+	case model.TaskAssetRoleAnalysisBED:
+		inputs["bed_file"] = value
 	}
 }
 

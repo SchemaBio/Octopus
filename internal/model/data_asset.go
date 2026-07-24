@@ -57,10 +57,11 @@ type DataAssetListQuery struct {
 }
 
 type DataCenterConfigResponse struct {
-	Provider        UploadProvider `json:"provider"`
-	RetentionDays   int            `json:"retention_days"`
-	Temporary       bool           `json:"temporary"`
-	DownloadAllowed bool           `json:"download_allowed"`
+	Provider         UploadProvider `json:"provider"`
+	RetentionDays    int            `json:"retention_days"`
+	Temporary        bool           `json:"temporary"`
+	DownloadAllowed  bool           `json:"download_allowed"`
+	MaxFileSizeBytes int64          `json:"max_file_size_bytes"`
 }
 
 func DataAssetToResponse(asset *DataAsset) DataAssetResponse {

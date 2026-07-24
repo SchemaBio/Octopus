@@ -55,6 +55,14 @@ func (r *CNVBaselineRepository) FindScopedByUUID(uuid string, actor model.Overla
 	return &baseline, nil
 }
 
+func (r *CNVBaselineRepository) FindByID(id uint) (*model.CNVBaseline, error) {
+	var baseline model.CNVBaseline
+	if err := database.GetDB().First(&baseline, id).Error; err != nil {
+		return nil, err
+	}
+	return &baseline, nil
+}
+
 func (r *CNVBaselineRepository) FindPairs(baselineID uint) ([]model.CNVBaselineReadPair, error) {
 	var pairs []model.CNVBaselineReadPair
 	err := database.GetDB().Where("baseline_id = ?", baselineID).Order("pair_index").Find(&pairs).Error
