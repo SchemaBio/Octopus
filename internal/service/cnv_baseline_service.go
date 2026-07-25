@@ -27,7 +27,7 @@ func NewCNVBaselineService(cfg *config.Config) *CNVBaselineService {
 	}
 }
 
-func baselineCreditCost(inputBytes int64) int {
+func baselineBillingQuantity(inputBytes int64) int {
 	const gib = int64(1024 * 1024 * 1024)
 	if inputBytes <= 0 {
 		return 0
@@ -126,17 +126,19 @@ func (s *CNVBaselineService) Create(ctx context.Context, req *model.CNVBaselineC
 	if err != nil {
 		return nil, err
 	}
-	creditCost := baselineCreditCost(inputBytes)
 	creditsCharged := 0
 	if s.overlay != nil {
-		if err := s.overlay.ChargeCredits(ctx, model.OverlayCreditChargeRequest{
-			Actor: actor, OrgID: actor.OrgID, ReferenceID: task.UUID, Credits: creditCost,
-			Description: fmt.Sprintf("CNV baseline %s: %d bytes, %d credits", name, inputBytes, creditCost),
-		}); err != nil {
+		charge, err := s.overlay.ChargeCredits(ctx, model.OverlayCreditChargeRequest{
+			Actor: actor, OrgID: actor.OrgID, ReferenceID: task.UUID,
+			BillingCode: model.BillingCodeCNVBaselineInput,
+			Quantity:    baselineBillingQuantity(inputBytes),
+			Description: fmt.Sprintf("CNV baseline %s: %d input bytes", name, inputBytes),
+		})
+		if err != nil {
 			s.taskSvc.DiscardDraftTask(task)
 			return nil, fmt.Errorf("CNV baseline credit charge failed: %w", err)
 		}
-		creditsCharged = creditCost
+		creditsCharged = charge.CreditsCharged
 	}
 
 	baseline := &model.CNVBaseline{
@@ -210,7 +212,7 @@ func (s *CNVBaselineService) toResponse(baseline *model.CNVBaseline, task *model
 		ID: baseline.UUID, Name: baseline.Name, ReferenceGenome: baseline.ReferenceGenome,
 		BED: model.CNVBaselineAssetResponse{ID: bed.UUID, FileName: bed.FileName}, ReadPairs: readPairs,
 		TaskID: task.UUID, Status: task.Status, Progress: task.Progress, OutputPath: baseline.OutputPath,
-		InputBytes: baseline.InputBytes, CreditCost: baselineCreditCost(baseline.InputBytes), CreditsCharged: baseline.CreditsCharged,
+		InputBytes: baseline.InputBytes, CreditCost: baseline.CreditsCharged, CreditsCharged: baseline.CreditsCharged,
 		Error: task.Error, CreatedAt: baseline.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt: baseline.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}, nil

@@ -88,6 +88,7 @@ func (r *UploadFileRepository) UpdateFileSize(id uint, fileSize int64) error {
 // UploadFile columns plus the owning job's org (joined from upload_jobs).
 type UploadFileAuditRow struct {
 	UUID                       string
+	DataAssetID                string
 	JobID                      uint
 	JobUUID                    string
 	FileName                   string
@@ -108,7 +109,8 @@ type UploadFileAuditRow struct {
 // that include the owning job's org_id (joined) without N+1 queries.
 func (r *UploadFileRepository) PaginateFilesByQuery(q *model.UploadFileListQuery) ([]UploadFileAuditRow, int64, error) {
 	db := r.db.Model(&model.UploadFile{}).
-		Joins("JOIN upload_jobs ON upload_jobs.id = upload_files.job_id")
+		Joins("JOIN upload_jobs ON upload_jobs.id = upload_files.job_id").
+		Joins("LEFT JOIN data_assets ON data_assets.upload_file_id = upload_files.id")
 
 	if !q.IncludeAll {
 		switch {
@@ -146,7 +148,7 @@ func (r *UploadFileRepository) PaginateFilesByQuery(q *model.UploadFileListQuery
 
 	var rows []UploadFileAuditRow
 	offset := (page - 1) * pageSize
-	err := db.Select(`upload_files.uuid, upload_files.job_id, upload_files.job_uuid, upload_files.file_name,
+	err := db.Select(`upload_files.uuid, data_assets.uuid AS data_asset_id, upload_files.job_id, upload_files.job_uuid, upload_files.file_name,
 		upload_files.storage_key, upload_files.file_size, upload_files.read_type, upload_files.status,
 		upload_jobs.external_org_id AS org_id, upload_jobs.upload_policy_version,
 		upload_jobs.upload_policy_acknowledged_at, upload_files.created_at, upload_files.updated_at`).

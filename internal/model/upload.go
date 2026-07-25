@@ -196,6 +196,7 @@ type UploadFileListQuery struct {
 // consumers only and never reaches browsers via UploadFileResponse.
 type UploadFileAuditResponse struct {
 	ID                         string     `json:"id"`
+	DataAssetID                string     `json:"data_asset_id,omitempty"`
 	JobID                      string     `json:"job_id"`
 	FileName                   string     `json:"file_name"`
 	StoragePath                string     `json:"storage_path"`

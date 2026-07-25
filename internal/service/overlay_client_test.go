@@ -112,11 +112,15 @@ func TestOverlayClientChargesFixedCredits(t *testing.T) {
 		if req.ReferenceID != "baseline-task" || req.Credits != 6 {
 			t.Fatalf("unexpected charge request: %+v", req)
 		}
-		_ = json.NewEncoder(w).Encode(model.OverlayCreditResponse{Allowed: true, Balance: 94})
+		_ = json.NewEncoder(w).Encode(model.OverlayCreditResponse{Allowed: true, Balance: 94, CreditsCharged: 6})
 	}))
 	defer server.Close()
 	client := testOverlayClient(server.URL, false)
-	if err := client.ChargeCredits(t.Context(), model.OverlayCreditChargeRequest{ReferenceID: "baseline-task", Credits: 6}); err != nil {
+	resp, err := client.ChargeCredits(t.Context(), model.OverlayCreditChargeRequest{ReferenceID: "baseline-task", Credits: 6})
+	if err != nil {
 		t.Fatalf("expected fixed credit charge to succeed: %v", err)
+	}
+	if resp.CreditsCharged != 6 {
+		t.Fatalf("expected charged credits in response, got %+v", resp)
 	}
 }

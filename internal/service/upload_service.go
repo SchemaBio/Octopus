@@ -456,6 +456,7 @@ func (s *UploadService) ListFiles(ctx context.Context, query *model.UploadFileLi
 	for i, row := range rows {
 		items[i] = model.UploadFileAuditResponse{
 			ID:                         row.UUID,
+			DataAssetID:                row.DataAssetID,
 			JobID:                      row.JobUUID,
 			FileName:                   row.FileName,
 			StoragePath:                row.StorageKey,

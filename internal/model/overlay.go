@@ -108,7 +108,9 @@ type OverlayCreditChargeRequest struct {
 	Actor       OverlayActor `json:"actor"`
 	OrgID       string       `json:"org_id,omitempty"`
 	ReferenceID string       `json:"reference_id"`
-	Credits     int          `json:"credits"`
+	Credits     int          `json:"credits,omitempty"`
+	BillingCode string       `json:"billing_code,omitempty"`
+	Quantity    int          `json:"quantity,omitempty"`
 	Description string       `json:"description,omitempty"`
 }
 
@@ -119,7 +121,10 @@ type OverlayCreditRefundRequest struct {
 }
 
 type OverlayCreditResponse struct {
-	Allowed bool   `json:"allowed"`
-	Reason  string `json:"reason,omitempty"`
-	Balance int    `json:"balance,omitempty"`
+	Allowed        bool   `json:"allowed"`
+	Reason         string `json:"reason,omitempty"`
+	Balance        int    `json:"balance,omitempty"`
+	CreditsCharged int    `json:"credits_charged,omitempty"`
 }
+
+const BillingCodeCNVBaselineInput = "cnv_baseline_input_gib"
