@@ -95,6 +95,17 @@ func ValidateStartup(cfg *Config) error {
 			}
 		}
 	}
+	if cfg.Task.DefaultExecutor == "cvm_spot" {
+		if !cfg.Overlay.Enabled {
+			return fmt.Errorf("OVERLAY_ENABLED must be true when DEFAULT_EXECUTOR=cvm_spot")
+		}
+		if cfg.Storage.Provider != "s3" {
+			return fmt.Errorf("STORAGE_PROVIDER must be cos or s3 when DEFAULT_EXECUTOR=cvm_spot")
+		}
+		if cfg.Overlay.FailOpen {
+			return fmt.Errorf("OVERLAY_FAIL_OPEN must be false when DEFAULT_EXECUTOR=cvm_spot")
+		}
+	}
 
 	return nil
 }

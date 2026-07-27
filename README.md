@@ -1,6 +1,6 @@
 # Schema Platform (Octopus)
 
-生物信息本地分析平台后端服务。Octopus 面向用户自部署场景，不包含云实例调度、对象存储归档、积分计费或组织隔离功能。
+生物信息分析平台后端服务。默认社区模式面向本地自部署；启用 SaaS Overlay 后，Octopus 也可通过腾讯云 COS 的 S3 兼容接口管理数据，并把受限的 CVM 执行规格交给 Squid 调度。
 
 ## 功能特性
 
@@ -24,7 +24,7 @@
 
 ### 社区版边界
 
-Octopus 保持本地自部署定位，本次同步 Squid 的安全与本地工作流增强，但不引入 Squid SaaS 专属能力：积分计费、腾讯云 CVM 竞价实例、COS/对象存储归档、平台级组织管理、按组织限流和完整多租户隔离仍只属于 Squid。
+Octopus 的社区默认值仍是本地存储和本地 executor。它只提供通用的 `cos`/S3 数据面和 `cvm_spot` Overlay 协议，不持有腾讯云 CVM 控制权限，也不实现积分计费、平台组织管理或并发策略；这些 SaaS 控制面能力属于 Squid。
 
 ### SaaS Overlay 扩展点（默认关闭）
 
@@ -37,6 +37,8 @@ Octopus 仍然是完整可部署的开源社区版，不包含 Squid 的闭源�
 | Trusted external auth | Squid -> Octopus | Squid 验证 SaaS 用户后，用共享密钥和身份头调用 Octopus API |
 | Task admission webhook | Octopus -> Squid | 创建、启动、重试任务前询问外部策略面是否允许 |
 | Task event webhook | Octopus -> Squid | 任务 created/running/queued/completed/failed/cancelled/start_failed 时发送事件 |
+| CVM dispatch/cancel | Octopus -> Squid | 计费准入后投递执行规格，停止或取消时请求销毁实例 |
+| CVM state callback | Squid -> Octopus | 更新实例状态；异常终态将运行中任务置为失败 |
 
 Trusted external auth 默认头：
 

@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const (
 	OverlayAdmissionActionCreate = "create"
@@ -102,6 +105,47 @@ type OverlayTaskEventRequest struct {
 	PreviousStatus TaskStatus          `json:"previous_status,omitempty"`
 	OccurredAt     time.Time           `json:"occurred_at"`
 	Message        string              `json:"message,omitempty"`
+}
+
+type CVMInputDownload struct {
+	ObjectKey string `json:"object_key"`
+	URL       string `json:"url"`
+	Target    string `json:"target"`
+}
+
+type CVMExecutionSpec struct {
+	Template  string             `json:"template"`
+	Inputs    json.RawMessage    `json:"inputs"`
+	Downloads []CVMInputDownload `json:"downloads,omitempty"`
+}
+
+type CVMDispatchRequest struct {
+	Actor       OverlayActor        `json:"actor"`
+	Task        OverlayTaskSnapshot `json:"task"`
+	Execution   CVMExecutionSpec    `json:"execution"`
+	RequestedAt time.Time           `json:"requested_at"`
+}
+
+type CVMDispatchResponse struct {
+	Accepted      bool   `json:"accepted"`
+	InstanceID    string `json:"instance_id,omitempty"`
+	InstanceState string `json:"instance_state,omitempty"`
+	Reason        string `json:"reason,omitempty"`
+}
+
+type CVMCancelRequest struct {
+	Actor    OverlayActor `json:"actor"`
+	TaskUUID string       `json:"task_uuid"`
+	Reason   string       `json:"reason,omitempty"`
+}
+
+type CVMStateEvent struct {
+	TaskUUID      string     `json:"task_uuid"`
+	InstanceID    string     `json:"instance_id,omitempty"`
+	InstanceState string     `json:"instance_state"`
+	TaskStatus    TaskStatus `json:"task_status,omitempty"`
+	Message       string     `json:"message,omitempty"`
+	OccurredAt    time.Time  `json:"occurred_at"`
 }
 
 type OverlayCreditChargeRequest struct {

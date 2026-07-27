@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -66,6 +67,19 @@ func (s *s3Storage) presignUpload(ctx context.Context, key string) (string, erro
 		return "", fmt.Errorf("presign S3 upload: %w", err)
 	}
 	return request.URL, nil
+}
+
+func (s *s3Storage) put(ctx context.Context, key, contentType string, body []byte) error {
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(body),
+		ContentType: aws.String(contentType),
+	})
+	if err != nil {
+		return fmt.Errorf("put S3 object %s: %w", key, err)
+	}
+	return nil
 }
 
 func (s *s3Storage) presignDownload(ctx context.Context, key, filename string) (string, error) {

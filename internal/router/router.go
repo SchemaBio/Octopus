@@ -109,6 +109,9 @@ func New(cfg *config.Config) *gin.Engine {
 
 		// ========== Task management (protected) ==========
 		taskHandler := handler.NewTaskHandler(cfg)
+		v1.POST("/internal/cvm/events", taskHandler.CVMStateEvent)
+		storageHandler := handler.NewStorageHandler(cfg)
+		v1.POST("/internal/storage/tenants", middleware.IPRateLimit(120, time.Minute), storageHandler.InitializeTenant)
 		aiHandler := handler.NewAIHandler(cfg)
 		exportHandler := handler.NewExportHandler(cfg)
 		reportHandler := handler.NewReportHandler(cfg)

@@ -67,3 +67,21 @@ func TestLegacyAuthRoutesRedirectWith308(t *testing.T) {
 		t.Fatalf("unexpected redirect location: %q", location)
 	}
 }
+
+func TestTenantStorageEndpointRejectsInvalidInternalSecret(t *testing.T) {
+	cfg := testRouterConfig()
+	cfg.ExternalAuth = config.ExternalAuthConfig{
+		Enabled: true, SharedSecret: "test-internal-secret-with-at-least-32-characters",
+	}
+	router := New(cfg)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/internal/storage/tenants", strings.NewReader(`{"org_id":"f83165ee-e23c-4bf1-a42e-78ac39c6f1ba"}`))
+	req.Header.Set("Authorization", "Bearer wrong-secret")
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected invalid internal secret to be rejected, got %d", resp.Code)
+	}
+}

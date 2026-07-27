@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -202,6 +205,21 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 
 	completedNow := false
 	previousStatus := task.Status
+	archiveMetadata := workflow.NormalizedArchiveMetadata()
+	if task.Executor == model.ExecutorCVM && workflow.Status == model.SepiidaStatusSuccess {
+		if !archiveMetadata.Archived {
+			if task.Progress < 99 {
+				task.Progress = 99
+				task.UpdatedAt = time.Now()
+				_ = s.repo.Update(task)
+			}
+			return
+		}
+		if err := s.stageCOSArchive(task, archiveMetadata); err != nil {
+			fmt.Printf("WARNING: stage COS archive for task %s: %v\n", task.UUID, err)
+			return
+		}
+	}
 
 	s.mu.Lock()
 	changed := false
@@ -399,7 +417,9 @@ func (s *TaskService) resolveAnalysisPipeline(req *model.TaskCreateRequest, acto
 // If the upload job is not yet completed, the task enters waiting_for_data status.
 func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateRequest, actor model.OverlayActor) (*model.Task, error) {
 	executor := model.ExecutorType(s.cfg.Task.DefaultExecutor)
-	if executor != model.ExecutorLocal {
+	switch executor {
+	case model.ExecutorLocal, model.ExecutorSlurm, model.ExecutorLSF, model.ExecutorCVM:
+	default:
 		executor = model.ExecutorLocal
 	}
 	var selectedPipeline *model.Pipeline
@@ -481,7 +501,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 					if err := validateActorFileReference(s.cfg, actor, "sample r1_path", matchedPair.R1Path); err != nil {
 						return nil, err
 					}
-				} else {
+				} else if executor != model.ExecutorCVM {
 					needsStaging = true
 				}
 				inputs["fastq_r1"] = matchedPair.R1Path
@@ -491,7 +511,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 					if err := validateActorFileReference(s.cfg, actor, "sample r2_path", matchedPair.R2Path); err != nil {
 						return nil, err
 					}
-				} else {
+				} else if executor != model.ExecutorCVM {
 					needsStaging = true
 				}
 				inputs["fastq_r2"] = matchedPair.R2Path
@@ -536,7 +556,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 			return nil, fmt.Errorf("upload job not found: %s", req.UploadJobID)
 		}
 		files, _ := s.uploadFileRepo.FindByJobID(uploadJob.ID)
-		if uploadJob.Provider == model.UploadProviderS3 {
+		if uploadJob.Provider == model.UploadProviderS3 && executor != model.ExecutorCVM {
 			needsStaging = true
 		}
 		for _, f := range files {
@@ -662,13 +682,29 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 		}
 	}
 
-	if err := s.stageDataFiles(task); err != nil {
-		return nil, fmt.Errorf("failed to stage data files: %w", err)
+	if task.Executor != model.ExecutorCVM {
+		if err := s.stageDataFiles(task); err != nil {
+			return nil, fmt.Errorf("failed to stage data files: %w", err)
+		}
 	}
 
 	previousStatus := task.Status
 	if err := s.admitTask(ctx, model.OverlayAdmissionActionStart, actor, task); err != nil {
 		return nil, err
+	}
+
+	var dispatch *model.CVMDispatchResponse
+	if task.Executor == model.ExecutorCVM {
+		request, err := s.buildCVMDispatchRequest(ctx, actor, task)
+		if err != nil {
+			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
+			return nil, err
+		}
+		dispatch, err = s.overlay.DispatchCVMTask(ctx, request)
+		if err != nil {
+			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
+			return nil, err
+		}
 	}
 
 	task.Status = model.TaskStatusRunning
@@ -677,23 +713,29 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 	now := time.Now()
 	task.StartedAt = &now
 	task.UpdatedAt = now
+	if dispatch != nil {
+		task.CVMInstanceID = dispatch.InstanceID
+		task.VMStatus = dispatch.InstanceState
+	}
 
 	if err := s.repo.Update(task); err != nil {
+		if dispatch != nil {
+			_ = s.overlay.CancelCVMTask(context.Background(), model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, Reason: "Octopus task update failed"})
+		}
 		s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
 		return nil, err
 	}
 
 	s.emitTaskEvent(model.OverlayTaskEventRunning, actor, task, previousStatus, "")
-	go s.launchTask(task)
+	if task.Executor != model.ExecutorCVM {
+		go s.launchTask(task)
+	}
 
 	return task, nil
 }
 
 // StopTask stops a running task
 func (s *TaskService) StopTask(ctx context.Context, id string, actor model.OverlayActor) (*model.Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
@@ -702,14 +744,24 @@ func (s *TaskService) StopTask(ctx context.Context, id string, actor model.Overl
 	if task.Status != model.TaskStatusRunning {
 		return nil, fmt.Errorf("task is not running")
 	}
+	if task.Executor == model.ExecutorCVM {
+		if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, Reason: "task stopped by user"}); err != nil {
+			return nil, err
+		}
+	}
 
+	s.mu.Lock()
 	if cmd, ok := s.running[id]; ok {
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		delete(s.running, id)
 	}
+	s.mu.Unlock()
 
 	task.Status = model.TaskStatusQueued
 	task.Progress = 0
+	if task.Executor == model.ExecutorCVM {
+		task.VMStatus = "TERMINATED"
+	}
 	now := time.Now()
 	task.UpdatedAt = now
 
@@ -741,13 +793,29 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 		}
 	}
 
-	if err := s.stageDataFiles(task); err != nil {
-		return nil, fmt.Errorf("failed to stage data files: %w", err)
+	if task.Executor != model.ExecutorCVM {
+		if err := s.stageDataFiles(task); err != nil {
+			return nil, fmt.Errorf("failed to stage data files: %w", err)
+		}
 	}
 
 	previousStatus := task.Status
 	if err := s.admitTask(ctx, model.OverlayAdmissionActionRetry, actor, task); err != nil {
 		return nil, err
+	}
+
+	var dispatch *model.CVMDispatchResponse
+	if task.Executor == model.ExecutorCVM {
+		request, err := s.buildCVMDispatchRequest(ctx, actor, task)
+		if err != nil {
+			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
+			return nil, err
+		}
+		dispatch, err = s.overlay.DispatchCVMTask(ctx, request)
+		if err != nil {
+			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
+			return nil, err
+		}
 	}
 
 	task.Status = model.TaskStatusRunning
@@ -756,14 +824,23 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 	now := time.Now()
 	task.StartedAt = &now
 	task.UpdatedAt = now
+	if dispatch != nil {
+		task.CVMInstanceID = dispatch.InstanceID
+		task.VMStatus = dispatch.InstanceState
+	}
 
 	if err := s.repo.Update(task); err != nil {
+		if dispatch != nil {
+			_ = s.overlay.CancelCVMTask(context.Background(), model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, Reason: "Octopus task retry update failed"})
+		}
 		s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
 		return nil, err
 	}
 
 	s.emitTaskEvent(model.OverlayTaskEventRunning, actor, task, previousStatus, "")
-	go s.launchTask(task)
+	if task.Executor != model.ExecutorCVM {
+		go s.launchTask(task)
+	}
 
 	return task, nil
 }
@@ -1117,9 +1194,6 @@ func (s *TaskService) ListTasksAudit(ctx context.Context, query *model.TaskListQ
 
 // CancelTask cancels a running task
 func (s *TaskService) CancelTask(ctx context.Context, id string, actor model.OverlayActor) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return fmt.Errorf("task not found: %s", id)
@@ -1128,12 +1202,23 @@ func (s *TaskService) CancelTask(ctx context.Context, id string, actor model.Ove
 	if task.Status != model.TaskStatusRunning && task.Status != model.TaskStatusQueued && task.Status != model.TaskStatusWaitingData {
 		return fmt.Errorf("task is not running or queued")
 	}
-
-	if cmd, ok := s.running[id]; ok {
-		cmd.Process.Kill()
+	if task.Executor == model.ExecutorCVM && task.CVMInstanceID != "" {
+		if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, Reason: "task cancelled by user"}); err != nil {
+			return err
+		}
 	}
 
+	s.mu.Lock()
+	if cmd, ok := s.running[id]; ok {
+		_ = cmd.Process.Kill()
+		delete(s.running, id)
+	}
+	s.mu.Unlock()
+
 	task.Status = model.TaskStatusCancelled
+	if task.Executor == model.ExecutorCVM {
+		task.VMStatus = "TERMINATED"
+	}
 	now := time.Now()
 	task.FinishedAt = &now
 	task.UpdatedAt = now
@@ -1306,11 +1391,13 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 			_ = s.repo.Update(task)
 		}
 	}
-	if err := s.stageDataFiles(task); err != nil {
-		return false, err.Error()
+	if task.Executor != model.ExecutorCVM {
+		if err := s.stageDataFiles(task); err != nil {
+			return false, err.Error()
+		}
 	}
 	if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
-		return false, "failed to parse staged input JSON"
+		return false, err.Error()
 	}
 	if task.SampleIDRef != 0 {
 		if r1, ok := inputs["fastq_r1"].(string); !ok || strings.TrimSpace(r1) == "" {
@@ -1330,6 +1417,9 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 			continue
 		}
 
+		if task.Executor == model.ExecutorCVM {
+			continue
+		}
 		if strings.HasPrefix(path, "cos://") || strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 			return false, fmt.Sprintf("remote file paths are not supported in local Octopus: %s", path)
 		}
@@ -1401,55 +1491,17 @@ func (s *TaskService) stageDataFiles(task *model.Task) error {
 	if task == nil {
 		return fmt.Errorf("task is required")
 	}
-	assets := make(map[uint]*model.DataAsset)
-	directLinks := make(map[uint][]model.TaskDataAsset)
-	var taskAssets []model.TaskDataAsset
-	if err := database.GetDB().Where("task_uuid = ?", task.UUID).Order("input_role, input_index").Find(&taskAssets).Error; err != nil {
+	assets, directLinks, err := s.collectTaskAssets(task)
+	if err != nil {
 		return err
-	}
-	for _, link := range taskAssets {
-		asset, err := s.assetRepo.FindByID(link.AssetID)
-		if err != nil || asset.Status != model.FileStatusCompleted {
-			return fmt.Errorf("data asset for task input is not ready")
-		}
-		assets[asset.ID] = asset
-		directLinks[asset.ID] = append(directLinks[asset.ID], link)
-	}
-	if task.SampleIDRef != 0 {
-		var link model.SampleDataLink
-		db := database.GetDB()
-		err := db.Where("sample_id = ? AND match_mode = ?", task.SampleIDRef, model.SampleMatchModeManual).First(&link).Error
-		if err != nil {
-			err = db.Where("sample_id = ? AND match_mode = ?", task.SampleIDRef, model.SampleMatchModeAutomatic).First(&link).Error
-		}
-		if err == nil {
-			for _, id := range []uint{link.Read1AssetID, link.Read2AssetID} {
-				if asset, err := s.assetRepo.FindByID(id); err == nil {
-					assets[id] = asset
-				}
-			}
-		}
-	}
-	if task.UploadJobID != "" {
-		if job, err := s.uploadJobRepo.FindByUUID(task.UploadJobID); err == nil {
-			if files, err := s.uploadFileRepo.FindByJobID(job.ID); err == nil {
-				for i := range files {
-					if asset, err := s.assetRepo.FindByUploadFileID(files[i].ID); err == nil {
-						assets[asset.ID] = asset
-					}
-				}
-			}
-		}
 	}
 	var remote []*model.DataAsset
 	for _, asset := range assets {
 		if asset.Provider == model.UploadProviderS3 {
-			if asset.Status != model.FileStatusCompleted {
-				return fmt.Errorf("data asset %s is not ready", asset.UUID)
-			}
 			remote = append(remote, asset)
 		}
 	}
+	sort.Slice(remote, func(i, j int) bool { return remote[i].UUID < remote[j].UUID })
 	if len(remote) == 0 {
 		return nil
 	}
@@ -1508,22 +1560,7 @@ func (s *TaskService) stageDataFiles(task *model.Task) error {
 				return err
 			}
 		}
-		if links := directLinks[asset.ID]; len(links) > 0 {
-			for _, link := range links {
-				applyTaskAssetPath(inputs, link, destination)
-			}
-			continue
-		}
-		switch asset.ReadType {
-		case model.ReadTypeRead1:
-			inputs["fastq_r1"] = destination
-		case model.ReadTypeRead2:
-			inputs["fastq_r2"] = destination
-		case model.ReadTypeSingle:
-			inputs["fastq_r1"] = destination
-		case model.ReadTypeBed:
-			inputs["bed_file"] = destination
-		}
+		applyAssetInputPaths(inputs, asset, directLinks[asset.ID], destination)
 	}
 	encoded, err := json.Marshal(inputs)
 	if err != nil {
@@ -1532,6 +1569,292 @@ func (s *TaskService) stageDataFiles(task *model.Task) error {
 	task.InputJSON = string(encoded)
 	task.UpdatedAt = time.Now()
 	return s.repo.Update(task)
+}
+
+func (s *TaskService) collectTaskAssets(task *model.Task) (map[uint]*model.DataAsset, map[uint][]model.TaskDataAsset, error) {
+	assets := make(map[uint]*model.DataAsset)
+	directLinks := make(map[uint][]model.TaskDataAsset)
+	var taskAssets []model.TaskDataAsset
+	if err := database.GetDB().Where("task_uuid = ?", task.UUID).Order("input_role, input_index").Find(&taskAssets).Error; err != nil {
+		return nil, nil, err
+	}
+	for _, link := range taskAssets {
+		asset, err := s.assetRepo.FindByID(link.AssetID)
+		if err != nil || asset.Status != model.FileStatusCompleted {
+			return nil, nil, fmt.Errorf("data asset for task input is not ready")
+		}
+		assets[asset.ID] = asset
+		directLinks[asset.ID] = append(directLinks[asset.ID], link)
+	}
+	if task.SampleIDRef != 0 {
+		var link model.SampleDataLink
+		db := database.GetDB()
+		err := db.Where("sample_id = ? AND match_mode = ?", task.SampleIDRef, model.SampleMatchModeManual).First(&link).Error
+		if err != nil {
+			err = db.Where("sample_id = ? AND match_mode = ?", task.SampleIDRef, model.SampleMatchModeAutomatic).First(&link).Error
+		}
+		if err == nil {
+			for _, id := range []uint{link.Read1AssetID, link.Read2AssetID} {
+				if asset, err := s.assetRepo.FindByID(id); err == nil {
+					assets[id] = asset
+				}
+			}
+		}
+	}
+	if task.UploadJobID != "" {
+		if job, err := s.uploadJobRepo.FindByUUID(task.UploadJobID); err == nil {
+			if files, err := s.uploadFileRepo.FindByJobID(job.ID); err == nil {
+				for i := range files {
+					if asset, err := s.assetRepo.FindByUploadFileID(files[i].ID); err == nil {
+						assets[asset.ID] = asset
+					}
+				}
+			}
+		}
+	}
+	for _, asset := range assets {
+		if asset.Status != model.FileStatusCompleted {
+			return nil, nil, fmt.Errorf("data asset %s is not ready", asset.UUID)
+		}
+	}
+	return assets, directLinks, nil
+}
+
+func (s *TaskService) stageCOSArchive(task *model.Task, metadata model.SepiidaArchiveMetadata) error {
+	if task == nil || s.cfg.Storage.Provider != "s3" {
+		return fmt.Errorf("COS/S3 storage is required for a CVM archive")
+	}
+	baseURL, err := url.Parse(strings.TrimSpace(metadata.ArchiveBase))
+	if err != nil || baseURL.Scheme != "https" || baseURL.Hostname() == "" || baseURL.User != nil {
+		return fmt.Errorf("Sepiida returned an invalid COS archive base")
+	}
+	expectedHost := s.cfg.Storage.S3Bucket + ".cos." + s.cfg.Storage.S3Region + ".myqcloud.com"
+	if !strings.EqualFold(baseURL.Hostname(), expectedHost) {
+		return fmt.Errorf("Sepiida archive bucket does not match configured COS bucket")
+	}
+	prefix := strings.Trim(baseURL.Path, "/")
+	archivePrefix := strings.Trim(strings.TrimSpace(metadata.ArchivePrefix), "/")
+	if archivePrefix == "" {
+		archivePrefix = task.UUID
+	}
+	if path.Clean(archivePrefix) != archivePrefix || strings.HasPrefix(archivePrefix, "../") {
+		return fmt.Errorf("Sepiida returned an invalid archive prefix")
+	}
+	prefix = path.Join(prefix, archivePrefix)
+	storage, err := newS3Storage(context.Background(), s.cfg.Storage)
+	if err != nil {
+		return err
+	}
+	objects, err := storage.list(context.Background(), prefix+"/")
+	if err != nil {
+		return err
+	}
+	archiveDir := filepath.Join(s.cfg.Task.ArchiveDir, task.UUID)
+	if err := ensurePathInsideBase(s.cfg.Task.ArchiveDir, archiveDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(archiveDir, 0750); err != nil {
+		return err
+	}
+	selected := 0
+	for _, object := range objects {
+		name := path.Base(object.Key)
+		if name != "outputs.resolved.json" && !isStructuredResultFile(name) {
+			continue
+		}
+		destination := filepath.Join(archiveDir, name)
+		if err := ensurePathInsideBase(archiveDir, destination); err != nil {
+			return err
+		}
+		if info, err := os.Stat(destination); err == nil && info.Mode().IsRegular() && info.Size() == object.Size {
+			selected++
+			continue
+		}
+		source, err := storage.open(context.Background(), object.Key)
+		if err != nil {
+			return err
+		}
+		temporary := destination + ".part"
+		file, err := os.OpenFile(temporary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		if err != nil {
+			source.Close()
+			return err
+		}
+		written, copyErr := io.Copy(file, source)
+		closeErr := file.Close()
+		source.Close()
+		if copyErr != nil || closeErr != nil || written != object.Size {
+			_ = os.Remove(temporary)
+			if copyErr != nil {
+				return copyErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+			return fmt.Errorf("COS archive object size mismatch: %s", object.Key)
+		}
+		if err := os.Rename(temporary, destination); err != nil {
+			_ = os.Remove(temporary)
+			return err
+		}
+		selected++
+	}
+	if selected == 0 {
+		return fmt.Errorf("COS archive contains no importable result files")
+	}
+	if _, err := os.Stat(filepath.Join(archiveDir, "outputs.resolved.json")); err != nil {
+		return fmt.Errorf("COS archive is missing outputs.resolved.json")
+	}
+	return nil
+}
+
+func isStructuredResultFile(name string) bool {
+	name = strings.ToLower(name)
+	if !strings.HasSuffix(name, ".txt") && !strings.HasSuffix(name, ".tsv") {
+		return false
+	}
+	return strings.Contains(name, "snv_indel") || strings.Contains(name, "snv.indel") ||
+		strings.Contains(name, "region.cnvanno") || strings.Contains(name, "gene.cnvanno") ||
+		strings.Contains(name, ".str") || strings.Contains(name, "str.txt") ||
+		strings.Contains(name, ".mei") || strings.Contains(name, "mei.txt") ||
+		strings.Contains(name, "mt_report") || strings.Contains(name, ".mt_") || strings.Contains(name, "roh")
+}
+
+func applyAssetInputPaths(inputs map[string]interface{}, asset *model.DataAsset, links []model.TaskDataAsset, value string) {
+	if len(links) > 0 {
+		for _, link := range links {
+			applyTaskAssetPath(inputs, link, value)
+		}
+		return
+	}
+	switch asset.ReadType {
+	case model.ReadTypeRead1:
+		inputs["fastq_r1"] = value
+	case model.ReadTypeRead2:
+		inputs["fastq_r2"] = value
+	case model.ReadTypeSingle:
+		inputs["fastq_r1"] = value
+	case model.ReadTypeBed:
+		inputs["bed_file"] = value
+	}
+}
+
+func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.OverlayActor, task *model.Task) (model.CVMDispatchRequest, error) {
+	assets, directLinks, err := s.collectTaskAssets(task)
+	if err != nil {
+		return model.CVMDispatchRequest{}, err
+	}
+	remote := make([]*model.DataAsset, 0, len(assets))
+	for _, asset := range assets {
+		if asset.Provider != model.UploadProviderS3 {
+			return model.CVMDispatchRequest{}, fmt.Errorf("CVM input asset %s is not stored in COS/S3", asset.UUID)
+		}
+		remote = append(remote, asset)
+	}
+	sort.Slice(remote, func(i, j int) bool { return remote[i].UUID < remote[j].UUID })
+
+	var inputs map[string]interface{}
+	if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
+		return model.CVMDispatchRequest{}, fmt.Errorf("parse CVM task inputs: %w", err)
+	}
+	storage, err := newS3Storage(ctx, s.cfg.Storage)
+	if err != nil {
+		return model.CVMDispatchRequest{}, err
+	}
+	downloads := make([]model.CVMInputDownload, 0, len(remote))
+	for _, asset := range remote {
+		name := safeCVMInputName(asset.FileName)
+		target := path.Join("/data/inputs", asset.UUID+"-"+name)
+		url, err := storage.presignDownload(ctx, asset.StorageKey, name)
+		if err != nil {
+			return model.CVMDispatchRequest{}, fmt.Errorf("presign CVM input %s: %w", asset.UUID, err)
+		}
+		inputs = replaceInputString(inputs, asset.StorageKey, target).(map[string]interface{})
+		applyAssetInputPaths(inputs, asset, directLinks[asset.ID], target)
+		downloads = append(downloads, model.CVMInputDownload{ObjectKey: asset.StorageKey, URL: url, Target: target})
+	}
+	encoded, err := json.Marshal(inputs)
+	if err != nil {
+		return model.CVMDispatchRequest{}, err
+	}
+	return model.CVMDispatchRequest{
+		Actor: actor,
+		Task:  model.NewOverlayTaskSnapshot(task),
+		Execution: model.CVMExecutionSpec{
+			Template: task.Template, Inputs: encoded, Downloads: downloads,
+		},
+		RequestedAt: time.Now(),
+	}, nil
+}
+
+func replaceInputString(value interface{}, oldValue, newValue string) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for key, item := range typed {
+			typed[key] = replaceInputString(item, oldValue, newValue)
+		}
+	case []interface{}:
+		for i, item := range typed {
+			typed[i] = replaceInputString(item, oldValue, newValue)
+		}
+	case string:
+		if typed == oldValue {
+			return newValue
+		}
+	}
+	return value
+}
+
+func safeCVMInputName(name string) string {
+	name = path.Base(strings.ReplaceAll(name, `\`, "/"))
+	var clean strings.Builder
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-' {
+			clean.WriteRune(r)
+		} else {
+			clean.WriteByte('_')
+		}
+	}
+	if clean.Len() == 0 || clean.String() == "." || clean.String() == ".." {
+		return "input.dat"
+	}
+	return clean.String()
+}
+
+func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
+	if strings.TrimSpace(event.TaskUUID) == "" || strings.TrimSpace(event.InstanceState) == "" {
+		return fmt.Errorf("task_uuid and instance_state are required")
+	}
+	task, err := s.repo.FindByUUID(event.TaskUUID)
+	if err != nil {
+		return fmt.Errorf("task not found: %s", event.TaskUUID)
+	}
+	if task.Executor != model.ExecutorCVM {
+		return fmt.Errorf("task is not a CVM task")
+	}
+	if task.CVMInstanceID != "" && event.InstanceID != "" && task.CVMInstanceID != event.InstanceID {
+		return fmt.Errorf("CVM instance does not match task")
+	}
+	previousStatus := task.Status
+	if event.InstanceID != "" {
+		task.CVMInstanceID = event.InstanceID
+	}
+	task.VMStatus = strings.ToUpper(event.InstanceState)
+	if event.TaskStatus == model.TaskStatusFailed && task.Status != model.TaskStatusCompleted && task.Status != model.TaskStatusCancelled {
+		task.Status = model.TaskStatusFailed
+		task.Error = strings.TrimSpace(event.Message)
+		if task.Error == "" {
+			task.Error = "CVM instance terminated before the workflow completed"
+		}
+		now := time.Now()
+		task.FinishedAt = &now
+	}
+	task.UpdatedAt = time.Now()
+	if err := s.repo.Update(task); err != nil {
+		return err
+	}
+	s.emitStatusEvent(task, previousStatus)
+	return nil
 }
 
 func setIndexedInput(values []string, index int, value string) []string {

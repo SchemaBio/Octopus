@@ -78,6 +78,41 @@ func (c *OverlayClient) EmitTaskEvent(ctx context.Context, req model.OverlayTask
 	return nil
 }
 
+func (c *OverlayClient) DispatchCVMTask(ctx context.Context, req model.CVMDispatchRequest) (*model.CVMDispatchResponse, error) {
+	if c == nil {
+		return nil, fmt.Errorf("CVM dispatch requires an enabled overlay")
+	}
+	var response model.CVMDispatchResponse
+	status, body, err := c.postJSON(ctx, c.cfg.TaskDispatchPath, req, &response)
+	if err != nil {
+		return nil, fmt.Errorf("CVM dispatch failed: %w", err)
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("CVM dispatch returned %d: %s", status, strings.TrimSpace(string(body)))
+	}
+	if !response.Accepted || response.InstanceID == "" {
+		if response.Reason == "" {
+			response.Reason = "CVM dispatch was not accepted"
+		}
+		return nil, fmt.Errorf("%s", response.Reason)
+	}
+	return &response, nil
+}
+
+func (c *OverlayClient) CancelCVMTask(ctx context.Context, req model.CVMCancelRequest) error {
+	if c == nil {
+		return nil
+	}
+	status, body, err := c.postJSON(ctx, c.cfg.TaskCancelPath, req, nil)
+	if err != nil {
+		return fmt.Errorf("cancel CVM task failed: %w", err)
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("cancel CVM task returned %d: %s", status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 func (c *OverlayClient) ChargeCredits(ctx context.Context, req model.OverlayCreditChargeRequest) (*model.OverlayCreditResponse, error) {
 	if c == nil {
 		return &model.OverlayCreditResponse{Allowed: true}, nil

@@ -85,6 +85,8 @@ type OverlayConfig struct {
 	FailOpen          bool
 	TaskAdmissionPath string
 	TaskEventPath     string
+	TaskDispatchPath  string
+	TaskCancelPath    string
 }
 
 type LLMConfig struct {
@@ -119,6 +121,37 @@ type StorageConfig struct {
 
 // Load loads configuration from environment and files
 func Load() *Config {
+	storageProvider := strings.ToLower(strings.TrimSpace(getEnv("STORAGE_PROVIDER", "local")))
+	cosRegion := firstNonEmptyEnv("COS_REGION", "TENCENT_REGION")
+	cosBucket := strings.TrimSpace(getEnv("COS_BUCKET", ""))
+	s3Endpoint := strings.TrimSpace(getEnv("S3_ENDPOINT", ""))
+	s3PublicEndpoint := strings.TrimSpace(getEnv("S3_PUBLIC_ENDPOINT", ""))
+	s3Region := getEnv("S3_REGION", "us-east-1")
+	s3Bucket := strings.TrimSpace(getEnv("S3_BUCKET", ""))
+	s3AccessKey := getEnvOrFile("S3_ACCESS_KEY", "")
+	s3SecretKey := getEnvOrFile("S3_SECRET_KEY", "")
+	if storageProvider == "cos" {
+		if cosRegion == "" {
+			cosRegion = "ap-guangzhou"
+		}
+		serviceEndpoint := "https://cos." + cosRegion + ".myqcloud.com"
+		if s3Endpoint == "" {
+			s3Endpoint = serviceEndpoint
+		}
+		if s3PublicEndpoint == "" {
+			s3PublicEndpoint = serviceEndpoint
+		}
+		s3Region = cosRegion
+		if s3Bucket == "" {
+			s3Bucket = cosBucket
+		}
+		if s3AccessKey == "" {
+			s3AccessKey = firstNonEmptyEnv("COS_SECRET_ID", "TENCENT_SECRET_ID", "TENCENT_CLOUD_SECRET_ID")
+		}
+		if s3SecretKey == "" {
+			s3SecretKey = firstNonEmptyEnv("COS_SECRET_KEY", "TENCENT_SECRET_KEY", "TENCENT_CLOUD_SECRET_KEY")
+		}
+	}
 	return &Config{
 		Server: ServerConfig{
 			Port:           getEnv("SERVER_PORT", "8080"),
@@ -177,6 +210,8 @@ func Load() *Config {
 			FailOpen:          getEnv("OVERLAY_FAIL_OPEN", "false") == "true",
 			TaskAdmissionPath: getEnv("OVERLAY_TASK_ADMISSION_PATH", "/api/v1/overlay/tasks/admit"),
 			TaskEventPath:     getEnv("OVERLAY_TASK_EVENT_PATH", "/api/v1/overlay/tasks/events"),
+			TaskDispatchPath:  getEnv("OVERLAY_TASK_DISPATCH_PATH", "/api/v1/overlay/tasks/dispatch"),
+			TaskCancelPath:    getEnv("OVERLAY_TASK_CANCEL_PATH", "/api/v1/overlay/tasks/cancel"),
 		},
 		LLM: LLMConfig{
 			BaseURL:           getEnv("LLM_BASE_URL", ""),
@@ -187,17 +222,17 @@ func Load() *Config {
 			ProxyMaxBodyBytes: int64(parseIntEnv("LLM_PROXY_MAX_BODY_MB", 2)) << 20,
 		},
 		Storage: StorageConfig{
-			Provider:         normalizeStorageProvider(getEnv("STORAGE_PROVIDER", "local")),
+			Provider:         normalizeStorageProvider(storageProvider),
 			LocalDir:         getEnv("STORAGE_LOCAL_DIR", "/mnt/data/uploads"),
 			MaxSizeMB:        parseIntEnv("UPLOAD_MAX_SIZE_MB", 0),
 			RetentionDays:    parseIntEnv("DATA_RETENTION_DAYS", 0),
 			PresignExpiry:    parseDuration(getEnv("STORAGE_PRESIGN_EXPIRE", "15m")),
-			S3Endpoint:       strings.TrimSpace(getEnv("S3_ENDPOINT", "")),
-			S3PublicEndpoint: strings.TrimSpace(getEnv("S3_PUBLIC_ENDPOINT", "")),
-			S3Region:         getEnv("S3_REGION", "us-east-1"),
-			S3Bucket:         strings.TrimSpace(getEnv("S3_BUCKET", "")),
-			S3AccessKey:      getEnvOrFile("S3_ACCESS_KEY", ""),
-			S3SecretKey:      getEnvOrFile("S3_SECRET_KEY", ""),
+			S3Endpoint:       s3Endpoint,
+			S3PublicEndpoint: s3PublicEndpoint,
+			S3Region:         s3Region,
+			S3Bucket:         s3Bucket,
+			S3AccessKey:      s3AccessKey,
+			S3SecretKey:      s3SecretKey,
 			S3SessionToken:   getEnvOrFile("S3_SESSION_TOKEN", ""),
 			S3UsePathStyle:   getEnv("S3_USE_PATH_STYLE", "false") == "true",
 			ScanLocalDir:     strings.TrimSpace(getEnv("DATA_SCAN_LOCAL_DIR", "")),
@@ -252,10 +287,22 @@ func normalizeStorageProvider(provider string) string {
 	if provider == "" {
 		return "local"
 	}
+	if provider == "cos" {
+		return "s3"
+	}
 	if provider != "local" && provider != "s3" {
 		return "local"
 	}
 	return provider
+}
+
+func firstNonEmptyEnv(names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // splitComma splits a comma-separated string, trimming whitespace and filtering empty values.

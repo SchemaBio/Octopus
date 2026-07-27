@@ -137,6 +137,16 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 	}
 
 	provider := model.UploadProvider(s.cfg.Storage.Provider)
+	if _, err := tenantUploadCategory(req.FileType, req.ReferenceGenome); err != nil {
+		return nil, nil, nil, err
+	}
+	if provider == model.UploadProviderS3 && strings.TrimSpace(orgID) != "" {
+		var err error
+		orgID, err = normalizeTenantID(orgID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
 	var objectStore *s3Storage
 	if provider == model.UploadProviderS3 {
 		var err error
@@ -168,9 +178,13 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		return nil, nil, nil, fmt.Errorf("failed to create upload job: %w", err)
 	}
 
-	storageFolder, err := s.getUserStorageFolder(ctx, userID)
-	if err != nil {
-		return nil, nil, nil, err
+	storageFolder := ""
+	if provider != model.UploadProviderS3 || orgID == "" {
+		var err error
+		storageFolder, err = s.getUserStorageFolder(ctx, userID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
 	}
 
 	files := make([]*model.UploadFile, 0, len(req.Files))
@@ -178,7 +192,16 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 
 	for _, f := range req.Files {
 		fileUUID := uuid.New().String()
-		storageKey := s.buildStorageKey(provider, orgID, storageFolder, jobUUID, req.FileType, req.ReferenceGenome, f.FileName)
+		storageKey := ""
+		if provider == model.UploadProviderS3 && orgID != "" {
+			var err error
+			storageKey, err = tenantUploadObjectKey(orgID, jobUUID, req.FileType, req.ReferenceGenome, f.FileName)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+		} else {
+			storageKey = s.buildStorageKey(provider, orgID, storageFolder, jobUUID, req.FileType, req.ReferenceGenome, f.FileName)
+		}
 
 		uploadFile := &model.UploadFile{
 			UUID:       fileUUID,

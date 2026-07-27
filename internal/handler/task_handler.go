@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"crypto/subtle"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -15,6 +17,7 @@ import (
 )
 
 type TaskHandler struct {
+	cfg       *config.Config
 	svc       *service.TaskService
 	sampleSvc *service.SampleService
 	taskRepo  *repository.TaskRepository
@@ -22,10 +25,42 @@ type TaskHandler struct {
 
 func NewTaskHandler(cfg *config.Config) *TaskHandler {
 	return &TaskHandler{
+		cfg:       cfg,
 		svc:       service.NewTaskService(cfg),
 		sampleSvc: service.NewSampleService(cfg),
 		taskRepo:  repository.NewTaskRepository(),
 	}
+}
+
+// CVMStateEvent receives lifecycle callbacks from the trusted Squid control
+// plane. It intentionally does not use user JWT authentication.
+func (h *TaskHandler) CVMStateEvent(c *gin.Context) {
+	if h.cfg == nil || !h.cfg.ExternalAuth.Enabled || h.cfg.ExternalAuth.SharedSecret == "" {
+		ErrorUnauthorized(c, "CVM callback authentication is disabled")
+		return
+	}
+	authorization := strings.TrimSpace(c.GetHeader("Authorization"))
+	parts := strings.SplitN(authorization, " ", 2)
+	token := ""
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		token = strings.TrimSpace(parts[1])
+	}
+	if subtle.ConstantTimeCompare([]byte(token), []byte(h.cfg.ExternalAuth.SharedSecret)) != 1 {
+		ErrorUnauthorized(c, "Invalid CVM callback credentials")
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+	var event model.CVMStateEvent
+	if err := c.ShouldBindJSON(&event); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	if err := h.svc.HandleCVMStateEvent(event); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func taskActorFromContext(c *gin.Context) model.OverlayActor {

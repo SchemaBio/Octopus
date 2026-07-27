@@ -31,9 +31,10 @@ const (
 type ExecutorType string
 
 const (
-	ExecutorLocal ExecutorType = "local" // miniwdl + local.cfg
-	ExecutorSlurm ExecutorType = "slurm" // miniwdl-slurm + slurm.cfg
-	ExecutorLSF   ExecutorType = "lsf"   // miniwdl-lsf + lsf.cfg
+	ExecutorLocal ExecutorType = "local"    // miniwdl + local.cfg
+	ExecutorSlurm ExecutorType = "slurm"    // miniwdl-slurm + slurm.cfg
+	ExecutorLSF   ExecutorType = "lsf"      // miniwdl-lsf + lsf.cfg
+	ExecutorCVM   ExecutorType = "cvm_spot" // Squid-provisioned Tencent Cloud CVM
 )
 
 // Task represents a workflow task
@@ -71,7 +72,8 @@ type Task struct {
 	// supersedes the legacy cvm_instances.status concept (that table is not owned
 	// by any service). Stored as a plain string enum so values can evolve
 	// without enum-type migrations; populated by the task runner / overlay events.
-	VMStatus string `json:"vm_status,omitempty" gorm:"size:30;index"`
+	VMStatus      string `json:"vm_status,omitempty" gorm:"size:30;index"`
+	CVMInstanceID string `json:"-" gorm:"size:64;index"`
 
 	ResultImportStatus      ResultImportStatus `json:"-" gorm:"size:30;default:'pending'"`
 	ResultImportError       string             `json:"-" gorm:"type:text"`
