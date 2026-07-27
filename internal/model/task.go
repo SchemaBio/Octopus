@@ -72,8 +72,9 @@ type Task struct {
 	// supersedes the legacy cvm_instances.status concept (that table is not owned
 	// by any service). Stored as a plain string enum so values can evolve
 	// without enum-type migrations; populated by the task runner / overlay events.
-	VMStatus      string `json:"vm_status,omitempty" gorm:"size:30;index"`
-	CVMInstanceID string `json:"-" gorm:"size:64;index"`
+	VMStatus           string `json:"vm_status,omitempty" gorm:"size:30;index"`
+	CVMInstanceID      string `json:"-" gorm:"size:64;index"`
+	ExecutionAttemptID string `json:"execution_attempt_id,omitempty" gorm:"size:36;index"`
 
 	ResultImportStatus      ResultImportStatus `json:"-" gorm:"size:30;default:'pending'"`
 	ResultImportError       string             `json:"-" gorm:"type:text"`
@@ -173,6 +174,7 @@ type TaskAuditResponse struct {
 	Status               TaskStatus         `json:"status"`
 	Progress             int                `json:"progress"`
 	VMStatus             string             `json:"vm_status,omitempty"`
+	ExecutionAttemptID   string             `json:"execution_attempt_id,omitempty"`
 	ResultImportStatus   ResultImportStatus `json:"result_import_status,omitempty"`
 	ResultImportAttempts int                `json:"result_import_attempts,omitempty"`
 	Error                string             `json:"error,omitempty"`
@@ -201,6 +203,7 @@ func (t *Task) ToAuditResponse() TaskAuditResponse {
 		Status:               t.Status,
 		Progress:             t.Progress,
 		VMStatus:             t.VMStatus,
+		ExecutionAttemptID:   t.ExecutionAttemptID,
 		ResultImportStatus:   t.ResultImportStatus,
 		ResultImportAttempts: t.ResultImportAttempts,
 		Error:                t.Error,
@@ -247,6 +250,7 @@ type TaskProgressResponse struct {
 	Template                string             `json:"template"`
 	Status                  TaskStatus         `json:"status"`
 	Progress                int                `json:"progress"`
+	ExecutionAttemptID      string             `json:"execution_attempt_id,omitempty"`
 	CreatedAt               time.Time          `json:"created_at"`
 	ResultImportStatus      ResultImportStatus `json:"result_import_status,omitempty"`
 	ResultImportError       string             `json:"result_import_error,omitempty"`

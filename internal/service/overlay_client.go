@@ -96,6 +96,9 @@ func (c *OverlayClient) DispatchCVMTask(ctx context.Context, req model.CVMDispat
 		}
 		return nil, fmt.Errorf("%s", response.Reason)
 	}
+	if req.AttemptID != "" && response.AttemptID != req.AttemptID {
+		return nil, fmt.Errorf("CVM dispatch returned a mismatched attempt_id")
+	}
 	return &response, nil
 }
 

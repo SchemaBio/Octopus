@@ -129,11 +129,11 @@ func (s *TaskService) emitTaskEvent(event string, actor model.OverlayActor, task
 		OccurredAt:     time.Now(),
 		Message:        message,
 	}
-	go func() {
-		if err := s.overlay.EmitTaskEvent(context.Background(), req); err != nil {
-			fmt.Printf("WARNING: overlay task event %s failed for %s: %v\n", event, task.UUID, err)
-		}
-	}()
+	// Preserve lifecycle ordering at the SaaS control-plane boundary. In
+	// particular, a delayed start_failed event must never arrive after running.
+	if err := s.overlay.EmitTaskEvent(context.Background(), req); err != nil {
+		fmt.Printf("WARNING: overlay task event %s failed for %s: %v\n", event, task.UUID, err)
+	}
 }
 
 func (s *TaskService) emitStatusEvent(task *model.Task, previousStatus model.TaskStatus) {
@@ -198,7 +198,7 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 		return
 	}
 
-	workflow, _, err := s.sepiida.GetWorkflowWithTasks(task.UUID)
+	workflow, _, err := s.sepiida.GetWorkflowWithTasks(sepiidaWorkflowUUID(task))
 	if err != nil || workflow == nil {
 		return
 	}
@@ -267,6 +267,16 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	if completedNow {
 		s.importTaskArchive(task)
 	}
+}
+
+func sepiidaWorkflowUUID(task *model.Task) string {
+	if task != nil && task.Executor == model.ExecutorCVM && task.ExecutionAttemptID != "" {
+		return task.ExecutionAttemptID
+	}
+	if task == nil {
+		return ""
+	}
+	return task.UUID
 }
 
 // getExecutorPath returns the miniwdl executable path based on executor type
@@ -689,6 +699,11 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 	}
 
 	previousStatus := task.Status
+	if task.Executor == model.ExecutorCVM {
+		if err := s.prepareCVMExecutionAttempt(task, false); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.admitTask(ctx, model.OverlayAdmissionActionStart, actor, task); err != nil {
 		return nil, err
 	}
@@ -697,12 +712,14 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 	if task.Executor == model.ExecutorCVM {
 		request, err := s.buildCVMDispatchRequest(ctx, actor, task)
 		if err != nil {
+			s.markCVMStartFailed(task)
 			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
 			return nil, err
 		}
 		dispatch, err = s.overlay.DispatchCVMTask(ctx, request)
 		if err != nil {
-			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
+			// The request may have reached Squid or Tencent Cloud. Preserve the
+			// attempt and its reservation so a repeated Start is idempotent.
 			return nil, err
 		}
 	}
@@ -720,7 +737,8 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 
 	if err := s.repo.Update(task); err != nil {
 		if dispatch != nil {
-			_ = s.overlay.CancelCVMTask(context.Background(), model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, Reason: "Octopus task update failed"})
+			_ = s.overlay.CancelCVMTask(context.Background(), model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: "Octopus task update failed"})
+			s.markCVMStartFailed(task)
 		}
 		s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
 		return nil, err
@@ -745,7 +763,7 @@ func (s *TaskService) StopTask(ctx context.Context, id string, actor model.Overl
 		return nil, fmt.Errorf("task is not running")
 	}
 	if task.Executor == model.ExecutorCVM {
-		if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, Reason: "task stopped by user"}); err != nil {
+		if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: "task stopped by user"}); err != nil {
 			return nil, err
 		}
 	}
@@ -800,6 +818,12 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 	}
 
 	previousStatus := task.Status
+	if task.Executor == model.ExecutorCVM {
+		forceNew := !strings.EqualFold(strings.TrimSpace(task.VMStatus), "DISPATCHING")
+		if err := s.prepareCVMExecutionAttempt(task, forceNew); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.admitTask(ctx, model.OverlayAdmissionActionRetry, actor, task); err != nil {
 		return nil, err
 	}
@@ -808,12 +832,13 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 	if task.Executor == model.ExecutorCVM {
 		request, err := s.buildCVMDispatchRequest(ctx, actor, task)
 		if err != nil {
+			s.markCVMStartFailed(task)
 			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
 			return nil, err
 		}
 		dispatch, err = s.overlay.DispatchCVMTask(ctx, request)
 		if err != nil {
-			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
+			// Preserve this attempt when the dispatch outcome is unknown.
 			return nil, err
 		}
 	}
@@ -831,7 +856,8 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 
 	if err := s.repo.Update(task); err != nil {
 		if dispatch != nil {
-			_ = s.overlay.CancelCVMTask(context.Background(), model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, Reason: "Octopus task retry update failed"})
+			_ = s.overlay.CancelCVMTask(context.Background(), model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: "Octopus task retry update failed"})
+			s.markCVMStartFailed(task)
 		}
 		s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
 		return nil, err
@@ -956,8 +982,11 @@ func (s *TaskService) importTaskArchive(task *model.Task) {
 		return
 	}
 
-	archiveDir := filepath.Join(s.cfg.Task.ArchiveDir, task.UUID)
 	if s.cfg.Task.ArchiveDir == "" {
+		return
+	}
+	archiveDir, err := taskArchiveDir(s.cfg.Task.ArchiveDir, task)
+	if err != nil {
 		return
 	}
 	if _, err := os.Stat(archiveDir); err != nil {
@@ -996,6 +1025,13 @@ func (s *TaskService) runTaskArchiveImport(task *model.Task, archiveDir string) 
 		task.ResultImportStatus = model.ResultImportStatusSuccess
 		task.ResultImportError = ""
 		task.ResultImportFingerprint = fingerprint
+		if task.Executor == model.ExecutorCVM {
+			if publishErr := s.publishCVMFinalManifest(task, finishedAt); publishErr != nil {
+				task.ResultImportStatus = model.ResultImportStatusFailed
+				task.ResultImportError = publishErr.Error()
+				task.ResultImportFingerprint = ""
+			}
+		}
 	}
 	_ = s.repo.Update(task)
 	s.finishResultImportBatch(batch, result, task.ResultImportStatus, task.ResultImportError, finishedAt)
@@ -1073,6 +1109,47 @@ func archiveImportFingerprint(task *model.Task, archiveDir string) string {
 	return fmt.Sprintf("%x", sum[:])
 }
 
+func cvmFinalManifestKey(task *model.Task) (string, error) {
+	if task == nil {
+		return "", fmt.Errorf("task is required")
+	}
+	if _, err := uuid.Parse(task.ExternalOrgID); err != nil {
+		return "", fmt.Errorf("valid organization ID is required for CVM final manifest")
+	}
+	if _, err := uuid.Parse(task.UUID); err != nil {
+		return "", fmt.Errorf("valid task UUID is required for CVM final manifest")
+	}
+	if _, err := uuid.Parse(task.ExecutionAttemptID); err != nil {
+		return "", fmt.Errorf("valid execution attempt ID is required for CVM final manifest")
+	}
+	return path.Join("organizations", task.ExternalOrgID, "workflows", task.UUID, "final.json"), nil
+}
+
+func (s *TaskService) publishCVMFinalManifest(task *model.Task, finalizedAt time.Time) error {
+	key, err := cvmFinalManifestKey(task)
+	if err != nil {
+		return err
+	}
+	manifest, err := json.Marshal(map[string]interface{}{
+		"layout_version": 1,
+		"task_uuid":      task.UUID,
+		"attempt_id":     task.ExecutionAttemptID,
+		"archive_prefix": path.Join("organizations", task.ExternalOrgID, "workflows", task.UUID, "attempts", task.ExecutionAttemptID),
+		"finalized_at":   finalizedAt.UTC().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return fmt.Errorf("encode CVM final manifest: %w", err)
+	}
+	storage, err := newS3Storage(context.Background(), s.cfg.Storage)
+	if err != nil {
+		return err
+	}
+	if err := storage.put(context.Background(), key, "application/json", append(manifest, '\n')); err != nil {
+		return fmt.Errorf("publish CVM final manifest: %w", err)
+	}
+	return nil
+}
+
 // RetryResultImport resets structured result import state and runs the archive import again.
 func (s *TaskService) RetryResultImport(ctx context.Context, id string) (*model.TaskProgressResponse, error) {
 	task, err := s.repo.FindByUUID(id)
@@ -1086,9 +1163,12 @@ func (s *TaskService) RetryResultImport(ctx context.Context, id string) (*model.
 		return nil, fmt.Errorf("result import is already running")
 	}
 
-	archiveDir := filepath.Join(s.cfg.Task.ArchiveDir, task.UUID)
 	if s.cfg.Task.ArchiveDir == "" {
 		return nil, fmt.Errorf("archive directory is not configured")
+	}
+	archiveDir, err := taskArchiveDir(s.cfg.Task.ArchiveDir, task)
+	if err != nil {
+		return nil, err
 	}
 	if _, err := os.Stat(archiveDir); err != nil {
 		return nil, fmt.Errorf("archive not found for task: %s", id)
@@ -1126,6 +1206,7 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 		Template:                task.Template,
 		Status:                  task.Status,
 		Progress:                task.Progress,
+		ExecutionAttemptID:      task.ExecutionAttemptID,
 		CreatedAt:               task.CreatedAt,
 		ResultImportStatus:      task.ResultImportStatus,
 		ResultImportError:       task.ResultImportError,
@@ -1136,7 +1217,7 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 
 	// Query Sepiida for real-time progress
 	if s.sepiida != nil && task.UUID != "" {
-		workflow, tasks, err := s.sepiida.GetWorkflowWithTasks(task.UUID)
+		workflow, tasks, err := s.sepiida.GetWorkflowWithTasks(sepiidaWorkflowUUID(task))
 		if err == nil && workflow != nil {
 			resp.Sepiida = workflow
 			resp.Tasks = tasks
@@ -1202,8 +1283,8 @@ func (s *TaskService) CancelTask(ctx context.Context, id string, actor model.Ove
 	if task.Status != model.TaskStatusRunning && task.Status != model.TaskStatusQueued && task.Status != model.TaskStatusWaitingData {
 		return fmt.Errorf("task is not running or queued")
 	}
-	if task.Executor == model.ExecutorCVM && task.CVMInstanceID != "" {
-		if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, Reason: "task cancelled by user"}); err != nil {
+	if cvmTaskNeedsCancel(task) {
+		if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: "task cancelled by user"}); err != nil {
 			return err
 		}
 	}
@@ -1624,23 +1705,10 @@ func (s *TaskService) stageCOSArchive(task *model.Task, metadata model.SepiidaAr
 	if task == nil || s.cfg.Storage.Provider != "s3" {
 		return fmt.Errorf("COS/S3 storage is required for a CVM archive")
 	}
-	baseURL, err := url.Parse(strings.TrimSpace(metadata.ArchiveBase))
-	if err != nil || baseURL.Scheme != "https" || baseURL.Hostname() == "" || baseURL.User != nil {
-		return fmt.Errorf("Sepiida returned an invalid COS archive base")
+	prefix, err := validatedCOSArchivePrefix(task, metadata, s.cfg.Storage)
+	if err != nil {
+		return err
 	}
-	expectedHost := s.cfg.Storage.S3Bucket + ".cos." + s.cfg.Storage.S3Region + ".myqcloud.com"
-	if !strings.EqualFold(baseURL.Hostname(), expectedHost) {
-		return fmt.Errorf("Sepiida archive bucket does not match configured COS bucket")
-	}
-	prefix := strings.Trim(baseURL.Path, "/")
-	archivePrefix := strings.Trim(strings.TrimSpace(metadata.ArchivePrefix), "/")
-	if archivePrefix == "" {
-		archivePrefix = task.UUID
-	}
-	if path.Clean(archivePrefix) != archivePrefix || strings.HasPrefix(archivePrefix, "../") {
-		return fmt.Errorf("Sepiida returned an invalid archive prefix")
-	}
-	prefix = path.Join(prefix, archivePrefix)
 	storage, err := newS3Storage(context.Background(), s.cfg.Storage)
 	if err != nil {
 		return err
@@ -1649,7 +1717,10 @@ func (s *TaskService) stageCOSArchive(task *model.Task, metadata model.SepiidaAr
 	if err != nil {
 		return err
 	}
-	archiveDir := filepath.Join(s.cfg.Task.ArchiveDir, task.UUID)
+	archiveDir, err := taskArchiveDir(s.cfg.Task.ArchiveDir, task)
+	if err != nil {
+		return err
+	}
 	if err := ensurePathInsideBase(s.cfg.Task.ArchiveDir, archiveDir); err != nil {
 		return err
 	}
@@ -1708,6 +1779,56 @@ func (s *TaskService) stageCOSArchive(task *model.Task, metadata model.SepiidaAr
 	return nil
 }
 
+func validatedCOSArchivePrefix(task *model.Task, metadata model.SepiidaArchiveMetadata, storageCfg config.StorageConfig) (string, error) {
+	if task == nil || task.Executor != model.ExecutorCVM {
+		return "", fmt.Errorf("CVM task is required for a COS archive")
+	}
+	if _, err := uuid.Parse(task.ExternalOrgID); err != nil {
+		return "", fmt.Errorf("valid organization ID is required for a COS archive")
+	}
+	if _, err := uuid.Parse(task.UUID); err != nil {
+		return "", fmt.Errorf("valid task UUID is required for a COS archive")
+	}
+	if _, err := uuid.Parse(task.ExecutionAttemptID); err != nil {
+		return "", fmt.Errorf("valid execution attempt ID is required for a COS archive")
+	}
+	baseURL, err := url.Parse(strings.TrimSpace(metadata.ArchiveBase))
+	if err != nil || !strings.EqualFold(baseURL.Scheme, "https") || baseURL.Hostname() == "" || baseURL.User != nil || baseURL.RawQuery != "" || baseURL.Fragment != "" {
+		return "", fmt.Errorf("Sepiida returned an invalid COS archive base")
+	}
+	expectedHost := storageCfg.S3Bucket + ".cos." + storageCfg.S3Region + ".myqcloud.com"
+	if !strings.EqualFold(baseURL.Host, expectedHost) {
+		return "", fmt.Errorf("Sepiida archive bucket does not match configured COS bucket")
+	}
+	prefix := strings.Trim(baseURL.Path, "/")
+	expectedBasePrefix := path.Join("organizations", task.ExternalOrgID, "workflows", task.UUID, "attempts")
+	if prefix != expectedBasePrefix {
+		return "", fmt.Errorf("Sepiida archive prefix does not match the current tenant and task")
+	}
+	archivePrefix := strings.Trim(strings.TrimSpace(metadata.ArchivePrefix), "/")
+	if archivePrefix != task.ExecutionAttemptID {
+		return "", fmt.Errorf("Sepiida archive prefix does not match the current execution attempt")
+	}
+	expectedOutputsKey := path.Join(task.ExecutionAttemptID, "outputs.resolved.json")
+	if strings.Trim(strings.TrimSpace(metadata.OutputsResolvedKey), "/") != expectedOutputsKey {
+		return "", fmt.Errorf("Sepiida outputs manifest does not match the current execution attempt")
+	}
+	return path.Join(prefix, archivePrefix), nil
+}
+
+func taskArchiveDir(baseDir string, task *model.Task) (string, error) {
+	if task == nil || strings.TrimSpace(task.UUID) == "" {
+		return "", fmt.Errorf("task UUID is required for archive path")
+	}
+	if task.Executor != model.ExecutorCVM {
+		return filepath.Join(baseDir, task.UUID), nil
+	}
+	if _, err := uuid.Parse(task.ExecutionAttemptID); err != nil {
+		return "", fmt.Errorf("valid execution attempt ID is required for CVM archive path")
+	}
+	return filepath.Join(baseDir, task.UUID, "attempts", task.ExecutionAttemptID), nil
+}
+
 func isStructuredResultFile(name string) bool {
 	name = strings.ToLower(name)
 	if !strings.HasSuffix(name, ".txt") && !strings.HasSuffix(name, ".tsv") {
@@ -1740,6 +1861,9 @@ func applyAssetInputPaths(inputs map[string]interface{}, asset *model.DataAsset,
 }
 
 func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.OverlayActor, task *model.Task) (model.CVMDispatchRequest, error) {
+	if _, err := uuid.Parse(task.ExecutionAttemptID); err != nil {
+		return model.CVMDispatchRequest{}, fmt.Errorf("valid execution attempt ID is required for CVM dispatch")
+	}
 	assets, directLinks, err := s.collectTaskAssets(task)
 	if err != nil {
 		return model.CVMDispatchRequest{}, err
@@ -1778,13 +1902,49 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 		return model.CVMDispatchRequest{}, err
 	}
 	return model.CVMDispatchRequest{
-		Actor: actor,
-		Task:  model.NewOverlayTaskSnapshot(task),
+		Actor:     actor,
+		Task:      model.NewOverlayTaskSnapshot(task),
+		AttemptID: task.ExecutionAttemptID,
 		Execution: model.CVMExecutionSpec{
 			Template: task.Template, Inputs: encoded, Downloads: downloads,
 		},
 		RequestedAt: time.Now(),
 	}, nil
+}
+
+func (s *TaskService) prepareCVMExecutionAttempt(task *model.Task, forceNew bool) error {
+	if task == nil || task.Executor != model.ExecutorCVM {
+		return fmt.Errorf("CVM task is required")
+	}
+	_, invalidAttempt := uuid.Parse(task.ExecutionAttemptID)
+	if forceNew || invalidAttempt != nil || cvmAttemptStateTerminal(task.VMStatus) {
+		task.ExecutionAttemptID = uuid.New().String()
+		task.CVMInstanceID = ""
+	}
+	task.VMStatus = "DISPATCHING"
+	task.UpdatedAt = time.Now()
+	if err := s.repo.Update(task); err != nil {
+		return fmt.Errorf("persist CVM execution attempt: %w", err)
+	}
+	return nil
+}
+
+func (s *TaskService) markCVMStartFailed(task *model.Task) {
+	if task == nil || task.Executor != model.ExecutorCVM {
+		return
+	}
+	task.VMStatus = "LAUNCH_FAILED"
+	task.UpdatedAt = time.Now()
+	_ = s.repo.Update(task)
+}
+
+func cvmAttemptStateTerminal(state string) bool {
+	switch strings.ToUpper(strings.TrimSpace(state)) {
+	case "TERMINATED", "SHUTDOWN", "FAILED", "RECLAIMED", "STOPPED", "LAUNCH_FAILED":
+		return true
+	default:
+		return false
+	}
 }
 
 func replaceInputString(value interface{}, oldValue, newValue string) interface{} {
@@ -1822,8 +1982,8 @@ func safeCVMInputName(name string) string {
 }
 
 func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
-	if strings.TrimSpace(event.TaskUUID) == "" || strings.TrimSpace(event.InstanceState) == "" {
-		return fmt.Errorf("task_uuid and instance_state are required")
+	if strings.TrimSpace(event.TaskUUID) == "" || strings.TrimSpace(event.AttemptID) == "" || strings.TrimSpace(event.InstanceState) == "" {
+		return fmt.Errorf("task_uuid, attempt_id and instance_state are required")
 	}
 	task, err := s.repo.FindByUUID(event.TaskUUID)
 	if err != nil {
@@ -1831,6 +1991,9 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	}
 	if task.Executor != model.ExecutorCVM {
 		return fmt.Errorf("task is not a CVM task")
+	}
+	if !cvmStateEventMatchesCurrentAttempt(task, event) {
+		return nil
 	}
 	if task.CVMInstanceID != "" && event.InstanceID != "" && task.CVMInstanceID != event.InstanceID {
 		return fmt.Errorf("CVM instance does not match task")
@@ -1855,6 +2018,14 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	}
 	s.emitStatusEvent(task, previousStatus)
 	return nil
+}
+
+func cvmStateEventMatchesCurrentAttempt(task *model.Task, event model.CVMStateEvent) bool {
+	return task != nil && task.ExecutionAttemptID != "" && task.ExecutionAttemptID == event.AttemptID
+}
+
+func cvmTaskNeedsCancel(task *model.Task) bool {
+	return task != nil && task.Executor == model.ExecutorCVM && strings.TrimSpace(task.ExecutionAttemptID) != ""
 }
 
 func setIndexedInput(values []string, index int, value string) []string {

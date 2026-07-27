@@ -51,6 +51,7 @@ type OverlayTaskSnapshot struct {
 	CreatedAt        time.Time  `json:"created_at"`
 	StartedAt        *time.Time `json:"started_at,omitempty"`
 	FinishedAt       *time.Time `json:"finished_at,omitempty"`
+	AttemptID        string     `json:"attempt_id,omitempty"`
 }
 
 // NewOverlayTaskSnapshot converts a task to the overlay contract.
@@ -77,6 +78,7 @@ func NewOverlayTaskSnapshot(task *Task) OverlayTaskSnapshot {
 		CreatedAt:        task.CreatedAt,
 		StartedAt:        task.StartedAt,
 		FinishedAt:       task.FinishedAt,
+		AttemptID:        task.ExecutionAttemptID,
 	}
 }
 
@@ -122,25 +124,29 @@ type CVMExecutionSpec struct {
 type CVMDispatchRequest struct {
 	Actor       OverlayActor        `json:"actor"`
 	Task        OverlayTaskSnapshot `json:"task"`
+	AttemptID   string              `json:"attempt_id"`
 	Execution   CVMExecutionSpec    `json:"execution"`
 	RequestedAt time.Time           `json:"requested_at"`
 }
 
 type CVMDispatchResponse struct {
 	Accepted      bool   `json:"accepted"`
+	AttemptID     string `json:"attempt_id"`
 	InstanceID    string `json:"instance_id,omitempty"`
 	InstanceState string `json:"instance_state,omitempty"`
 	Reason        string `json:"reason,omitempty"`
 }
 
 type CVMCancelRequest struct {
-	Actor    OverlayActor `json:"actor"`
-	TaskUUID string       `json:"task_uuid"`
-	Reason   string       `json:"reason,omitempty"`
+	Actor     OverlayActor `json:"actor"`
+	TaskUUID  string       `json:"task_uuid"`
+	AttemptID string       `json:"attempt_id,omitempty"`
+	Reason    string       `json:"reason,omitempty"`
 }
 
 type CVMStateEvent struct {
 	TaskUUID      string     `json:"task_uuid"`
+	AttemptID     string     `json:"attempt_id"`
 	InstanceID    string     `json:"instance_id,omitempty"`
 	InstanceState string     `json:"instance_state"`
 	TaskStatus    TaskStatus `json:"task_status,omitempty"`

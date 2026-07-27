@@ -26,6 +26,8 @@
 
 Octopus 的社区默认值仍是本地存储和本地 executor。它只提供通用的 `cos`/S3 数据面和 `cvm_spot` Overlay 协议，不持有腾讯云 CVM 控制权限，也不实现积分计费、平台组织管理或并发策略；这些 SaaS 控制面能力属于 Squid。
 
+在 `cvm_spot` 模式下，Octopus 为每次执行生成独立的 `attempt_id`。任务重试不会复用旧实例、Sepiida 工作流或 COS 归档前缀；社区版 executor 继续以任务 UUID 工作，不依赖 Squid。
+
 ### SaaS Overlay 扩展点（默认关闭）
 
 Octopus 仍然是完整可部署的开源社区版，不包含 Squid 的闭源计费、云调度或多租户控制面。为了避免同时维护两套后端，Octopus 提供一组通用扩展点：部署方可以先部署开源 Octopus，再让 Squid 作为外部 SaaS Overlay 负责租户认证、任务准入和生命周期计费。
