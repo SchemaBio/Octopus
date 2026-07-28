@@ -39,6 +39,65 @@ func TestLoadSecretsFromDefaultFiles(t *testing.T) {
 	}
 }
 
+func TestLoadCOSCredentialsAsPair(t *testing.T) {
+	clearStorageCredentialEnv(t)
+	t.Setenv("STORAGE_PROVIDER", "cos")
+	t.Setenv("TENCENT_SECRET_ID", "shared-id")
+	t.Setenv("TENCENT_SECRET_KEY", "shared-key")
+
+	cfg := Load()
+	if cfg.Storage.S3AccessKey != "shared-id" || cfg.Storage.S3SecretKey != "shared-key" {
+		t.Fatalf("unexpected shared COS credentials: %q/%q", cfg.Storage.S3AccessKey, cfg.Storage.S3SecretKey)
+	}
+}
+
+func TestLoadCOSCredentialsSupportsFilesAndSpecificOverride(t *testing.T) {
+	clearStorageCredentialEnv(t)
+	t.Setenv("STORAGE_PROVIDER", "cos")
+	dir := t.TempDir()
+	idFile := filepath.Join(dir, "cos-id")
+	keyFile := filepath.Join(dir, "cos-key")
+	if err := os.WriteFile(idFile, []byte("cos-file-id\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, []byte("cos-file-key\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("COS_SECRET_ID_FILE", idFile)
+	t.Setenv("COS_SECRET_KEY_FILE", keyFile)
+	t.Setenv("TENCENT_SECRET_ID", "shared-id")
+	t.Setenv("TENCENT_SECRET_KEY", "shared-key")
+
+	cfg := Load()
+	if cfg.Storage.S3AccessKey != "cos-file-id" || cfg.Storage.S3SecretKey != "cos-file-key" {
+		t.Fatalf("unexpected file-backed COS credentials: %q/%q", cfg.Storage.S3AccessKey, cfg.Storage.S3SecretKey)
+	}
+}
+
+func TestLoadCOSCredentialsDoesNotMixIncompletePairs(t *testing.T) {
+	clearStorageCredentialEnv(t)
+	t.Setenv("STORAGE_PROVIDER", "cos")
+	t.Setenv("COS_SECRET_ID", "cos-only-id")
+	t.Setenv("TENCENT_SECRET_ID", "shared-id")
+	t.Setenv("TENCENT_SECRET_KEY", "shared-key")
+
+	cfg := Load()
+	if cfg.Storage.S3AccessKey != "cos-only-id" || cfg.Storage.S3SecretKey != "" {
+		t.Fatalf("incomplete COS pair was mixed with shared credentials: %q/%q", cfg.Storage.S3AccessKey, cfg.Storage.S3SecretKey)
+	}
+}
+
+func clearStorageCredentialEnv(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{
+		"S3_ACCESS_KEY", "S3_SECRET_KEY", "COS_SECRET_ID", "COS_SECRET_KEY",
+		"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY", "TENCENT_CLOUD_SECRET_ID", "TENCENT_CLOUD_SECRET_KEY",
+	} {
+		t.Setenv(name, "")
+		t.Setenv(name+"_FILE", "")
+	}
+}
+
 func TestLoadSecretsFromDefaultFilesWithComments(t *testing.T) {
 	dir := t.TempDir()
 

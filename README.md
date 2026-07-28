@@ -244,6 +244,13 @@ Octopus 不保存新生成报告，也不生成对象存储下载链接；报告
 | STORAGE_PROVIDER | local | 本地开源版固定为 local |
 | STORAGE_LOCAL_DIR | /mnt/data/uploads | 本地上传目录 |
 | UPLOAD_MAX_SIZE_MB | 0 | 上传文件大小限制，0 表示不限制 |
+| COS_REGION / COS_BUCKET | | `STORAGE_PROVIDER=cos` 时的腾讯云 COS 地域和 bucket |
+| COS_SECRET_ID / COS_SECRET_KEY | | COS 专用凭据对；必须成对配置 |
+| COS_SECRET_ID_FILE / COS_SECRET_KEY_FILE | | 从文件读取 COS 专用凭据 |
+| TENCENT_SECRET_ID / TENCENT_SECRET_KEY | | COS 专用凭据为空时使用的统一腾讯云凭据对 |
+| TENCENT_SECRET_ID_FILE / TENCENT_SECRET_KEY_FILE | | 从文件读取统一腾讯云凭据 |
+| S3_ACCESS_KEY / S3_SECRET_KEY | | 通用 S3 兼容凭据对，优先于 COS/腾讯云变量 |
+| S3_ACCESS_KEY_FILE / S3_SECRET_KEY_FILE | | 从文件读取通用 S3 凭据 |
 | SEPIIDA_URL | http://localhost:9090 | Sepiida Server URL |
 | SEPIIDA_QUERY_KEY | | Sepiida Query Key |
 | SEPIIDA_QUERY_KEY_FILE | | 从文件读取 Sepiida Query Key，适合 Docker/K8s secret |

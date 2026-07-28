@@ -128,8 +128,9 @@ func Load() *Config {
 	s3PublicEndpoint := strings.TrimSpace(getEnv("S3_PUBLIC_ENDPOINT", ""))
 	s3Region := getEnv("S3_REGION", "us-east-1")
 	s3Bucket := strings.TrimSpace(getEnv("S3_BUCKET", ""))
-	s3AccessKey := getEnvOrFile("S3_ACCESS_KEY", "")
-	s3SecretKey := getEnvOrFile("S3_SECRET_KEY", "")
+	s3AccessKey, s3SecretKey := firstCredentialPair(
+		[2]string{"S3_ACCESS_KEY", "S3_SECRET_KEY"},
+	)
 	if storageProvider == "cos" {
 		if cosRegion == "" {
 			cosRegion = "ap-guangzhou"
@@ -145,11 +146,12 @@ func Load() *Config {
 		if s3Bucket == "" {
 			s3Bucket = cosBucket
 		}
-		if s3AccessKey == "" {
-			s3AccessKey = firstNonEmptyEnv("COS_SECRET_ID", "TENCENT_SECRET_ID", "TENCENT_CLOUD_SECRET_ID")
-		}
-		if s3SecretKey == "" {
-			s3SecretKey = firstNonEmptyEnv("COS_SECRET_KEY", "TENCENT_SECRET_KEY", "TENCENT_CLOUD_SECRET_KEY")
+		if s3AccessKey == "" && s3SecretKey == "" {
+			s3AccessKey, s3SecretKey = firstCredentialPair(
+				[2]string{"COS_SECRET_ID", "COS_SECRET_KEY"},
+				[2]string{"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY"},
+				[2]string{"TENCENT_CLOUD_SECRET_ID", "TENCENT_CLOUD_SECRET_KEY"},
+			)
 		}
 	}
 	return &Config{
@@ -303,6 +305,17 @@ func firstNonEmptyEnv(names ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstCredentialPair(pairs ...[2]string) (string, string) {
+	for _, pair := range pairs {
+		id := strings.TrimSpace(getEnvOrFile(pair[0], ""))
+		key := strings.TrimSpace(getEnvOrFile(pair[1], ""))
+		if id != "" || key != "" {
+			return id, key
+		}
+	}
+	return "", ""
 }
 
 // splitComma splits a comma-separated string, trimming whitespace and filtering empty values.
