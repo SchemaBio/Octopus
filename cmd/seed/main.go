@@ -123,9 +123,11 @@ func deleteSeedData(db *gorm.DB) error {
 
 func insertSeedData(db *gorm.DB, adminID uint) error {
 	now := time.Now()
+	externalOrgID := os.Getenv("SEED_EXTERNAL_ORG_ID")
 
 	samples := buildSamples(adminID, now)
 	for i := range samples {
+		samples[i].ExternalOrgID = externalOrgID
 		if err := db.Create(&samples[i]).Error; err != nil {
 			return fmt.Errorf("sample %s: %w", samples[i].UUID, err)
 		}
@@ -133,6 +135,7 @@ func insertSeedData(db *gorm.DB, adminID uint) error {
 
 	pipelines := buildPipelines(adminID, now)
 	for i := range pipelines {
+		pipelines[i].ExternalOrgID = externalOrgID
 		if err := db.Create(&pipelines[i]).Error; err != nil {
 			return fmt.Errorf("pipeline %s: %w", pipelines[i].ID, err)
 		}
@@ -157,6 +160,7 @@ func insertSeedData(db *gorm.DB, adminID uint) error {
 
 	tasks := buildTasks(adminID, now)
 	for i := range tasks {
+		tasks[i].ExternalOrgID = externalOrgID
 		if err := db.Create(&tasks[i]).Error; err != nil {
 			return fmt.Errorf("task %s: %w", tasks[i].UUID, err)
 		}
