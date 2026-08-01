@@ -1,5 +1,9 @@
 # Schema Platform (Octopus)
 
+> 自部署生产入口位于 `deploy/`。它用 Compose 管理 PostgreSQL、Sepiida
+> Server 和 YiJian，并用 systemd 在宿主机运行 Octopus 与 Sepiida Agent。
+> 根目录 `.env.example` 仅用于 Octopus 单服务开发。
+
 生物信息分析平台后端服务。默认社区模式面向本地自部署；启用 SaaS Overlay 后，Octopus 也可通过腾讯云 COS 的 S3 兼容接口管理数据，并把受限的 CVM 执行规格交给 Squid 调度。
 
 ## 功能特性
@@ -667,4 +671,3 @@ curl -X POST http://localhost:8080/api/v1/results/cnv-segment/{id}/report \
 3. Token 过期前调用 `/auth/refresh` 刷新
 4. 通过结果查询 API 加载各类变异数据 (含审核/回报状态)
 5. 用户操作后调用 review/report API 同步状态到数据库
-

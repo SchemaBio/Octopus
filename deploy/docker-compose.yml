@@ -1,0 +1,66 @@
+name: schemabio-self-hosted
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      OCTOPUS_DB_PASSWORD: ${OCTOPUS_DB_PASSWORD}
+      SEPIIDA_DB_PASSWORD: ${SEPIIDA_DB_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+      - ./postgres/init-databases.sql:/docker-entrypoint-initdb.d/10-init-databases.sql.template:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-54320}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  sepiida-server:
+    build:
+      context: ../../Sepiida
+      dockerfile: Dockerfile.server
+    image: schemabio/sepiida-server:self-hosted
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://sepiida:${SEPIIDA_DB_PASSWORD}@postgres:5432/sepiida?sslmode=disable
+      SEPIIDA_AUTH_MODE: static
+      SEPIIDA_AGENT_KEY_FILE: /etc/sepiida/keys/agent-keys.txt
+      SEPIIDA_QUERY_KEY_FILE: /etc/sepiida/keys/query-keys.txt
+      SEPIIDA_KEY_REFRESH_SECONDS: "30"
+    volumes:
+      - ./.generated/sepiida-agent-keys.txt:/etc/sepiida/keys/agent-keys.txt:ro
+      - ./.generated/sepiida-query-keys.txt:/etc/sepiida/keys/query-keys.txt:ro
+    ports:
+      - "127.0.0.1:${SEPIIDA_PORT:-9090}:9090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  yijian:
+    build:
+      context: ../../YiJian
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_PASSWORD_HASH_ENABLED: "false"
+        NEXT_PUBLIC_PRIVACY_CONSENT_REQUIRED: "true"
+    image: schemabio/yijian:self-hosted
+    restart: unless-stopped
+    environment:
+      YIJIAN_API_URL: /api
+      YIJIAN_BACKEND: octopus
+      YIJIAN_SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support@schemabio.com}
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "127.0.0.1:${YIJIAN_PORT:-3000}:3000"
+
+volumes:
+  postgres-data:

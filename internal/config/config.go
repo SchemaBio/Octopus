@@ -150,7 +150,6 @@ func Load() *Config {
 			s3AccessKey, s3SecretKey = firstCredentialPair(
 				[2]string{"COS_SECRET_ID", "COS_SECRET_KEY"},
 				[2]string{"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY"},
-				[2]string{"TENCENT_CLOUD_SECRET_ID", "TENCENT_CLOUD_SECRET_KEY"},
 			)
 		}
 	}

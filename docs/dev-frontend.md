@@ -116,8 +116,7 @@ go run ./cmd/seed -reset   # 删除 seed 数据后重插
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8080/api
-NEXT_PUBLIC_CORE_API_PREFIX=
-NEXT_PUBLIC_BACKEND_FLAVOR=octopus
+NEXT_PUBLIC_BACKEND=octopus
 NEXT_PUBLIC_DEV_MOCK_AUTH=false
 NEXT_PUBLIC_PASSWORD_HASH_ENABLED=false
 ```

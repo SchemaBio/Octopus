@@ -87,11 +87,23 @@ func TestLoadCOSCredentialsDoesNotMixIncompletePairs(t *testing.T) {
 	}
 }
 
+func TestLoadCOSCredentialsIgnoresRemovedCloudAliases(t *testing.T) {
+	clearStorageCredentialEnv(t)
+	t.Setenv("STORAGE_PROVIDER", "cos")
+	t.Setenv("TENCENT_CLOUD_SECRET_ID", "legacy-id")
+	t.Setenv("TENCENT_CLOUD_SECRET_KEY", "legacy-key")
+
+	cfg := Load()
+	if cfg.Storage.S3AccessKey != "" || cfg.Storage.S3SecretKey != "" {
+		t.Fatalf("removed Tencent Cloud aliases still affected storage configuration")
+	}
+}
+
 func clearStorageCredentialEnv(t *testing.T) {
 	t.Helper()
 	for _, name := range []string{
 		"S3_ACCESS_KEY", "S3_SECRET_KEY", "COS_SECRET_ID", "COS_SECRET_KEY",
-		"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY", "TENCENT_CLOUD_SECRET_ID", "TENCENT_CLOUD_SECRET_KEY",
+		"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY",
 	} {
 		t.Setenv(name, "")
 		t.Setenv(name+"_FILE", "")

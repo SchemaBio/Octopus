@@ -875,9 +875,6 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 // Sepiida Agent monitors the filesystem and reports progress to Sepiida Server.
 // The syncLoop periodically updates Octopus DB from Sepiida Server.
 func (s *TaskService) launchTask(task *model.Task) {
-	executorPath := s.getExecutorPath(task.Executor)
-	wdlPath := filepath.Join(s.cfg.Task.TemplateDir, task.Template+".wdl")
-
 	// Write input JSON
 	inputFile := filepath.Join(s.cfg.Task.OutputDir, task.ID+"_inputs.json")
 	if err := os.WriteFile(inputFile, []byte(task.InputJSON), 0644); err != nil {
@@ -889,15 +886,7 @@ func (s *TaskService) launchTask(task *model.Task) {
 	logPath := filepath.Join(s.cfg.Task.OutputDir, task.UUID, "octopus.log")
 	os.MkdirAll(filepath.Dir(logPath), 0755)
 
-	// Build command
-	cmd := exec.Command(
-		executorPath, "run",
-		wdlPath,
-		"-p", s.cfg.Task.TemplateDir,
-		"--cfg", task.ConfigFile,
-		"-i", inputFile,
-		"-d", task.UUID,
-	)
+	cmd := s.miniWDLCommand(task, inputFile)
 
 	// Detach from parent process
 	cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -959,6 +948,17 @@ func (s *TaskService) launchTask(task *model.Task) {
 			s.importTaskArchive(task)
 		}
 	}()
+}
+
+func (s *TaskService) miniWDLCommand(task *model.Task, inputFile string) *exec.Cmd {
+	return exec.Command(
+		s.getExecutorPath(task.Executor), "run",
+		filepath.Join(s.cfg.Task.TemplateDir, task.Template+".wdl"),
+		"-p", s.cfg.Task.TemplateDir,
+		"--cfg", task.ConfigFile,
+		"-i", inputFile,
+		"-d", filepath.Join(s.cfg.Task.OutputDir, task.UUID),
+	)
 }
 
 func (s *TaskService) updateTaskError(task *model.Task, errMsg string) {

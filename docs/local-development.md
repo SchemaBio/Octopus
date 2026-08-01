@@ -159,8 +159,7 @@ DEFAULT_ADMIN_PASSWORD=admin123
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8080/api
-NEXT_PUBLIC_CORE_API_PREFIX=
-NEXT_PUBLIC_BACKEND_FLAVOR=octopus
+NEXT_PUBLIC_BACKEND=octopus
 NEXT_PUBLIC_DEV_MOCK_AUTH=false
 NEXT_PUBLIC_PASSWORD_HASH_ENABLED=false
 ```
@@ -168,7 +167,7 @@ NEXT_PUBLIC_PASSWORD_HASH_ENABLED=false
 | 变量 | 说明 |
 |------|------|
 | `NEXT_PUBLIC_API_URL` | **必须**带 `/api` 后缀。Octopus 路由是 `/api/v1/...`，前端请求路径是 `{base}/v1/...` |
-| `NEXT_PUBLIC_BACKEND_FLAVOR=octopus` | 直连社区版，避免误走 Squid `/v1/octopus` 回退 |
+| `NEXT_PUBLIC_BACKEND=octopus` | 直连社区版；前端自动使用无前缀的 Octopus 核心 API |
 | `NEXT_PUBLIC_DEV_MOCK_AUTH` | 必须为 `false`；mock 登录**不会**提供业务 API 数据 |
 | `NEXT_PUBLIC_PASSWORD_HASH_ENABLED` | 与 Octopus `CLIENT_PASSWORD_HASH_ENABLED` 保持一致（联调默认都 `false`） |
 
@@ -311,7 +310,7 @@ go run ./cmd/seed -reset
 ### 8.2 前端请求 404 或打到错误路径
 
 - `NEXT_PUBLIC_API_URL` 是否为 `http://localhost:8080/api`（少了 `/api` 会错）  
-- 是否误设 `NEXT_PUBLIC_CORE_API_PREFIX=/v1/octopus`（直连 Octopus 应留空）
+- 是否误设 `NEXT_PUBLIC_BACKEND=squid`（直连 Octopus 应设为 `octopus`）
 
 ### 8.3 登录成功但列表全空
 
