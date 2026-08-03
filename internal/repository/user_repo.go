@@ -54,6 +54,13 @@ func (r *UserRepository) FindActiveUsers() ([]model.User, error) {
 	return r.FindByCondition(map[string]interface{}{"is_active": true})
 }
 
+// FindByApprovalStatus returns users ordered from newest to oldest.
+func (r *UserRepository) FindByApprovalStatus(status model.ApprovalStatus) ([]model.User, error) {
+	var users []model.User
+	err := r.db.Where("approval_status = ?", status).Order("created_at DESC").Find(&users).Error
+	return users, err
+}
+
 // FindByRole finds users by role
 func (r *UserRepository) FindByRole(role string) ([]model.User, error) {
 	return r.FindByCondition(map[string]interface{}{"system_role": role})
@@ -110,6 +117,14 @@ func (r *UserRepository) UpdateActive(userID uint, active bool) error {
 	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("is_active", active).Error
 }
 
+// UpdateApprovalStatus updates the review state and corresponding login state.
+func (r *UserRepository) UpdateApprovalStatus(userID uint, status model.ApprovalStatus, active bool) error {
+	return r.db.Model(&model.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"approval_status": status,
+		"is_active":       active,
+	}).Error
+}
+
 // CreateDefaultAdmin creates default admin user if not exists
 func (r *UserRepository) CreateDefaultAdmin(email, hashedPassword, name string) (*model.User, error) {
 	// Check if admin exists by email
@@ -119,13 +134,14 @@ func (r *UserRepository) CreateDefaultAdmin(email, hashedPassword, name string) 
 
 	// Create admin
 	admin := &model.User{
-		Username:     email,
-		Password:     hashedPassword,
-		Email:        email,
-		Name:         name,
-		SystemRole:   model.SystemRoleSuperAdmin,
-		IsActive:     true,
-		TokenVersion: 1,
+		Username:       email,
+		Password:       hashedPassword,
+		Email:          email,
+		Name:           name,
+		SystemRole:     model.SystemRoleSuperAdmin,
+		IsActive:       true,
+		ApprovalStatus: model.ApprovalStatusApproved,
+		TokenVersion:   1,
 	}
 
 	err := r.Create(admin)

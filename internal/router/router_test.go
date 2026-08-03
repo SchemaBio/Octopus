@@ -53,6 +53,40 @@ func TestReportTemplateCreateRequiresAdmin(t *testing.T) {
 	}
 }
 
+func TestUserApprovalRoutesRequireAdmin(t *testing.T) {
+	cfg := testRouterConfig()
+	token, _, _, err := service.NewJWTService(cfg).GenerateToken(&model.User{
+		ID:         1,
+		Email:      "user@example.com",
+		SystemRole: model.SystemRoleUser,
+		IsActive:   true,
+	})
+	if err != nil {
+		t.Fatalf("GenerateToken returned error: %v", err)
+	}
+
+	router := New(cfg)
+	for _, path := range []string{
+		"/api/v1/users/pending",
+		"/api/v1/users/1/approve",
+		"/api/v1/users/1/reject",
+	} {
+		method := http.MethodGet
+		if strings.HasSuffix(path, "/approve") || strings.HasSuffix(path, "/reject") {
+			method = http.MethodPost
+		}
+		req := httptest.NewRequest(method, path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusForbidden {
+			t.Fatalf("expected non-admin %s %s to be forbidden, got %d", method, path, resp.Code)
+		}
+	}
+}
+
 func TestLegacyAuthRoutesRedirectWith308(t *testing.T) {
 	router := New(testRouterConfig())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader(`{"email":"u@example.com","password":"secret"}`))

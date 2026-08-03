@@ -13,21 +13,32 @@ const (
 	SystemRoleUser       SystemRole = "USER"
 )
 
+// ApprovalStatus tracks the optional administrator review state used by the
+// shared permissions UI. Standalone registrations remain approved by default.
+type ApprovalStatus string
+
+const (
+	ApprovalStatusApproved ApprovalStatus = "approved"
+	ApprovalStatusPending  ApprovalStatus = "pending"
+	ApprovalStatusRejected ApprovalStatus = "rejected"
+)
+
 // User represents a user account
 type User struct {
-	ID               uint       `json:"id" gorm:"primaryKey"`
-	Username         string     `json:"-" gorm:"uniqueIndex;size:50;not null"` // internal use only, not exposed in API
-	Password         string     `json:"-" gorm:"size:255;not null"`
-	Email            string     `json:"email" gorm:"uniqueIndex;size:100;not null"`
-	Name             string     `json:"name" gorm:"size:100;not null"`
-	SystemRole       SystemRole `json:"system_role" gorm:"size:20;default:USER"`
-	StorageFolder    string     `json:"-" gorm:"size:36;index"`
-	IsActive         bool       `json:"is_active" gorm:"default:true"`
-	TokenVersion     int        `json:"-" gorm:"default:1;not null"`
-	ResetToken       string     `json:"-" gorm:"size:100"`
-	ResetTokenExpiry *time.Time `json:"-" gorm:"type:timestamptz"`
-	CreatedAt        time.Time  `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt        time.Time  `json:"updated_at" gorm:"type:timestamptz"`
+	ID               uint           `json:"id" gorm:"primaryKey"`
+	Username         string         `json:"-" gorm:"uniqueIndex;size:50;not null"` // internal use only, not exposed in API
+	Password         string         `json:"-" gorm:"size:255;not null"`
+	Email            string         `json:"email" gorm:"uniqueIndex;size:100;not null"`
+	Name             string         `json:"name" gorm:"size:100;not null"`
+	SystemRole       SystemRole     `json:"system_role" gorm:"size:20;default:USER"`
+	StorageFolder    string         `json:"-" gorm:"size:36;index"`
+	IsActive         bool           `json:"is_active" gorm:"default:true"`
+	ApprovalStatus   ApprovalStatus `json:"approval_status" gorm:"size:20;default:approved"`
+	TokenVersion     int            `json:"-" gorm:"default:1;not null"`
+	ResetToken       string         `json:"-" gorm:"size:100"`
+	ResetTokenExpiry *time.Time     `json:"-" gorm:"type:timestamptz"`
+	CreatedAt        time.Time      `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt        time.Time      `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // LoginRequest represents login request body (frontend uses email)
@@ -38,13 +49,14 @@ type LoginRequest struct {
 
 // UserResponse is the user object returned in API responses
 type UserResponse struct {
-	ID         string     `json:"id"`
-	Email      string     `json:"email"`
-	Name       string     `json:"name"`
-	SystemRole SystemRole `json:"system_role"`
-	IsActive   bool       `json:"is_active"`
-	CreatedAt  string     `json:"created_at"`
-	UpdatedAt  string     `json:"updated_at"`
+	ID             string         `json:"id"`
+	Email          string         `json:"email"`
+	Name           string         `json:"name"`
+	SystemRole     SystemRole     `json:"system_role"`
+	IsActive       bool           `json:"is_active"`
+	ApprovalStatus ApprovalStatus `json:"approval_status"`
+	CreatedAt      string         `json:"created_at"`
+	UpdatedAt      string         `json:"updated_at"`
 }
 
 // OrganizationInfo is kept only for frontend response compatibility.
@@ -138,13 +150,14 @@ type UserListResponse struct {
 // UserToResponse converts a User model to UserResponse
 func UserToResponse(u *User) UserResponse {
 	return UserResponse{
-		ID:         formatID(u.ID),
-		Email:      u.Email,
-		Name:       u.Name,
-		SystemRole: u.SystemRole,
-		IsActive:   u.IsActive,
-		CreatedAt:  u.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:  u.UpdatedAt.Format(time.RFC3339),
+		ID:             formatID(u.ID),
+		Email:          u.Email,
+		Name:           u.Name,
+		SystemRole:     u.SystemRole,
+		IsActive:       u.IsActive,
+		ApprovalStatus: u.ApprovalStatus,
+		CreatedAt:      u.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:      u.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

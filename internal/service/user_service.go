@@ -109,13 +109,14 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.LoginResponse
 
 	// Create user with email as username (internal)
 	user := &model.User{
-		Username:     req.Email,
-		Password:     hashedPassword,
-		Email:        req.Email,
-		Name:         req.Name,
-		SystemRole:   model.SystemRoleUser,
-		IsActive:     true,
-		TokenVersion: 1,
+		Username:       req.Email,
+		Password:       hashedPassword,
+		Email:          req.Email,
+		Name:           req.Name,
+		SystemRole:     model.SystemRoleUser,
+		IsActive:       true,
+		ApprovalStatus: model.ApprovalStatusApproved,
+		TokenVersion:   1,
 	}
 
 	if err := s.repo.Create(user); err != nil {
@@ -137,6 +138,44 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.LoginResponse
 		RefreshToken:  refreshToken,
 		ExpiresAt:     expiresAt,
 	}, nil
+}
+
+// ListPendingUsers returns accounts awaiting administrator approval.
+func (s *UserService) ListPendingUsers() ([]model.UserResponse, error) {
+	users, err := s.repo.FindByApprovalStatus(model.ApprovalStatusPending)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]model.UserResponse, len(users))
+	for i := range users {
+		items[i] = model.UserToResponse(&users[i])
+	}
+	return items, nil
+}
+
+// ApproveUser activates a pending account.
+func (s *UserService) ApproveUser(id uint) error {
+	user, err := s.repo.FindByID(id)
+	if err != nil {
+		return err
+	}
+	if user.ApprovalStatus != model.ApprovalStatusPending {
+		return errors.New("user is not pending approval")
+	}
+	return s.repo.UpdateApprovalStatus(id, model.ApprovalStatusApproved, true)
+}
+
+// RejectUser disables a pending account without deleting its history.
+func (s *UserService) RejectUser(id uint) error {
+	user, err := s.repo.FindByID(id)
+	if err != nil {
+		return err
+	}
+	if user.ApprovalStatus != model.ApprovalStatusPending {
+		return errors.New("user is not pending approval")
+	}
+	return s.repo.UpdateApprovalStatus(id, model.ApprovalStatusRejected, false)
 }
 
 // RefreshToken refreshes access token
@@ -194,13 +233,14 @@ func (s *UserService) CreateDefaultAdmin(email, password, name string) (*model.U
 	}
 
 	admin := &model.User{
-		Username:     email,
-		Password:     hashedPassword,
-		Email:        email,
-		Name:         name,
-		SystemRole:   model.SystemRoleSuperAdmin,
-		IsActive:     true,
-		TokenVersion: 1,
+		Username:       email,
+		Password:       hashedPassword,
+		Email:          email,
+		Name:           name,
+		SystemRole:     model.SystemRoleSuperAdmin,
+		IsActive:       true,
+		ApprovalStatus: model.ApprovalStatusApproved,
+		TokenVersion:   1,
 	}
 
 	if err := s.repo.Create(admin); err != nil {

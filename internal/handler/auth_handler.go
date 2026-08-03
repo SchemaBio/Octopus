@@ -306,6 +306,54 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 	Success(c, model.UserToResponse(user))
 }
 
+// ListPendingUsers returns users awaiting administrator approval. Standalone
+// registration is approved by default, so this is normally an empty list but
+// keeps the permissions UI contract shared with Squid.
+func (h *UserHandler) ListPendingUsers(c *gin.Context) {
+	users, err := h.svc.ListPendingUsers()
+	if err != nil {
+		ErrorInternal(c, err.Error())
+		return
+	}
+	Success(c, users)
+}
+
+// ApproveUser activates a pending user account.
+func (h *UserHandler) ApproveUser(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		ErrorBadRequest(c, "invalid user ID")
+		return
+	}
+	if _, err := h.svc.GetUserByID(uint(id)); err != nil {
+		ErrorNotFound(c, "User not found")
+		return
+	}
+	if err := h.svc.ApproveUser(uint(id)); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, gin.H{"message": "User approved successfully"})
+}
+
+// RejectUser disables a pending user account.
+func (h *UserHandler) RejectUser(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		ErrorBadRequest(c, "invalid user ID")
+		return
+	}
+	if _, err := h.svc.GetUserByID(uint(id)); err != nil {
+		ErrorNotFound(c, "User not found")
+		return
+	}
+	if err := h.svc.RejectUser(uint(id)); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, gin.H{"message": "User rejected"})
+}
+
 // CreateUser creates a new user (admin only)
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	var req model.UserCreateRequest

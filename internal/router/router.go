@@ -72,6 +72,7 @@ func New(cfg *config.Config) *gin.Engine {
 		users.Use(middleware.RequireAdmin())
 		{
 			users.GET("", userHandler.ListUsers)
+			users.GET("/pending", userHandler.ListPendingUsers)
 			users.GET("/:id", userHandler.GetUser)
 		}
 		// Admin-only user management
@@ -80,6 +81,8 @@ func New(cfg *config.Config) *gin.Engine {
 		usersAdmin.Use(middleware.RequireAdmin())
 		{
 			usersAdmin.POST("", userHandler.CreateUser)
+			usersAdmin.POST("/:id/approve", userHandler.ApproveUser)
+			usersAdmin.POST("/:id/reject", userHandler.RejectUser)
 			usersAdmin.PUT("/:id", userHandler.UpdateUser)
 			usersAdmin.DELETE("/:id", userHandler.DeleteUser)
 		}
