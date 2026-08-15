@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"sort"
+	"strings"
 
 	"github.com/SchemaBio/Octopus/internal/model"
 )
@@ -137,6 +138,35 @@ func GetDefinition(name string) (Definition, bool) {
 		return Definition{}, false
 	}
 	return cloneDefinition(def), true
+}
+
+// InputsForGenome returns the canonical WDL inputs for a workflow short name.
+// hg38 uses the same template shape as hg19 with its reference identifiers
+// rewritten to the matching genome build.
+func InputsForGenome(shortName, genome string) (map[string]interface{}, error) {
+	for _, def := range definitions {
+		if def.ShortName != shortName {
+			continue
+		}
+		inputs := CloneInputs(def.Inputs)
+		switch strings.ToLower(strings.TrimSpace(genome)) {
+		case "", "hg19", "grch37":
+			return inputs, nil
+		case "hg38", "grch38":
+			raw, err := json.Marshal(inputs)
+			if err != nil {
+				return nil, err
+			}
+			raw = []byte(strings.ReplaceAll(strings.ReplaceAll(string(raw), "GRCh37", "GRCh38"), "hg19", "hg38"))
+			if err := json.Unmarshal(raw, &inputs); err != nil {
+				return nil, err
+			}
+			return inputs, nil
+		default:
+			return nil, fmt.Errorf("reference genome must be hg19/GRCh37 or hg38/GRCh38")
+		}
+	}
+	return nil, fmt.Errorf("unsupported workflow template: %s", shortName)
 }
 
 // IsSupported returns true if the template name is a known workflow.

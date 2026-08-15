@@ -22,6 +22,7 @@ import (
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/SchemaBio/Octopus/internal/sepiida"
+	"github.com/SchemaBio/Octopus/internal/workflow"
 	"github.com/google/uuid"
 )
 
@@ -118,8 +119,14 @@ func (s *TaskService) admitTask(ctx context.Context, action string, actor model.
 }
 
 func (s *TaskService) emitTaskEvent(event string, actor model.OverlayActor, task *model.Task, previousStatus model.TaskStatus, message string) {
+	if err := s.emitTaskEventWithError(event, actor, task, previousStatus, message); err != nil {
+		fmt.Printf("WARNING: overlay task event %s failed for %s: %v\n", event, task.UUID, err)
+	}
+}
+
+func (s *TaskService) emitTaskEventWithError(event string, actor model.OverlayActor, task *model.Task, previousStatus model.TaskStatus, message string) error {
 	if s.overlay == nil || task == nil {
-		return
+		return nil
 	}
 	req := model.OverlayTaskEventRequest{
 		Event:          event,
@@ -129,11 +136,7 @@ func (s *TaskService) emitTaskEvent(event string, actor model.OverlayActor, task
 		OccurredAt:     time.Now(),
 		Message:        message,
 	}
-	// Preserve lifecycle ordering at the SaaS control-plane boundary. In
-	// particular, a delayed start_failed event must never arrive after running.
-	if err := s.overlay.EmitTaskEvent(context.Background(), req); err != nil {
-		fmt.Printf("WARNING: overlay task event %s failed for %s: %v\n", event, task.UUID, err)
-	}
+	return s.overlay.EmitTaskEvent(context.Background(), req)
 }
 
 func (s *TaskService) emitStatusEvent(task *model.Task, previousStatus model.TaskStatus) {
@@ -191,6 +194,14 @@ func (s *TaskService) syncRunningTaskStatuses() {
 	for _, task := range tasks {
 		s.syncTaskFromSepiida(&task)
 	}
+
+	pending, err := s.repo.FindPendingCVMArchiveTermination()
+	if err != nil {
+		return
+	}
+	for i := range pending {
+		s.notifyCVMArchiveCompletion(&pending[i])
+	}
 }
 
 func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
@@ -215,7 +226,7 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 			}
 			return
 		}
-		if err := s.stageCOSArchive(task, archiveMetadata); err != nil {
+		if err := s.stageCVMArchive(task, archiveMetadata); err != nil {
 			fmt.Printf("WARNING: stage COS archive for task %s: %v\n", task.UUID, err)
 			return
 		}
@@ -258,7 +269,11 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 
 	if changed {
 		task.UpdatedAt = time.Now()
-		s.repo.Update(task)
+		if err := s.repo.Update(task); err != nil {
+			s.mu.Unlock()
+			fmt.Printf("WARNING: persist Sepiida task status for %s: %v\n", task.UUID, err)
+			return
+		}
 		s.syncCNVBaselineOutput(task, workflow.OutputsJSON)
 		s.emitStatusEvent(task, previousStatus)
 	}
@@ -267,6 +282,48 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	if completedNow {
 		s.importTaskArchive(task)
 	}
+	if task.Executor == model.ExecutorCVM {
+		s.notifyCVMArchiveCompletion(task)
+	}
+}
+
+func (s *TaskService) stageCVMArchive(task *model.Task, metadata model.SepiidaArchiveMetadata) error {
+	if task == nil || task.Executor != model.ExecutorCVM {
+		return fmt.Errorf("CVM task is required")
+	}
+	if task.CVMArchiveStagedAt != nil {
+		return nil
+	}
+	if err := s.stageCOSArchive(task, metadata); err != nil {
+		return err
+	}
+	now := time.Now()
+	task.CVMArchiveStagedAt = &now
+	task.UpdatedAt = now
+	return s.repo.Update(task)
+}
+
+func (s *TaskService) notifyCVMArchiveCompletion(task *model.Task) {
+	if !cvmArchiveTerminationPending(task) {
+		return
+	}
+	if err := s.emitTaskEventWithError(model.OverlayTaskEventArchiveCompleted, model.OverlayActor{}, task, model.TaskStatusCompleted, "COS archive staged"); err != nil {
+		fmt.Printf("WARNING: notify CVM archive completion for task %s: %v\n", task.UUID, err)
+		return
+	}
+	now := time.Now()
+	task.CVMArchiveTerminationNotifiedAt = &now
+	task.UpdatedAt = now
+	if err := s.repo.Update(task); err != nil {
+		// The event is idempotent for its attempt. Leave the timestamp unset so
+		// the next sync retransmits it rather than leaking the spot instance.
+		task.CVMArchiveTerminationNotifiedAt = nil
+		fmt.Printf("WARNING: persist CVM archive completion for task %s: %v\n", task.UUID, err)
+	}
+}
+
+func cvmArchiveTerminationPending(task *model.Task) bool {
+	return task != nil && task.Executor == model.ExecutorCVM && task.CVMArchiveStagedAt != nil && task.CVMArchiveTerminationNotifiedAt == nil && task.ExecutionAttemptID != ""
 }
 
 func sepiidaWorkflowUUID(task *model.Task) string {
@@ -1881,6 +1938,10 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 	if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
 		return model.CVMDispatchRequest{}, fmt.Errorf("parse CVM task inputs: %w", err)
 	}
+	referenceGenome, err := cvmReferenceGenome(inputs)
+	if err != nil {
+		return model.CVMDispatchRequest{}, err
+	}
 	storage, err := newS3Storage(ctx, s.cfg.Storage)
 	if err != nil {
 		return model.CVMDispatchRequest{}, err
@@ -1888,7 +1949,7 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 	downloads := make([]model.CVMInputDownload, 0, len(remote))
 	for _, asset := range remote {
 		name := safeCVMInputName(asset.FileName)
-		target := path.Join("/data/inputs", asset.UUID+"-"+name)
+		target := path.Join("/mnt/data/inputs", asset.UUID+"-"+name)
 		url, err := storage.presignDownload(ctx, asset.StorageKey, name)
 		if err != nil {
 			return model.CVMDispatchRequest{}, fmt.Errorf("presign CVM input %s: %w", asset.UUID, err)
@@ -1896,6 +1957,10 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 		inputs = replaceInputString(inputs, asset.StorageKey, target).(map[string]interface{})
 		applyAssetInputPaths(inputs, asset, directLinks[asset.ID], target)
 		downloads = append(downloads, model.CVMInputDownload{ObjectKey: asset.StorageKey, URL: url, Target: target})
+	}
+	inputs, err = buildCVMWDLInputs(task.Template, referenceGenome, inputs)
+	if err != nil {
+		return model.CVMDispatchRequest{}, err
 	}
 	encoded, err := json.Marshal(inputs)
 	if err != nil {
@@ -1906,10 +1971,53 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 		Task:      model.NewOverlayTaskSnapshot(task),
 		AttemptID: task.ExecutionAttemptID,
 		Execution: model.CVMExecutionSpec{
-			Template: task.Template, Inputs: encoded, Downloads: downloads,
+			Template: task.Template, ReferenceGenome: referenceGenome, Inputs: encoded, Downloads: downloads,
 		},
 		RequestedAt: time.Now(),
 	}, nil
+}
+
+func buildCVMWDLInputs(template, genome string, taskInputs map[string]interface{}) (map[string]interface{}, error) {
+	inputs, err := workflow.InputsForGenome(template, genome)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range taskInputs {
+		if _, known := inputs[key]; known {
+			inputs[key] = value
+		}
+	}
+
+	switch template {
+	case "single":
+		copyCVMInput(inputs, "SingleWES.read_1", taskInputs, "fastq_r1")
+		copyCVMInput(inputs, "SingleWES.read_2", taskInputs, "fastq_r2")
+		copyCVMInput(inputs, "SingleWES.bed", taskInputs, "bed_file")
+		copyCVMInput(inputs, "SingleWES.cnvkit_reference", taskInputs, "cnv_baseline")
+	case "trio":
+		copyCVMInput(inputs, "TrioWES.bed", taskInputs, "bed_file")
+	case "baseline":
+		copyCVMInput(inputs, "CNVBaseline.bed", taskInputs, "bed_file")
+	}
+	return inputs, nil
+}
+
+func copyCVMInput(target map[string]interface{}, targetKey string, source map[string]interface{}, sourceKey string) {
+	if value, ok := source[sourceKey]; ok {
+		target[targetKey] = value
+	}
+}
+
+func cvmReferenceGenome(inputs map[string]interface{}) (string, error) {
+	value, _ := inputs["reference_genome"].(string)
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "hg19", "grch37":
+		return "hg19", nil
+	case "hg38", "grch38":
+		return "hg38", nil
+	default:
+		return "", fmt.Errorf("CVM reference_genome must be hg19/GRCh37 or hg38/GRCh38")
+	}
 }
 
 func (s *TaskService) prepareCVMExecutionAttempt(task *model.Task, forceNew bool) error {
@@ -1921,6 +2029,8 @@ func (s *TaskService) prepareCVMExecutionAttempt(task *model.Task, forceNew bool
 		task.ExecutionAttemptID = uuid.New().String()
 		task.CVMInstanceID = ""
 	}
+	task.CVMArchiveStagedAt = nil
+	task.CVMArchiveTerminationNotifiedAt = nil
 	task.VMStatus = "DISPATCHING"
 	task.UpdatedAt = time.Now()
 	if err := s.repo.Update(task); err != nil {

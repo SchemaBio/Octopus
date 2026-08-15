@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/model"
@@ -17,13 +18,45 @@ func TestReplaceInputStringRecurses(t *testing.T) {
 			"unchanged",
 		},
 	}
-	replaced := replaceInputString(inputs, "objects/r1.fastq.gz", "/data/inputs/r1.fastq.gz").(map[string]interface{})
-	if replaced["direct"] != "/data/inputs/r1.fastq.gz" {
+	replaced := replaceInputString(inputs, "objects/r1.fastq.gz", "/mnt/data/inputs/r1.fastq.gz").(map[string]interface{})
+	if replaced["direct"] != "/mnt/data/inputs/r1.fastq.gz" {
 		t.Fatalf("direct input was not replaced: %#v", replaced)
 	}
 	nested := replaced["nested"].([]interface{})
-	if nested[0].(map[string]interface{})["file"] != "/data/inputs/r1.fastq.gz" || nested[1] != "unchanged" {
+	if nested[0].(map[string]interface{})["file"] != "/mnt/data/inputs/r1.fastq.gz" || nested[1] != "unchanged" {
 		t.Fatalf("nested input replacement is wrong: %#v", nested)
+	}
+}
+
+func TestCVMReferenceGenome(t *testing.T) {
+	for input, want := range map[string]string{"": "hg19", "GRCh37": "hg19", "hg38": "hg38", "GRCh38": "hg38"} {
+		got, err := cvmReferenceGenome(map[string]interface{}{"reference_genome": input})
+		if err != nil || got != want {
+			t.Fatalf("resolve %q: got %q, err=%v", input, got, err)
+		}
+	}
+	if _, err := cvmReferenceGenome(map[string]interface{}{"reference_genome": "mm10"}); err == nil {
+		t.Fatal("unsupported reference genome was accepted")
+	}
+}
+
+func TestBuildCVMWDLInputsBuildsHG38SingleInputs(t *testing.T) {
+	inputs, err := buildCVMWDLInputs("single", "hg38", map[string]interface{}{
+		"fastq_r1": "/mnt/data/inputs/sample-r1.fastq.gz",
+		"fastq_r2": "/mnt/data/inputs/sample-r2.fastq.gz",
+		"bed_file": "/mnt/data/inputs/panel.bed",
+	})
+	if err != nil {
+		t.Fatalf("build inputs: %v", err)
+	}
+	if inputs["SingleWES.read_1"] != "/mnt/data/inputs/sample-r1.fastq.gz" || inputs["SingleWES.read_2"] != "/mnt/data/inputs/sample-r2.fastq.gz" {
+		t.Fatalf("user FASTQ paths were not applied: %#v", inputs)
+	}
+	if inputs["SingleWES.bed"] != "/mnt/data/inputs/panel.bed" {
+		t.Fatalf("user BED path was not applied: %#v", inputs)
+	}
+	if inputs["SingleWES.fasta"] != "/mnt/data/database/Homo_sapiens.GRCh38.dna.primary_assembly.fa" || inputs["SingleWES.assembly"] != "GRCh38" {
+		t.Fatalf("hg38 reference values were not generated: %#v", inputs)
 	}
 }
 
@@ -88,6 +121,27 @@ func TestCVMTaskNeedsCancelWithoutKnownInstance(t *testing.T) {
 	task.Executor = model.ExecutorLocal
 	if cvmTaskNeedsCancel(task) {
 		t.Fatal("community execution must not call the Squid CVM cancel endpoint")
+	}
+}
+
+func TestCVMArchiveTerminationRequiresStagedCurrentAttempt(t *testing.T) {
+	now := time.Now()
+	task := &model.Task{Executor: model.ExecutorCVM, ExecutionAttemptID: "2897aa33-054d-4a00-88c6-40701d0cf491"}
+	if cvmArchiveTerminationPending(task) {
+		t.Fatal("unstaged archive must not release the CVM")
+	}
+	task.CVMArchiveStagedAt = &now
+	if !cvmArchiveTerminationPending(task) {
+		t.Fatal("staged archive for the current attempt must release the CVM")
+	}
+	task.CVMArchiveTerminationNotifiedAt = &now
+	if cvmArchiveTerminationPending(task) {
+		t.Fatal("acknowledged archive release must not be retried")
+	}
+	task.CVMArchiveTerminationNotifiedAt = nil
+	task.ExecutionAttemptID = ""
+	if cvmArchiveTerminationPending(task) {
+		t.Fatal("archive without an execution attempt must not release a CVM")
 	}
 }
 

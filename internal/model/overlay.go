@@ -12,13 +12,16 @@ const (
 )
 
 const (
-	OverlayTaskEventCreated     = "task.created"
-	OverlayTaskEventRunning     = "task.running"
-	OverlayTaskEventQueued      = "task.queued"
-	OverlayTaskEventCompleted   = "task.completed"
-	OverlayTaskEventFailed      = "task.failed"
-	OverlayTaskEventCancelled   = "task.cancelled"
-	OverlayTaskEventStartFailed = "task.start_failed"
+	OverlayTaskEventCreated   = "task.created"
+	OverlayTaskEventRunning   = "task.running"
+	OverlayTaskEventQueued    = "task.queued"
+	OverlayTaskEventCompleted = "task.completed"
+	// OverlayTaskEventArchiveCompleted is emitted only after Octopus has
+	// validated and staged the COS archive for the current CVM attempt.
+	OverlayTaskEventArchiveCompleted = "task.archive_completed"
+	OverlayTaskEventFailed           = "task.failed"
+	OverlayTaskEventCancelled        = "task.cancelled"
+	OverlayTaskEventStartFailed      = "task.start_failed"
 )
 
 // OverlayActor carries the authenticated principal forwarded by an overlay such
@@ -116,9 +119,10 @@ type CVMInputDownload struct {
 }
 
 type CVMExecutionSpec struct {
-	Template  string             `json:"template"`
-	Inputs    json.RawMessage    `json:"inputs"`
-	Downloads []CVMInputDownload `json:"downloads,omitempty"`
+	Template        string             `json:"template"`
+	ReferenceGenome string             `json:"reference_genome"`
+	Inputs          json.RawMessage    `json:"inputs"`
+	Downloads       []CVMInputDownload `json:"downloads,omitempty"`
 }
 
 type CVMDispatchRequest struct {

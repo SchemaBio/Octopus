@@ -81,6 +81,12 @@ type Task struct {
 	ResultImportedAt        *time.Time         `json:"-" gorm:"type:timestamptz"`
 	ResultImportFingerprint string             `json:"-" gorm:"size:64;index"`
 	ResultImportAttempts    int                `json:"-" gorm:"default:0"`
+
+	// CVM archive lifecycle is separate from workflow success. The spot VM is
+	// released only after the archive is staged and the corresponding event has
+	// been acknowledged by Squid.
+	CVMArchiveStagedAt              *time.Time `json:"-" gorm:"type:timestamptz"`
+	CVMArchiveTerminationNotifiedAt *time.Time `json:"-" gorm:"type:timestamptz"`
 }
 
 // TaskCreateRequest is the request body for creating a task

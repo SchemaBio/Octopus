@@ -48,6 +48,16 @@ func (r *TaskRepository) FindByStatuses(statuses []model.TaskStatus) ([]model.Ta
 	return tasks, err
 }
 
+// FindPendingCVMArchiveTermination returns completed CVM attempts whose COS
+// archive was staged but whose release request has not yet reached Squid.
+func (r *TaskRepository) FindPendingCVMArchiveTermination() ([]model.Task, error) {
+	var tasks []model.Task
+	err := r.db.
+		Where("executor = ? AND status = ? AND cvm_archive_staged_at IS NOT NULL AND cvm_archive_termination_notified_at IS NULL", model.ExecutorCVM, model.TaskStatusCompleted).
+		Find(&tasks).Error
+	return tasks, err
+}
+
 // FindByUploadJobID finds tasks by upload job UUID
 func (r *TaskRepository) FindByUploadJobID(uploadJobID string) ([]model.Task, error) {
 	return r.FindByCondition(map[string]interface{}{"upload_job_id": uploadJobID})
