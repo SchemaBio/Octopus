@@ -1,23 +1,34 @@
-# ──── Stage 1: Build ────
-FROM golang:1.23-alpine AS builder
+# syntax=docker/dockerfile:1.7
 
-WORKDIR /build
+# ---- Stage 1: Build ----
+FROM golang:1.25-alpine3.22 AS builder
 
-# Install build deps
-RUN apk add --no-cache gcc musl-dev
+ENV GOPROXY=https://mirrors.tencent.com/go/,direct
 
-# Cache module downloads
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tencent.com/g' /etc/apk/repositories \
+    && apk add --no-cache ca-certificates git
+
+WORKDIR /src
+
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
-# Build
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o octopus ./cmd/server
+COPY cmd ./cmd
+COPY internal ./internal
 
-# ──── Stage 2: Runtime ────
-FROM alpine:3.20
+ARG TARGETOS
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -trimpath -ldflags="-s -w -buildid=" -o /out/octopus ./cmd/server
 
-RUN apk add --no-cache ca-certificates tzdata wget
+# ---- Stage 2: Runtime ----
+FROM alpine:3.22
+
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tencent.com/g' /etc/apk/repositories \
+    && apk add --no-cache ca-certificates tzdata wget
 
 ENV TZ=Asia/Shanghai
 ENV SERVER_PORT=8080 \
@@ -28,18 +39,23 @@ ENV SERVER_PORT=8080 \
     TEMPLATE_DIR=/data/templates \
     STORAGE_PROVIDER=local
 
-# Create non-root user
-RUN adduser -D -u 1000 octopus
-RUN mkdir -p /data/output /data/archive /data/uploads /data/templates && chown -R octopus:octopus /data
+RUN adduser -D -u 1000 octopus \
+    && mkdir -p /data/output /data/archive /data/uploads /data/templates \
+    && chown -R octopus:octopus /data
 
-COPY --from=builder /build/octopus /app/octopus
+WORKDIR /app
+COPY --from=builder /out/octopus /app/octopus
 
 USER octopus
-WORKDIR /app
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-  CMD wget -q --spider http://localhost:8080/health || exit 1
+LABEL org.opencontainers.image.title="Octopus" \
+      org.opencontainers.image.description="SchemaBio self-hosted analysis backend" \
+      org.opencontainers.image.source="https://github.com/SchemaBio/Octopus"
 
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -q -T 2 --spider http://127.0.0.1:8080/health || exit 1
+
+STOPSIGNAL SIGTERM
 ENTRYPOINT ["/app/octopus"]

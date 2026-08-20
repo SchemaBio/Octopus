@@ -27,11 +27,13 @@ sudo bash ./deploy.sh install
 bash ./deploy.sh credentials
 ```
 
-`install` builds the host binaries through Docker, installs them under
-`INSTALL_ROOT`, creates data directories, writes systemd units, starts the
-Compose dependencies, and starts the host services. Generated credentials are
-stored in `.generated/runtime.env` with mode `0600` and remain stable across
-repeated initialization.
+`install` builds Octopus from its application image and compiles Sepiida Agent
+with the official Go toolchain container directly into `INSTALL_ROOT/bin`.
+Sepiida Agent is not packaged as an application image. The command then creates
+data directories, writes systemd units, starts the Compose dependencies, and
+starts the host services. Generated credentials are stored in
+`.generated/runtime.env` with mode `0600` and remain stable across repeated
+initialization.
 
 Use `sudo bash ./deploy.sh up|down`, `bash ./deploy.sh status`, and
 `bash ./deploy.sh credentials` for ongoing operation.
