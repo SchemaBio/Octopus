@@ -12,7 +12,7 @@ import (
 )
 
 func (s *TaskService) syncCNVBaselineOutput(task *model.Task, outputsJSON string) {
-	if task == nil || task.Template != "baseline" || task.Status != model.TaskStatusCompleted {
+	if task == nil || task.Template != "baseline_fix" || task.Status != model.TaskStatusCompleted {
 		return
 	}
 	outputPath := baselineOutputFromJSON(outputsJSON)

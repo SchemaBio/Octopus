@@ -39,13 +39,17 @@ func TestJWTAuthAcceptsTrustedExternalAuthHeaders(t *testing.T) {
 	router.GET("/protected", func(c *gin.Context) {
 		userID, email, role, ok := GetCurrentUser(c)
 		orgID, hasOrg := GetCurrentOrg(c)
-		if !ok || !hasOrg {
-			t.Fatalf("expected external user and organization in context")
+		storageQuotaBytes, hasStorageQuota := GetCurrentStorageQuotaBytes(c)
+		if !ok || !hasOrg || !hasStorageQuota {
+			t.Fatalf("expected external user, organization, and storage quota in context")
 		}
 		// Squid forwards the platform-admin overlay role; Octopus must map it
 		// to its own SUPER_ADMIN (not pass "PLATFORM_ADMIN" through verbatim).
 		if userID != 42 || email != "user@example.com" || role != string(model.SystemRoleSuperAdmin) || orgID != "org-1" {
 			t.Fatalf("unexpected context values: userID=%d email=%q role=%q orgID=%q", userID, email, role, orgID)
+		}
+		if storageQuotaBytes != 50*1024*1024*1024 {
+			t.Fatalf("unexpected storage quota: %d", storageQuotaBytes)
 		}
 		c.Status(http.StatusOK)
 	})
@@ -56,6 +60,7 @@ func TestJWTAuthAcceptsTrustedExternalAuthHeaders(t *testing.T) {
 	req.Header.Set("X-Octopus-User-Email", "user@example.com")
 	req.Header.Set("X-Octopus-User-Role", "PLATFORM_ADMIN")
 	req.Header.Set("X-Octopus-Org-ID", "org-1")
+	req.Header.Set("X-Octopus-Storage-Quota-Bytes", "53687091200")
 	resp := httptest.NewRecorder()
 
 	router.ServeHTTP(resp, req)
@@ -76,9 +81,9 @@ func TestJWTAuthMapsOverlayRoles(t *testing.T) {
 		want   string
 	}{
 		{"ORG_USER", string(model.SystemRoleUser)},
-		{"org_user", string(model.SystemRoleUser)}, // case-insensitive
-		{"org_admin", string(model.SystemRoleUser)}, // unknown -> USER
-		{"", string(model.SystemRoleUser)},          // empty -> USER
+		{"org_user", string(model.SystemRoleUser)},          // case-insensitive
+		{"org_admin", string(model.SystemRoleUser)},         // unknown -> USER
+		{"", string(model.SystemRoleUser)},                  // empty -> USER
 		{"SUPER_ADMIN", string(model.SystemRoleSuperAdmin)}, // already Octopus-shaped
 	}
 	for _, tc := range cases {

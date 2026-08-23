@@ -42,7 +42,8 @@ type Task struct {
 	ID               string       `json:"id" gorm:"primaryKey"`
 	UUID             string       `json:"uuid" gorm:"uniqueIndex"` // Workflow UUID (standard format for Sepiida)
 	Name             string       `json:"name"`
-	SampleID         string       `json:"sample_id" gorm:"size:36;index"`     // Sample UUID
+	SampleID         string       `json:"sample_id" gorm:"size:36;index"` // Sample UUID
+	PedigreeID       string       `json:"pedigree_id,omitempty" gorm:"size:36;index"`
 	InternalID       string       `json:"internal_id" gorm:"size:100"`        // Sample internal_id for display
 	UploadJobID      string       `json:"upload_job_id" gorm:"size:36;index"` // UploadJob UUID
 	Pipeline         string       `json:"pipeline" gorm:"size:200"`           // Pipeline name
@@ -91,7 +92,8 @@ type Task struct {
 
 // TaskCreateRequest is the request body for creating a task
 type TaskCreateRequest struct {
-	SampleID        string `json:"sampleId" binding:"required"`
+	SampleID        string `json:"sampleId"`
+	PedigreeID      string `json:"pedigreeId"`
 	InternalID      string `json:"internalId"`
 	UploadJobID     string `json:"uploadJobId"`
 	PipelineID      string `json:"pipelineId"`

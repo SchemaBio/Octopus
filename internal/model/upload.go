@@ -31,6 +31,7 @@ const (
 
 const (
 	DataUploadPolicyVersion = "saas-data-retention-v2"
+	BEDUploadPolicyVersion  = "saas-bed-storage-v1"
 	SaaSMaxUploadFileBytes  = int64(20) * 1024 * 1024 * 1024
 )
 
@@ -95,6 +96,7 @@ type UploadJobCreateRequest struct {
 	Provider                 UploadProvider         `json:"provider"`
 	UploadPolicyAcknowledged bool                   `json:"upload_policy_acknowledged"`
 	Files                    []UploadFileCreateItem `json:"files" binding:"required,min=1,dive"`
+	StorageQuotaBytes        int64                  `json:"-"`
 }
 
 type UploadFileCreateItem struct {

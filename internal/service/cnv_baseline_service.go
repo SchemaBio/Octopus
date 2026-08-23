@@ -116,11 +116,11 @@ func (s *CNVBaselineService) Create(ctx context.Context, req *model.CNVBaselineC
 	}
 
 	task, err := s.taskSvc.CreateTask(ctx, &model.TaskCreateRequest{
-		PipelineName: "CNV 基线建立流程", PipelineVersion: "builtin",
-		Template: "baseline", DeferStart: true, InputAssets: inputAssets,
+		PipelineName: "CNV 基线校正流程", PipelineVersion: "builtin",
+		Template: "baseline_fix", DeferStart: true, InputAssets: inputAssets,
 		Inputs: map[string]interface{}{
-			"CNVBaseline.prefix":   baselinePrefix(name),
-			"CNVBaseline.assembly": genome,
+			"CNVBaselineFix.assembly": genome,
+			"reference_genome":        genome,
 		},
 	}, actor)
 	if err != nil {

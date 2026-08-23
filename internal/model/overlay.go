@@ -118,11 +118,17 @@ type CVMInputDownload struct {
 	Target    string `json:"target"`
 }
 
+type CVMInlineFile struct {
+	Target  string `json:"target"`
+	Content string `json:"content"`
+}
+
 type CVMExecutionSpec struct {
 	Template        string             `json:"template"`
 	ReferenceGenome string             `json:"reference_genome"`
 	Inputs          json.RawMessage    `json:"inputs"`
 	Downloads       []CVMInputDownload `json:"downloads,omitempty"`
+	InlineFiles     []CVMInlineFile    `json:"inline_files,omitempty"`
 }
 
 type CVMDispatchRequest struct {

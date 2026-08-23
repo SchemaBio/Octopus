@@ -77,6 +77,7 @@ func AutoMigrate() error {
 		&model.TaskDataAsset{},
 		&model.CNVBaseline{},
 		&model.CNVBaselineReadPair{},
+		&model.WorkflowThresholdConfig{},
 		// Import audit models
 		&model.ResultImportBatch{},
 	)
@@ -86,7 +87,33 @@ func AutoMigrate() error {
 	if err := migrateSampleOrganizationIndexes(); err != nil {
 		return err
 	}
+	if err := migrateTaskExecutionColumns(); err != nil {
+		return err
+	}
+	if err := preserveBEDDataAssets(); err != nil {
+		return err
+	}
 
+	return nil
+}
+
+func preserveBEDDataAssets() error {
+	if err := DB.Exec("UPDATE data_assets SET expires_at = NULL WHERE read_type = ? AND expires_at IS NOT NULL", model.ReadTypeBed).Error; err != nil {
+		return fmt.Errorf("failed to remove BED data retention expiry: %w", err)
+	}
+	return nil
+}
+
+func migrateTaskExecutionColumns() error {
+	statements := []string{
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cvm_archive_staged_at timestamptz",
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cvm_archive_termination_notified_at timestamptz",
+	}
+	for _, statement := range statements {
+		if err := DB.Exec(statement).Error; err != nil {
+			return fmt.Errorf("failed to migrate task execution columns: %w", err)
+		}
+	}
 	return nil
 }
 

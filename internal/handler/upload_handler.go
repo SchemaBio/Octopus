@@ -35,6 +35,9 @@ func (h *UploadHandler) CreateJob(c *gin.Context) {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
+	if storageQuotaBytes, ok := middleware.GetCurrentStorageQuotaBytes(c); ok {
+		req.StorageQuotaBytes = storageQuotaBytes
+	}
 
 	job, files, presignedURLs, err := h.svc.CreateJob(c.Request.Context(), userID, orgID, &req)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -113,6 +114,7 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		req.ReferenceGenome = ""
 	}
 
+	var requestedBytes int64
 	for _, f := range req.Files {
 		if err := validateUploadFilename(f.FileName); err != nil {
 			return nil, nil, nil, err
@@ -120,6 +122,10 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		if f.FileSize <= 0 {
 			return nil, nil, nil, fmt.Errorf("file size must be positive")
 		}
+		if requestedBytes > math.MaxInt64-f.FileSize {
+			return nil, nil, nil, fmt.Errorf("total upload size is too large")
+		}
+		requestedBytes += f.FileSize
 		if err := validateSaaSUploadFileSize(s.cfg.Storage.RetentionDays, f.FileName, f.FileSize); err != nil {
 			return nil, nil, nil, err
 		}
@@ -148,6 +154,15 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 			return nil, nil, nil, err
 		}
 	}
+	if req.StorageQuotaBytes > 0 && orgID != "" {
+		usedBytes, err := s.fileRepo.SumFileSize(&model.UploadFileListQuery{ExternalOrgID: orgID})
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to check organization storage quota: %w", err)
+		}
+		if err := validateStorageQuota(usedBytes, requestedBytes, req.StorageQuotaBytes); err != nil {
+			return nil, nil, nil, err
+		}
+	}
 	var objectStore *s3Storage
 	if provider == model.UploadProviderS3 {
 		var err error
@@ -173,6 +188,9 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 	if s.cfg.Storage.RetentionDays > 0 {
 		acknowledgedAt := time.Now().UTC()
 		job.UploadPolicyVersion = model.DataUploadPolicyVersion
+		if req.FileType == model.UploadFileTypeBed {
+			job.UploadPolicyVersion = model.BEDUploadPolicyVersion
+		}
 		job.UploadPolicyAcknowledgedAt = &acknowledgedAt
 	}
 
@@ -219,11 +237,7 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		if err := s.fileRepo.Create(uploadFile); err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to create upload file record: %w", err)
 		}
-		var expiresAt *time.Time
-		if s.cfg.Storage.RetentionDays > 0 {
-			value := time.Now().AddDate(0, 0, s.cfg.Storage.RetentionDays)
-			expiresAt = &value
-		}
+		expiresAt := dataAssetExpiry(s.cfg.Storage.RetentionDays, f.ReadType, time.Now())
 		asset := &model.DataAsset{
 			UUID: fileUUID, ExternalOrgID: orgID, CreatedBy: userID,
 			UploadFileID: &uploadFile.ID, Provider: provider, StorageKey: storageKey,
@@ -249,6 +263,24 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 	}
 
 	return job, files, presignedURLs, nil
+}
+
+func validateStorageQuota(usedBytes, requestedBytes, quotaBytes int64) error {
+	if quotaBytes <= 0 {
+		return nil
+	}
+	if usedBytes < 0 || requestedBytes < 0 || usedBytes > quotaBytes || requestedBytes > quotaBytes-usedBytes {
+		return fmt.Errorf("organization storage quota exceeded")
+	}
+	return nil
+}
+
+func dataAssetExpiry(retentionDays int, readType model.ReadType, now time.Time) *time.Time {
+	if retentionDays <= 0 || readType == model.ReadTypeBed {
+		return nil
+	}
+	value := now.AddDate(0, 0, retentionDays)
+	return &value
 }
 
 func validateUploadPolicyAcknowledgement(retentionDays int, acknowledged bool) error {

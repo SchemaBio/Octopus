@@ -54,6 +54,11 @@ type TaskInputAssetRequest struct {
 	Index     int
 }
 
+const (
+	TaskAssetRoleTrioRead1 = "trio_read_1"
+	TaskAssetRoleTrioRead2 = "trio_read_2"
+)
+
 type CNVBaselineCreateRequest struct {
 	Name            string   `json:"name" binding:"required"`
 	ReferenceGenome string   `json:"reference_genome" binding:"required"`

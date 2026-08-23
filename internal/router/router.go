@@ -95,6 +95,15 @@ func New(cfg *config.Config) *gin.Engine {
 			templates.GET("/:name/inputs", handler.GetTemplateInputs)
 		}
 
+		workflowConfigHandler := handler.NewWorkflowConfigHandler()
+		workflowConfig := v1.Group("/admin/workflow-configs")
+		workflowConfig.Use(middleware.JWTAuth(cfg))
+		workflowConfig.Use(middleware.RequireAdmin())
+		{
+			workflowConfig.GET("", workflowConfigHandler.List)
+			workflowConfig.PUT("/:template/:genome", workflowConfigHandler.Update)
+		}
+
 		// ========== Sepiida integration ==========
 		sepiidaHandler := handler.NewSepiidaHandler(cfg)
 		sepiida := v1.Group("/sepiida")

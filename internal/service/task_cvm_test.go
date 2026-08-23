@@ -60,6 +60,37 @@ func TestBuildCVMWDLInputsBuildsHG38SingleInputs(t *testing.T) {
 	}
 }
 
+func TestBuildCVMWDLInputsUsesBaselineFixContract(t *testing.T) {
+	inputs, err := buildCVMWDLInputs("baseline_fix", "hg38", map[string]interface{}{
+		"CNVBaselineFix.prefix": "8da4d946",
+		"bed_file":              "/mnt/data/inputs/panel.bed",
+	})
+	if err != nil {
+		t.Fatalf("build baseline_fix inputs: %v", err)
+	}
+	if inputs["CNVBaselineFix.prefix"] != "8da4d946" || inputs["CNVBaselineFix.bed"] != "/mnt/data/inputs/panel.bed" {
+		t.Fatalf("baseline_fix overrides were not applied: %#v", inputs)
+	}
+	if inputs["CNVBaselineFix.assembly"] != "GRCh38" || inputs["CNVBaselineFix.existing_sample_count"] != float64(20) {
+		t.Fatalf("baseline_fix built-in reference metadata is wrong: %#v", inputs)
+	}
+	if _, legacy := inputs["CNVBaseline.prefix"]; legacy {
+		t.Fatal("legacy baseline workflow input was exposed")
+	}
+}
+
+func TestTrioPEDUsesStrictMemberOrderAndCodes(t *testing.T) {
+	members := []model.PedigreeMember{
+		{Gender: model.GenderMale, AffectedStatus: model.AffectedStatusAffected},
+		{Gender: model.GenderMale, AffectedStatus: model.AffectedStatusUnaffected},
+		{Gender: model.GenderFemale, AffectedStatus: model.AffectedStatusUnaffected},
+	}
+	want := "8da4d946\tproband\tfather\tmother\t1\t2\n8da4d946\tfather\t0\t0\t1\t1\n8da4d946\tmother\t0\t0\t2\t1\n"
+	if got := trioPED("8da4d946", members); got != want {
+		t.Fatalf("PED = %q, want %q", got, want)
+	}
+}
+
 func TestSafeCVMInputName(t *testing.T) {
 	if got := safeCVMInputName(`../sample R1;rm.fastq.gz`); got != "sample_R1_rm.fastq.gz" {
 		t.Fatalf("unexpected safe input name: %q", got)

@@ -59,6 +59,16 @@ func applyExternalAuth(c *gin.Context, cfg *config.Config) bool {
 	email := strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.EmailHeader))
 	role := mapExternalRole(c.GetHeader(cfg.ExternalAuth.RoleHeader))
 	orgID := strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.OrgIDHeader))
+	storageQuota := strings.TrimSpace(c.GetHeader("X-Octopus-Storage-Quota-Bytes"))
+	if storageQuota != "" {
+		quotaBytes, err := strconv.ParseInt(storageQuota, 10, 64)
+		if err != nil || quotaBytes < 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid external storage quota"})
+			c.Abort()
+			return true
+		}
+		c.Set("storage_quota_bytes", quotaBytes)
+	}
 
 	c.Set("user_id", uint(userID))
 	c.Set("email", email)
@@ -271,4 +281,15 @@ func GetCurrentOrg(c *gin.Context) (string, bool) {
 	}
 	value, ok := orgID.(string)
 	return value, ok && value != ""
+}
+
+// GetCurrentStorageQuotaBytes returns the storage quota supplied by a trusted
+// SaaS gateway. The value is absent for self-hosted authentication.
+func GetCurrentStorageQuotaBytes(c *gin.Context) (int64, bool) {
+	value, exists := c.Get("storage_quota_bytes")
+	if !exists {
+		return 0, false
+	}
+	quota, ok := value.(int64)
+	return quota, ok && quota >= 0
 }

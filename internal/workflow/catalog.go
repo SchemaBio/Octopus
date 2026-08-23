@@ -84,28 +84,40 @@ var definitions = map[string]Definition{
 			"TrioWES.schema_bundle": "/mnt/data/database/schema_bundle"
 		}`),
 	},
-	"germline_baseline": {
-		Name:        "germline_baseline",
-		ShortName:   "baseline",
+	"germline_baseline_fix": {
+		Name:        "germline_baseline_fix",
+		ShortName:   "baseline_fix",
 		Domain:      "germline",
-		Workflow:    "CNVBaseline",
-		Description: "CNV baseline workflow",
+		Workflow:    "CNVBaselineFix",
+		Description: "Calibrate the built-in CNV baseline with selected normal samples",
 		Inputs: mustParseInputs(`{
-			"CNVBaseline.prefix": "reference",
-			"CNVBaseline.bed": "/mnt/data/test/hg19_IDTv1.bed",
-			"CNVBaseline.fasta": "/mnt/data/database/Homo_sapiens.GRCh37.dna.primary_assembly.fa",
-			"CNVBaseline.assembly": "GRCh37",
-			"CNVBaseline.read_1": [
+			"CNVBaselineFix.prefix": "reference",
+			"CNVBaselineFix.bed": "/mnt/data/test/hg19_IDTv1.bed",
+			"CNVBaselineFix.fasta": "/mnt/data/database/Homo_sapiens.GRCh37.dna.primary_assembly.fa",
+			"CNVBaselineFix.assembly": "GRCh37",
+			"CNVBaselineFix.existing_reference": "/mnt/data/test/reference.cnvkit.cnn",
+			"CNVBaselineFix.existing_sample_count": 20,
+			"CNVBaselineFix.read_1": [
 				"/mnt/data/test/202511_father_ILMN_1.fq.gz",
 				"/mnt/data/test/202511_mother_ILMN_1.fq.gz"
 			],
-			"CNVBaseline.read_2": [
+			"CNVBaselineFix.read_2": [
 				"/mnt/data/test/202511_father_ILMN_2.fq.gz",
 				"/mnt/data/test/202511_mother_ILMN_2.fq.gz"
 			],
-			"CNVBaseline.ref_dir": "/mnt/data/database"
+			"CNVBaselineFix.ref_dir": "/mnt/data/database"
 		}`),
 	},
+}
+
+var adjustableThresholdSuffixes = []string{
+	"sry_sex_cutoff", "cnv_bin_size", "cnv_dup_threshold", "cnv_del_threshold",
+}
+
+// AdjustableThresholdSuffixes returns the workflow parameters that SaaS
+// administrators may override. Reference/resource paths remain code-owned.
+func AdjustableThresholdSuffixes() []string {
+	return append([]string(nil), adjustableThresholdSuffixes...)
 }
 
 func mustParseInputs(raw string) map[string]interface{} {

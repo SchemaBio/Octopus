@@ -38,6 +38,7 @@ type TaskService struct {
 	sampleRepo      *repository.SampleRepository
 	pipelineRepo    *repository.PipelineRepository
 	baselineRepo    *repository.CNVBaselineRepository
+	pedigreeRepo    *repository.PedigreeRepository
 	mu              sync.RWMutex
 	running         map[string]*exec.Cmd
 }
@@ -100,6 +101,7 @@ func NewTaskService(cfg *config.Config) *TaskService {
 		sampleRepo:      repository.NewSampleRepository(),
 		pipelineRepo:    repository.NewPipelineRepository(),
 		baselineRepo:    repository.NewCNVBaselineRepository(),
+		pedigreeRepo:    repository.NewPedigreeRepository(),
 		running:         make(map[string]*exec.Cmd),
 	}
 
@@ -517,6 +519,9 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	if inputs == nil {
 		inputs = make(map[string]interface{})
 	}
+	if req.Template == "baseline_fix" {
+		inputs["CNVBaselineFix.prefix"] = taskID
+	}
 	if err := validateActorTaskFileInputs(s.cfg, actor, inputs); err != nil {
 		return nil, err
 	}
@@ -537,16 +542,16 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		case model.TaskAssetRoleCNVRead2:
 			read2Inputs = setIndexedInput(read2Inputs, inputAsset.Index, asset.StorageKey)
 		case model.TaskAssetRoleCNVBED:
-			inputs["CNVBaseline.bed"] = asset.StorageKey
+			inputs["CNVBaselineFix.bed"] = asset.StorageKey
 		default:
 			return nil, fmt.Errorf("unsupported task data asset role: %s", inputAsset.InputRole)
 		}
 	}
 	if len(read1Inputs) > 0 {
-		inputs["CNVBaseline.read_1"] = read1Inputs
+		inputs["CNVBaselineFix.read_1"] = read1Inputs
 	}
 	if len(read2Inputs) > 0 {
-		inputs["CNVBaseline.read_2"] = read2Inputs
+		inputs["CNVBaselineFix.read_2"] = read2Inputs
 	}
 
 	var sampleIDRef uint
@@ -554,7 +559,18 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	var uploadJob *model.UploadJob
 	needsStaging := false
 
-	if req.SampleID != "" {
+	if req.Template == "trio" {
+		if strings.TrimSpace(req.PedigreeID) == "" {
+			return nil, fmt.Errorf("pedigreeId is required for trio analysis")
+		}
+		proband, trioAssets, err := s.prepareTrioInputs(req.PedigreeID, workflowUUID, actor, inputs)
+		if err != nil {
+			return nil, err
+		}
+		req.SampleID, req.InternalID = proband.UUID, proband.InternalID
+		sampleIDRef, sampleDataReady = proband.ID, true
+		directAssets = append(directAssets, trioAssets...)
+	} else if req.SampleID != "" {
 		sample, err := s.sampleRepo.FindScopedByUUID(req.SampleID, actor)
 		if err != nil {
 			return nil, fmt.Errorf("sample not found: %s", req.SampleID)
@@ -584,6 +600,9 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 				inputs["fastq_r2"] = matchedPair.R2Path
 			}
 		}
+	}
+	if req.Template != "trio" && req.SampleID == "" && len(req.InputAssets) == 0 {
+		return nil, fmt.Errorf("sampleId is required for single-sample analysis")
 	}
 
 	if selectedPipeline != nil {
@@ -648,6 +667,31 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		}
 	}
 
+	if req.Template == "single" || req.Template == "trio" {
+		inputs, err = buildCVMWDLInputs(req.Template, fmt.Sprint(inputs["reference_genome"]), inputs)
+		if err != nil {
+			return nil, err
+		}
+		prefix := "SingleWES"
+		if req.Template == "trio" {
+			prefix = "TrioWES"
+		}
+		inputs[prefix+".prefix"] = taskID
+		thresholds, configErr := NewWorkflowConfigService().Get(req.Template, fmt.Sprint(inputs["reference_genome"]))
+		if configErr != nil {
+			return nil, configErr
+		}
+		applyWorkflowThresholds(inputs, thresholds)
+		if req.Template == "trio" {
+			inputs["TrioWES.ped"] = filepath.Join(s.cfg.Task.OutputDir, workflowUUID, taskID+".ped")
+		}
+	} else if req.Template == "baseline_fix" {
+		inputs, err = buildCVMWDLInputs(req.Template, fmt.Sprint(inputs["reference_genome"]), inputs)
+		if err != nil {
+			return nil, err
+		}
+		inputs["CNVBaselineFix.prefix"] = taskID
+	}
 	inputJSON, err := json.Marshal(inputs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal inputs: %w", err)
@@ -672,6 +716,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		UUID:               workflowUUID,
 		Name:               req.PipelineName,
 		SampleID:           req.SampleID,
+		PedigreeID:         req.PedigreeID,
 		InternalID:         req.InternalID,
 		UploadJobID:        req.UploadJobID,
 		Pipeline:           req.PipelineName,
@@ -934,7 +979,33 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 func (s *TaskService) launchTask(task *model.Task) {
 	// Write input JSON
 	inputFile := filepath.Join(s.cfg.Task.OutputDir, task.ID+"_inputs.json")
-	if err := os.WriteFile(inputFile, []byte(task.InputJSON), 0644); err != nil {
+	inputJSON := []byte(task.InputJSON)
+	var executionInputs map[string]interface{}
+	if err := json.Unmarshal(inputJSON, &executionInputs); err != nil {
+		s.updateTaskError(task, "Failed to parse workflow inputs")
+		return
+	}
+	delete(executionInputs, "reference_genome")
+	if task.Template == "trio" {
+		inputs := executionInputs
+		content, _ := inputs["TrioWES.ped_content"].(string)
+		pedPath, _ := inputs["TrioWES.ped"].(string)
+		delete(inputs, "TrioWES.ped_content")
+		if content == "" || pedPath == "" {
+			s.updateTaskError(task, "Trio PED input is missing")
+			return
+		}
+		if err := os.MkdirAll(filepath.Dir(pedPath), 0750); err != nil {
+			s.updateTaskError(task, err.Error())
+			return
+		}
+		if err := os.WriteFile(pedPath, []byte(content), 0600); err != nil {
+			s.updateTaskError(task, err.Error())
+			return
+		}
+	}
+	inputJSON, _ = json.Marshal(executionInputs)
+	if err := os.WriteFile(inputFile, inputJSON, 0644); err != nil {
 		s.updateTaskError(task, fmt.Sprintf("Failed to write input file: %v", err))
 		return
 	}
@@ -1962,6 +2033,25 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 	if err != nil {
 		return model.CVMDispatchRequest{}, err
 	}
+	inlineFiles := make([]model.CVMInlineFile, 0, 1)
+	if task.Template == "trio" {
+		content, _ := inputs["TrioWES.ped_content"].(string)
+		if content == "" {
+			return model.CVMDispatchRequest{}, fmt.Errorf("Trio PED content is missing")
+		}
+		target := path.Join("/mnt/data/inputs", task.UUID[:8]+".ped")
+		inputs["TrioWES.ped"] = target
+		delete(inputs, "TrioWES.ped_content")
+		inlineFiles = append(inlineFiles, model.CVMInlineFile{Target: target, Content: content})
+	}
+	if task.Template == "single" || task.Template == "trio" {
+		thresholds, configErr := NewWorkflowConfigService().Get(task.Template, referenceGenome)
+		if configErr != nil {
+			return model.CVMDispatchRequest{}, configErr
+		}
+		applyWorkflowThresholds(inputs, thresholds)
+	}
+	delete(inputs, "reference_genome")
 	encoded, err := json.Marshal(inputs)
 	if err != nil {
 		return model.CVMDispatchRequest{}, err
@@ -1971,7 +2061,7 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 		Task:      model.NewOverlayTaskSnapshot(task),
 		AttemptID: task.ExecutionAttemptID,
 		Execution: model.CVMExecutionSpec{
-			Template: task.Template, ReferenceGenome: referenceGenome, Inputs: encoded, Downloads: downloads,
+			Template: task.Template, ReferenceGenome: referenceGenome, Inputs: encoded, Downloads: downloads, InlineFiles: inlineFiles,
 		},
 		RequestedAt: time.Now(),
 	}, nil
@@ -1987,6 +2077,10 @@ func buildCVMWDLInputs(template, genome string, taskInputs map[string]interface{
 			inputs[key] = value
 		}
 	}
+	inputs["reference_genome"] = genome
+	if content, ok := taskInputs["TrioWES.ped_content"]; ok {
+		inputs["TrioWES.ped_content"] = content
+	}
 
 	switch template {
 	case "single":
@@ -1996,10 +2090,93 @@ func buildCVMWDLInputs(template, genome string, taskInputs map[string]interface{
 		copyCVMInput(inputs, "SingleWES.cnvkit_reference", taskInputs, "cnv_baseline")
 	case "trio":
 		copyCVMInput(inputs, "TrioWES.bed", taskInputs, "bed_file")
-	case "baseline":
-		copyCVMInput(inputs, "CNVBaseline.bed", taskInputs, "bed_file")
+	case "baseline_fix":
+		copyCVMInput(inputs, "CNVBaselineFix.bed", taskInputs, "bed_file")
 	}
 	return inputs, nil
+}
+
+func (s *TaskService) prepareTrioInputs(pedigreeID, workflowUUID string, actor model.OverlayActor, inputs map[string]interface{}) (*model.Sample, []model.TaskDataAsset, error) {
+	pedigree, members, err := s.pedigreeRepo.FindByIDWithMembers(pedigreeID)
+	if err != nil || (actor.Role != string(model.SystemRoleSuperAdmin) && pedigree.CreatedBy != actor.UserID) {
+		return nil, nil, fmt.Errorf("pedigree not found: %s", pedigreeID)
+	}
+	byID := make(map[string]model.PedigreeMember, len(members))
+	var proband *model.PedigreeMember
+	for i := range members {
+		member := members[i]
+		byID[member.ID] = member
+		if member.ID == pedigree.ProbandMemberID || member.Relation == model.RelationProband {
+			if proband != nil && proband.ID != member.ID {
+				return nil, nil, fmt.Errorf("trio pedigree must contain exactly one proband")
+			}
+			copy := member
+			proband = &copy
+		}
+	}
+	if proband == nil {
+		return nil, nil, fmt.Errorf("trio pedigree has no proband")
+	}
+	father, fatherOK := byID[proband.FatherID]
+	mother, motherOK := byID[proband.MotherID]
+	if !fatherOK || !motherOK || father.Relation != model.RelationFather || mother.Relation != model.RelationMother {
+		return nil, nil, fmt.Errorf("trio proband must reference one father and one mother")
+	}
+	ordered := []model.PedigreeMember{*proband, father, mother}
+	read1 := make([]string, 3)
+	read2 := make([]string, 3)
+	assets := make([]model.TaskDataAsset, 0, 6)
+	var probandSample *model.Sample
+	for i, member := range ordered {
+		if strings.TrimSpace(member.SampleID) == "" {
+			return nil, nil, fmt.Errorf("trio member %s has no linked sample", member.Name)
+		}
+		sample, err := s.sampleRepo.FindScopedByUUID(member.SampleID, actor)
+		if err != nil {
+			return nil, nil, fmt.Errorf("linked sample for trio member %s was not found", member.Name)
+		}
+		pair := sample.GetMatchedPair()
+		if !matchedPairComplete(pair) {
+			return nil, nil, fmt.Errorf("trio member %s requires complete R1/R2 data", member.Name)
+		}
+		read1[i], read2[i] = pair.R1Path, pair.R2Path
+		for _, item := range []struct{ storage, role string }{{pair.R1Path, model.TaskAssetRoleTrioRead1}, {pair.R2Path, model.TaskAssetRoleTrioRead2}} {
+			var asset model.DataAsset
+			if err := database.GetDB().Where("storage_key = ? AND status = ?", item.storage, model.FileStatusCompleted).First(&asset).Error; err != nil {
+				return nil, nil, fmt.Errorf("trio member %s data asset is unavailable", member.Name)
+			}
+			assets = append(assets, model.TaskDataAsset{AssetID: asset.ID, InputRole: item.role, InputIndex: i})
+		}
+		if i == 0 {
+			probandSample = sample
+		}
+	}
+	prefix := workflowUUID[:8]
+	inputs["TrioWES.meta_info"] = map[string]interface{}{"members": []string{"proband", "father", "mother"}, "read_1": read1, "read_2": read2}
+	inputs["TrioWES.ped_content"] = trioPED(prefix, ordered)
+	return probandSample, assets, nil
+}
+
+func trioPED(familyID string, members []model.PedigreeMember) string {
+	sex := func(g model.Gender) int {
+		if g == model.GenderMale {
+			return 1
+		}
+		if g == model.GenderFemale {
+			return 2
+		}
+		return 0
+	}
+	phenotype := func(a model.AffectedStatus) int {
+		if a == model.AffectedStatusAffected {
+			return 2
+		}
+		if a == model.AffectedStatusUnaffected {
+			return 1
+		}
+		return 0
+	}
+	return fmt.Sprintf("%s\tproband\tfather\tmother\t%d\t%d\n%s\tfather\t0\t0\t%d\t%d\n%s\tmother\t0\t0\t%d\t%d\n", familyID, sex(members[0].Gender), phenotype(members[0].AffectedStatus), familyID, sex(members[1].Gender), phenotype(members[1].AffectedStatus), familyID, sex(members[2].Gender), phenotype(members[2].AffectedStatus))
 }
 
 func copyCVMInput(target map[string]interface{}, targetKey string, source map[string]interface{}, sourceKey string) {
@@ -2151,10 +2328,30 @@ func setIndexedInput(values []string, index int, value string) []string {
 
 func applyTaskAssetPath(inputs map[string]interface{}, link model.TaskDataAsset, value string) {
 	switch link.InputRole {
+	case model.TaskAssetRoleTrioRead1, model.TaskAssetRoleTrioRead2:
+		meta, _ := inputs["TrioWES.meta_info"].(map[string]interface{})
+		if meta == nil {
+			meta = map[string]interface{}{}
+		}
+		key := "read_1"
+		if link.InputRole == model.TaskAssetRoleTrioRead2 {
+			key = "read_2"
+		}
+		values := make([]string, 0)
+		switch current := meta[key].(type) {
+		case []string:
+			values = append(values, current...)
+		case []interface{}:
+			for _, item := range current {
+				values = append(values, fmt.Sprint(item))
+			}
+		}
+		meta[key] = setIndexedInput(values, link.InputIndex, value)
+		inputs["TrioWES.meta_info"] = meta
 	case model.TaskAssetRoleCNVRead1, model.TaskAssetRoleCNVRead2:
-		key := "CNVBaseline.read_1"
+		key := "CNVBaselineFix.read_1"
 		if link.InputRole == model.TaskAssetRoleCNVRead2 {
-			key = "CNVBaseline.read_2"
+			key = "CNVBaselineFix.read_2"
 		}
 		values := make([]string, 0)
 		switch current := inputs[key].(type) {
@@ -2167,7 +2364,7 @@ func applyTaskAssetPath(inputs map[string]interface{}, link model.TaskDataAsset,
 		}
 		inputs[key] = setIndexedInput(values, link.InputIndex, value)
 	case model.TaskAssetRoleCNVBED:
-		inputs["CNVBaseline.bed"] = value
+		inputs["CNVBaselineFix.bed"] = value
 	case model.TaskAssetRoleAnalysisBED:
 		inputs["bed_file"] = value
 	}
