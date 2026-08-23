@@ -26,7 +26,6 @@ services:
   sepiida-server:
     build:
       context: ../../Sepiida
-      dockerfile: Dockerfile.server
     image: schemabio/sepiida-server:self-hosted
     restart: unless-stopped
     environment:

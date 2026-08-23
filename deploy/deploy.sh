@@ -146,6 +146,21 @@ extract_binary() {
   chmod 0755 "$destination"
 }
 
+build_sepiida_agent() {
+  local source_dir="$DEPLOY_DIR/../../Sepiida"
+  [ -f "$source_dir/go.mod" ] || die "Sepiida repository is missing at $source_dir"
+
+  docker run --rm \
+    -e CGO_ENABLED=0 \
+    -e GOPROXY=https://mirrors.tencent.com/go/,direct \
+    -v "$source_dir:/src:ro" \
+    -v "$INSTALL_ROOT/bin:/out" \
+    -w /src \
+    golang:1.25-alpine3.22 \
+    go build -mod=readonly -trimpath -ldflags="-s -w -buildid=" -o /out/sepiida-agent ./cmd/agent
+  chmod 0755 "$INSTALL_ROOT/bin/sepiida-agent"
+}
+
 write_host_environment() {
   mkdir -p /etc/schemabio
   cat > /etc/schemabio/octopus.env <<EOF
@@ -273,9 +288,8 @@ install_host_services() {
   mkdir -p "$INSTALL_ROOT/bin" "$DATA_ROOT/output" "$DATA_ROOT/archive" "$DATA_ROOT/uploads"
 
   docker build -t schemabio/octopus-host:local "$DEPLOY_DIR/.."
-  docker build -t schemabio/sepiida-agent-host:local -f "$DEPLOY_DIR/../../Sepiida/Dockerfile.agent" "$DEPLOY_DIR/../../Sepiida"
   extract_binary schemabio/octopus-host:local /app/octopus "$INSTALL_ROOT/bin/octopus"
-  extract_binary schemabio/sepiida-agent-host:local /app/sepiida-agent "$INSTALL_ROOT/bin/sepiida-agent"
+  build_sepiida_agent
   write_health_waiter
   chown -R schemabio:schemabio "$INSTALL_ROOT" "$DATA_ROOT"
 
