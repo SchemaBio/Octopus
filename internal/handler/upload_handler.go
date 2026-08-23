@@ -260,6 +260,22 @@ func (h *UploadHandler) CompleteS3(c *gin.Context) {
 	Success(c, model.UploadFileToResponse(file))
 }
 
+func (h *UploadHandler) RetryS3(c *gin.Context) {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	file, url, err := h.svc.RetryS3File(c.Request.Context(), userID, c.Param("file_uuid"))
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	response := model.UploadFileToResponse(file)
+	response.PresignedURL = url
+	Success(c, response)
+}
+
 func (h *UploadHandler) GetDownloadURL(c *gin.Context) {
 	userID, _, _, ok := middleware.GetCurrentUser(c)
 	if !ok {

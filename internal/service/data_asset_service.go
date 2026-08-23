@@ -12,6 +12,7 @@ import (
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
+	"gorm.io/gorm"
 )
 
 type DataAssetService struct {
@@ -105,22 +106,36 @@ func (s *DataAssetService) Delete(ctx context.Context, uuid string, actor model.
 	if actor.Role != string(model.SystemRoleSuperAdmin) && asset.CreatedBy != actor.UserID {
 		return fmt.Errorf("data asset not found")
 	}
-	var references int64
-	database.GetDB().Model(&model.SampleDataLink{}).Where("read1_asset_id = ? OR read2_asset_id = ?", asset.ID, asset.ID).Count(&references)
-	if references > 0 {
-		return fmt.Errorf("data asset is linked to a sample")
-	}
 	if err := s.deleteStoredObject(ctx, asset); err != nil {
 		return err
 	}
-	asset.Status = model.FileStatusDeleted
-	if err := s.repo.Update(asset); err != nil {
+	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		if err := clearSampleAssetLinks(tx, asset.ID); err != nil {
+			return err
+		}
+		asset.Status = model.FileStatusDeleted
+		if err := tx.Save(asset).Error; err != nil {
+			return err
+		}
+		if asset.UploadFileID != nil {
+			_ = tx.Model(&model.UploadFile{}).Where("id = ?", *asset.UploadFileID).Update("status", model.FileStatusDeleted).Error
+		}
+		return nil
+	})
+}
+
+// clearSampleAssetLinks removes both manual and automatic links to an asset and
+// returns affected samples to the ordinary unmatched state.
+func clearSampleAssetLinks(tx *gorm.DB, assetID uint) error {
+	sampleIDs := tx.Model(&model.SampleDataLink{}).
+		Select("sample_id").Where("read1_asset_id = ? OR read2_asset_id = ?", assetID, assetID)
+	if err := tx.Model(&model.Sample{}).Where("id IN (?)", sampleIDs).Updates(map[string]interface{}{
+		"matched_pair": "null", "manual_matched_pair": "null", "auto_matched_pair": "null",
+		"match_status": model.SampleMatchUnmatched, "match_mode": "",
+	}).Error; err != nil {
 		return err
 	}
-	if asset.UploadFileID != nil {
-		_ = s.files.UpdateStatus(*asset.UploadFileID, model.FileStatusDeleted)
-	}
-	return nil
+	return tx.Where("read1_asset_id = ? OR read2_asset_id = ?", assetID, assetID).Delete(&model.SampleDataLink{}).Error
 }
 
 func (s *DataAssetService) deleteStoredObject(ctx context.Context, asset *model.DataAsset) error {
@@ -176,14 +191,19 @@ func (s *DataAssetService) cleanupExpired(ctx context.Context) {
 			if err := s.deleteStoredObject(ctx, &assets[i]); err != nil {
 				continue
 			}
-			assets[i].Status = model.FileStatusDeleted
-			_ = s.repo.Update(&assets[i])
-			if assets[i].UploadFileID != nil {
-				_ = s.files.UpdateStatus(*assets[i].UploadFileID, model.FileStatusDeleted)
-			}
-			database.GetDB().Model(&model.Sample{}).
-				Where("id IN (?)", database.GetDB().Model(&model.SampleDataLink{}).Select("sample_id").Where("read1_asset_id = ? OR read2_asset_id = ?", assets[i].ID, assets[i].ID)).
-				Update("match_status", model.SampleMatchMissing)
+			_ = database.GetDB().Transaction(func(tx *gorm.DB) error {
+				if err := clearSampleAssetLinks(tx, assets[i].ID); err != nil {
+					return err
+				}
+				assets[i].Status = model.FileStatusDeleted
+				if err := tx.Save(&assets[i]).Error; err != nil {
+					return err
+				}
+				if assets[i].UploadFileID != nil {
+					return tx.Model(&model.UploadFile{}).Where("id = ?", *assets[i].UploadFileID).Update("status", model.FileStatusDeleted).Error
+				}
+				return nil
+			})
 		}
 		if len(assets) < 100 {
 			return

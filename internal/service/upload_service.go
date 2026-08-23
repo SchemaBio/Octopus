@@ -394,6 +394,35 @@ func (s *UploadService) CompleteS3File(ctx context.Context, userID uint, fileUUI
 	return file, nil
 }
 
+// RetryS3File reissues a presigned URL for an interrupted file without
+// creating a second data-asset record.
+func (s *UploadService) RetryS3File(ctx context.Context, userID uint, fileUUID string) (*model.UploadFile, string, error) {
+	file, err := s.fileRepo.FindByUUID(fileUUID)
+	if err != nil {
+		return nil, "", fmt.Errorf("upload file not found")
+	}
+	job, err := s.jobRepo.FindByUUID(file.JobUUID)
+	if err != nil || job.UserID != userID || job.Provider != model.UploadProviderS3 {
+		return nil, "", fmt.Errorf("upload file not found")
+	}
+	if file.Status != model.FileStatusPending && file.Status != model.FileStatusFailed {
+		return nil, "", fmt.Errorf("upload file is not retryable")
+	}
+	storage, err := newS3Storage(ctx, s.cfg.Storage)
+	if err != nil {
+		return nil, "", err
+	}
+	url, err := storage.presignUpload(ctx, file.StorageKey)
+	if err != nil {
+		return nil, "", err
+	}
+	file.Status = model.FileStatusPending
+	if err := s.fileRepo.Update(file); err != nil {
+		return nil, "", err
+	}
+	return file, url, nil
+}
+
 func (s *UploadService) syncJobStatus(job *model.UploadJob) {
 	allFiles, _ := s.fileRepo.FindByJobID(job.ID)
 	allComplete := true

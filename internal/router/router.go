@@ -324,6 +324,7 @@ func New(cfg *config.Config) *gin.Engine {
 			uploads.DELETE("/jobs/:uuid", uploadHandler.DeleteJob)
 			uploads.POST("/local/:file_uuid", uploadHandler.UploadLocal)
 			uploads.POST("/files/:file_uuid/complete", uploadHandler.CompleteS3)
+			uploads.POST("/files/:file_uuid/retry", uploadHandler.RetryS3)
 			uploads.GET("/files", uploadHandler.ListFiles)
 			uploads.GET("/files/stats", uploadHandler.GetFileStats)
 			uploads.GET("/files/:file_uuid/download", uploadHandler.GetDownloadURL)
