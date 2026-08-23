@@ -273,7 +273,7 @@ func (s *SampleService) MatchFromUploadJob(ctx context.Context, id string, uploa
 	if err != nil {
 		return nil, fmt.Errorf("upload job not found")
 	}
-	if actor.Role != string(model.SystemRoleSuperAdmin) && ((actor.OrgID != "" && uploadJob.ExternalOrgID != actor.OrgID) || (actor.OrgID == "" && uploadJob.UserID != actor.UserID)) {
+	if !uploadJobUseAllowed(uploadJob, actor) {
 		return nil, fmt.Errorf("upload job not found")
 	}
 	if uploadJob.Status != model.UploadJobStatusCompleted {

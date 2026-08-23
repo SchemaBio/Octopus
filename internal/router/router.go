@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -23,6 +24,11 @@ func New(cfg *config.Config) *gin.Engine {
 	gin.SetMode(cfg.Server.Mode)
 
 	r := gin.New()
+	if err := r.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
+		// ValidateStartup normally catches this. Keep router construction
+		// fail-closed for tests and embedders that bypass startup validation.
+		panic(fmt.Sprintf("invalid trusted proxy configuration: %v", err))
+	}
 	r.Use(middleware.Logger())
 	r.Use(middleware.Recovery())
 	r.Use(middleware.CORS(&cfg.Server))
@@ -87,8 +93,11 @@ func New(cfg *config.Config) *gin.Engine {
 			usersAdmin.DELETE("/:id", userHandler.DeleteUser)
 		}
 
-		// ========== WDL templates (public read) ==========
+		// ========== WDL templates (protected read) ==========
+		// Catalog defaults include internal reference-resource paths and must not
+		// be exposed as an unauthenticated deployment fingerprint.
 		templates := v1.Group("/templates")
+		templates.Use(middleware.JWTAuth(cfg))
 		{
 			templates.GET("", handler.ListTemplates)
 			templates.GET("/:name", handler.GetTemplate)

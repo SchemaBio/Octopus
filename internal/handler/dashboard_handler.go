@@ -28,57 +28,67 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 	orgID, hasOrg := middleware.GetCurrentOrg(c)
 	isSuperAdmin := role == string(model.SystemRoleSuperAdmin)
 
-	var totalSamples int64
-	sampleDashboardScope(db.Model(&model.Sample{}), userID, isSuperAdmin).Count(&totalSamples)
-
-	var pendingTasks int64
-	taskDashboardScope(db.Model(&model.Task{}), userID, orgID, hasOrg, isSuperAdmin).
-		Where("status IN ?", []string{"queued", "waiting_for_data"}).
-		Count(&pendingTasks)
-
-	var waitingDataTasks int64
-	taskDashboardScope(db.Model(&model.Task{}), userID, orgID, hasOrg, isSuperAdmin).
-		Where("status = ?", "waiting_for_data").
-		Count(&waitingDataTasks)
-
-	var runningTasks int64
-	taskDashboardScope(db.Model(&model.Task{}), userID, orgID, hasOrg, isSuperAdmin).
-		Where("status = ?", "running").
-		Count(&runningTasks)
-
-	var completedTasks int64
-	taskDashboardScope(db.Model(&model.Task{}), userID, orgID, hasOrg, isSuperAdmin).
-		Where("status = ?", "completed").
-		Count(&completedTasks)
-
-	var failedTasks int64
-	taskDashboardScope(db.Model(&model.Task{}), userID, orgID, hasOrg, isSuperAdmin).
-		Where("status = ?", "failed").
-		Count(&failedTasks)
-
-	Success(c, model.DashboardStats{
-		TotalSamples:     int(totalSamples),
-		PendingTasks:     int(pendingTasks),
-		WaitingDataTasks: int(waitingDataTasks),
-		RunningTasks:     int(runningTasks),
-		CompletedTasks:   int(completedTasks),
-		FailedTasks:      int(failedTasks),
-	})
+	stats, err := loadDashboardStats(db, userID, orgID, hasOrg, isSuperAdmin)
+	if err != nil {
+		ErrorInternal(c, "Failed to load dashboard statistics")
+		return
+	}
+	Success(c, stats)
 }
 
-func sampleDashboardScope(db *gorm.DB, userID uint, isSuperAdmin bool) *gorm.DB {
-	if isSuperAdmin {
-		return db
+func loadDashboardStats(db *gorm.DB, userID uint, orgID string, hasOrg, isSuperAdmin bool) (model.DashboardStats, error) {
+	var totalSamples int64
+	if err := sampleDashboardScope(db.Model(&model.Sample{}), userID, orgID, hasOrg, isSuperAdmin).
+		Count(&totalSamples).Error; err != nil {
+		return model.DashboardStats{}, err
 	}
-	return db.Where("created_by = ?", userID)
+
+	var tasks struct {
+		Pending     int64 `gorm:"column:pending_tasks"`
+		WaitingData int64 `gorm:"column:waiting_data_tasks"`
+		Running     int64 `gorm:"column:running_tasks"`
+		Completed   int64 `gorm:"column:completed_tasks"`
+		Failed      int64 `gorm:"column:failed_tasks"`
+	}
+	err := taskDashboardScope(db.Model(&model.Task{}), userID, orgID, hasOrg, isSuperAdmin).
+		Select(`
+			COUNT(*) FILTER (WHERE status IN (?, ?)) AS pending_tasks,
+			COUNT(*) FILTER (WHERE status = ?) AS waiting_data_tasks,
+			COUNT(*) FILTER (WHERE status = ?) AS running_tasks,
+			COUNT(*) FILTER (WHERE status = ?) AS completed_tasks,
+			COUNT(*) FILTER (WHERE status = ?) AS failed_tasks`,
+			model.TaskStatusQueued, model.TaskStatusWaitingData,
+			model.TaskStatusWaitingData, model.TaskStatusRunning,
+			model.TaskStatusCompleted, model.TaskStatusFailed).
+		Scan(&tasks).Error
+	if err != nil {
+		return model.DashboardStats{}, err
+	}
+
+	return model.DashboardStats{
+		TotalSamples:     int(totalSamples),
+		PendingTasks:     int(tasks.Pending),
+		WaitingDataTasks: int(tasks.WaitingData),
+		RunningTasks:     int(tasks.Running),
+		CompletedTasks:   int(tasks.Completed),
+		FailedTasks:      int(tasks.Failed),
+	}, nil
+}
+
+func sampleDashboardScope(db *gorm.DB, userID uint, orgID string, hasOrg, isSuperAdmin bool) *gorm.DB {
+	return dashboardOwnershipScope(db, "samples", userID, orgID, hasOrg, isSuperAdmin)
 }
 
 func taskDashboardScope(db *gorm.DB, userID uint, orgID string, hasOrg, isSuperAdmin bool) *gorm.DB {
+	return dashboardOwnershipScope(db, "tasks", userID, orgID, hasOrg, isSuperAdmin)
+}
+
+func dashboardOwnershipScope(db *gorm.DB, table string, userID uint, orgID string, hasOrg, isSuperAdmin bool) *gorm.DB {
 	if isSuperAdmin {
 		return db
 	}
 	if hasOrg && orgID != "" {
-		return db.Where("external_org_id = ?", orgID)
+		return db.Where(table+".external_org_id = ?", orgID)
 	}
-	return db.Where("created_by = ?", userID)
+	return db.Where(table+".external_org_id = '' AND "+table+".created_by = ?", userID)
 }

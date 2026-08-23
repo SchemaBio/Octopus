@@ -43,7 +43,13 @@ func main() {
 	}
 
 	adminEmail := envOr("DEFAULT_ADMIN_EMAIL", "admin@octopus.local")
-	adminPassword := envOr("DEFAULT_ADMIN_PASSWORD", "admin123")
+	adminPassword := os.Getenv("DEFAULT_ADMIN_PASSWORD")
+	if adminPassword == "" {
+		fatalf("DEFAULT_ADMIN_PASSWORD must be set before running the seed command")
+	}
+	if err := service.ValidateStrongAdminPassword(adminPassword); err != nil {
+		fatalf("DEFAULT_ADMIN_PASSWORD must be strong: %v", err)
+	}
 
 	userSvc := service.NewUserService(cfg)
 	admin, err := userSvc.CreateDefaultAdmin(adminEmail, adminPassword, "Administrator")
@@ -57,7 +63,8 @@ func main() {
 	}
 
 	fmt.Println("Seed complete.")
-	fmt.Printf("  Login: %s / %s\n", adminEmail, adminPassword)
+	fmt.Printf("  Login email: %s\n", adminEmail)
+	fmt.Println("  Login password: read from DEFAULT_ADMIN_PASSWORD (not printed)")
 	fmt.Printf("  Completed task: %s\n", taskCompletedUUID)
 	fmt.Printf("  YiJian API base: http://localhost:8080/api\n")
 }

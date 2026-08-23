@@ -16,6 +16,26 @@ func NewGeneListRepository() *GeneListRepository {
 	}
 }
 
+// FindScopedByStringID finds a gene list visible to the authenticated actor.
+// Gene lists are currently user-owned resources; organization-wide sharing
+// requires an explicit product/data-model decision and must not be inferred
+// merely from the actor's organization membership.
+func (r *GeneListRepository) FindScopedByStringID(id string, actor model.OverlayActor) (*model.GeneList, error) {
+	db := r.db.Where("id = ?", id)
+	if actor.Role != string(model.SystemRoleSuperAdmin) {
+		if actor.UserID == 0 {
+			db = db.Where("1 = 0")
+		} else {
+			db = db.Where("created_by = ?", actor.UserID)
+		}
+	}
+	var geneList model.GeneList
+	if err := db.First(&geneList).Error; err != nil {
+		return nil, err
+	}
+	return &geneList, nil
+}
+
 // PaginateByQuery finds gene lists with pagination and search
 func (r *GeneListRepository) PaginateByQuery(query *model.GeneListListQuery) ([]model.GeneList, int64, error) {
 	db := r.db.Model(&model.GeneList{})

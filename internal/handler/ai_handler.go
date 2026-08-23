@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,9 +14,11 @@ import (
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/SchemaBio/Octopus/internal/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 const defaultAIProxyMaxBodyBytes = 2 << 20 // 2 MB
@@ -46,9 +49,11 @@ func (h *AIHandler) Evaluate(c *gin.Context) {
 	}
 
 	taskID := c.Param("id")
-	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+	task, ok := requireTaskAccess(c, h.taskRepo, taskID)
+	if !ok {
 		return
 	}
+	actor := taskActorFromContext(c)
 
 	// Parse optional filter from request body
 	filter := service.DefaultAIFilter()
@@ -58,17 +63,25 @@ func (h *AIHandler) Evaluate(c *gin.Context) {
 			return
 		}
 	}
+	if err := h.evaluator.ValidateFilter(filter, actor); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ErrorNotFound(c, "Gene list not found")
+			return
+		}
+		ErrorInternal(c, "Failed to validate AI evaluation filter")
+		return
+	}
 
 	// Check if client wants streaming
 	accept := c.GetHeader("Accept")
 	if accept == "text/event-stream" {
-		h.evaluateStream(c, taskID, filter)
+		h.evaluateStream(c, task, actor, filter)
 	} else {
-		h.evaluateSync(c, taskID, filter)
+		h.evaluateSync(c, task, actor, filter)
 	}
 }
 
-func (h *AIHandler) evaluateStream(c *gin.Context, taskID string, filter service.AIFilter) {
+func (h *AIHandler) evaluateStream(c *gin.Context, task *model.Task, actor model.OverlayActor, filter service.AIFilter) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -80,25 +93,51 @@ func (h *AIHandler) evaluateStream(c *gin.Context, taskID string, filter service
 		return
 	}
 
-	err := h.evaluator.Evaluate(c.Request.Context(), taskID, filter, func(chunk string) error {
-		fmt.Fprintf(c.Writer, "data: %s\n\n", chunk)
+	err := h.evaluator.Evaluate(c.Request.Context(), task, actor, filter, func(chunk string) error {
+		if err := writeSSEEvent(c.Writer, "", chunk); err != nil {
+			return err
+		}
 		flusher.Flush()
 		return nil
 	})
 
 	if err != nil {
-		fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", err.Error())
+		if c.Request.Context().Err() != nil {
+			return
+		}
+		if writeErr := writeSSEEvent(c.Writer, "error", "AI evaluation failed"); writeErr != nil {
+			return
+		}
 		flusher.Flush()
 	}
 
-	fmt.Fprintf(c.Writer, "event: done\ndata: \n\n")
+	if err := writeSSEEvent(c.Writer, "done", ""); err != nil {
+		return
+	}
 	flusher.Flush()
 }
 
-func (h *AIHandler) evaluateSync(c *gin.Context, taskID string, filter service.AIFilter) {
-	result, err := h.evaluator.EvaluateSync(c.Request.Context(), taskID, filter)
+func writeSSEEvent(w io.Writer, event, data string) error {
+	if event != "" {
+		if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
+			return err
+		}
+	}
+	// Prefix every line so model-controlled newlines cannot inject SSE fields
+	// or truncate Markdown chunks. Split preserves an explicit trailing line.
+	for _, line := range strings.Split(data, "\n") {
+		if _, err := fmt.Fprintf(w, "data: %s\n", line); err != nil {
+			return err
+		}
+	}
+	_, err := io.WriteString(w, "\n")
+	return err
+}
+
+func (h *AIHandler) evaluateSync(c *gin.Context, task *model.Task, actor model.OverlayActor, filter service.AIFilter) {
+	result, err := h.evaluator.EvaluateSync(c.Request.Context(), task, actor, filter)
 	if err != nil {
-		ErrorInternal(c, err.Error())
+		ErrorInternal(c, "AI evaluation failed")
 		return
 	}
 

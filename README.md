@@ -237,6 +237,7 @@ Octopus 不保存新生成报告，也不生成对象存储下载链接；报告
 |------|--------|------|
 | SERVER_PORT | 8080 | 服务端口 |
 | GIN_MODE | debug | 运行模式 |
+| TRUSTED_PROXIES | 空 | 允许提供 `X-Forwarded-For` 的反向代理 IP/CIDR，多个值用逗号分隔；直连部署保持为空 |
 | DB_DRIVER | postgres | 数据库驱动 |
 | DB_DSN | host=localhost user=octopus password=octopus dbname=octopus port=5432 sslmode=disable TimeZone=Asia/Shanghai | 数据库连接串 |
 | OUTPUT_DIR | /mnt/data/output | 输出目录 (UUID 父目录) |

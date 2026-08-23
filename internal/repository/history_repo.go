@@ -25,16 +25,14 @@ func (r *HistoryRepository) scopedHistory(modelValue interface{}, table string, 
 	db := r.db.Model(modelValue).Where(table+".reviewed = ?", true)
 	if query != nil && !query.IncludeAll {
 		db = db.Joins("JOIN tasks ON tasks.uuid = " + table + ".task_id")
-		if query.ExternalOrgID != "" {
-			db = db.Where("tasks.external_org_id = ?", query.ExternalOrgID)
-		} else {
-			db = db.Where("tasks.created_by = ?", query.CreatedBy)
-		}
+	}
+	if query != nil {
+		db = applyTaskActorScope(db, query.ExternalOrgID, query.CreatedBy, query.IncludeAll)
 	}
 	return db
 }
 
-func (r *HistoryRepository) scopedSNVDetectionRecords(gene, hgvsc, hgvsp string, query *model.HistoryListQuery) []model.DetectionRecord {
+func (r *HistoryRepository) scopedSNVDetectionRecords(gene, hgvsc, hgvsp string, query *model.HistoryListQuery) ([]model.DetectionRecord, error) {
 	type row struct {
 		ID              string
 		TaskID          string
@@ -54,16 +52,14 @@ func (r *HistoryRepository) scopedSNVDetectionRecords(gene, hgvsc, hgvsp string,
 		Joins("JOIN tasks ON tasks.uuid = result_snv_indels.task_id").
 		Where("result_snv_indels.gene = ? AND result_snv_indels.hgv_sc = ? AND result_snv_indels.hgv_sp = ? AND result_snv_indels.reviewed = ?",
 			gene, hgvsc, hgvsp, true)
-	if query != nil && !query.IncludeAll {
-		if query.ExternalOrgID != "" {
-			db = db.Where("tasks.external_org_id = ?", query.ExternalOrgID)
-		} else {
-			db = db.Where("tasks.created_by = ?", query.CreatedBy)
-		}
+	if query != nil {
+		db = applyTaskActorScope(db, query.ExternalOrgID, query.CreatedBy, query.IncludeAll)
 	}
 
 	var rows []row
-	db.Scan(&rows)
+	if err := db.Scan(&rows).Error; err != nil {
+		return nil, err
+	}
 
 	records := make([]model.DetectionRecord, len(rows))
 	for i, row := range rows {
@@ -79,7 +75,7 @@ func (r *HistoryRepository) scopedSNVDetectionRecords(gene, hgvsc, hgvsp string,
 			ReviewedBy:      row.ReviewedBy,
 		}
 	}
-	return records
+	return records, nil
 }
 
 // GroupedSNVRow is the raw row from GROUP BY query
@@ -129,7 +125,9 @@ func (r *HistoryRepository) GetGroupedSNVIndels(query *model.HistoryListQuery) (
 		s := "%" + query.Search + "%"
 		countQuery = countQuery.Where("gene LIKE ? OR hgv_sc LIKE ? OR hgv_sp LIKE ?", s, s, s)
 	}
-	countQuery.Count(&total)
+	if err := countQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	// Apply pagination and sorting
 	orderClause := "detection_count DESC"
@@ -171,7 +169,10 @@ func (r *HistoryRepository) GetGroupedSNVIndels(query *model.HistoryListQuery) (
 	results := make([]model.GroupedSNVIndel, len(rows))
 	for i, row := range rows {
 		groupID := row.Gene + "-" + row.HGVSc + "-" + row.HGVSp
-		records := r.scopedSNVDetectionRecords(row.Gene, row.HGVSc, row.HGVSp, query)
+		records, err := r.scopedSNVDetectionRecords(row.Gene, row.HGVSc, row.HGVSp, query)
+		if err != nil {
+			return nil, 0, err
+		}
 		results[i] = model.GroupedSNVIndel{
 			GroupID:            groupID,
 			Gene:               row.Gene,
@@ -237,7 +238,9 @@ func (r *HistoryRepository) GetGroupedCNVSegments(query *model.HistoryListQuery)
 			s, s, s, s, s,
 		)
 	}
-	countQuery.Count(&total)
+	if err := countQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page, pageSize := normalizePage(query)
 
@@ -312,7 +315,9 @@ func (r *HistoryRepository) GetGroupedCNVExons(query *model.HistoryListQuery) ([
 		s := "%" + query.Search + "%"
 		countQuery = countQuery.Where("gene LIKE ? OR transcript LIKE ? OR CAST(exon_count AS TEXT) LIKE ?", s, s, s)
 	}
-	countQuery.Count(&total)
+	if err := countQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page, pageSize := normalizePage(query)
 
@@ -388,7 +393,9 @@ func (r *HistoryRepository) GetGroupedSTRs(query *model.HistoryListQuery) ([]mod
 			s, s, s, s, s,
 		)
 	}
-	countQuery.Count(&total)
+	if err := countQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page, pageSize := normalizePage(query)
 
@@ -450,8 +457,15 @@ func (r *HistoryRepository) GetGroupedMEIs(query *model.HistoryListQuery) ([]mod
 	}
 
 	var total int64
-	r.scopedHistory(&model.MEIVariant{}, "result_mei_variants", query).
-		Select("COUNT(DISTINCT chromosome || '-' || position || '-' || gene || '-' || te_type)").Count(&total)
+	countQuery := r.scopedHistory(&model.MEIVariant{}, "result_mei_variants", query).
+		Select("COUNT(DISTINCT chromosome || '-' || position || '-' || gene || '-' || te_type)")
+	if query.Search != "" {
+		s := "%" + query.Search + "%"
+		countQuery = countQuery.Where("gene LIKE ? OR chromosome LIKE ?", s, s)
+	}
+	if err := countQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page, pageSize := normalizePage(query)
 
@@ -527,7 +541,9 @@ func (r *HistoryRepository) GetGroupedMTVariants(query *model.HistoryListQuery) 
 			s, s, s, s, s, s,
 		)
 	}
-	countQuery.Count(&total)
+	if err := countQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page, pageSize := normalizePage(query)
 
@@ -596,7 +612,9 @@ func (r *HistoryRepository) GetGroupedUPDRegions(query *model.HistoryListQuery) 
 		s := "%" + query.Search + "%"
 		countQuery = countQuery.Where("chromosome LIKE ? OR genes LIKE ?", s, s)
 	}
-	countQuery.Count(&total)
+	if err := countQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page, pageSize := normalizePage(query)
 

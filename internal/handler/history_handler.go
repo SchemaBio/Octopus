@@ -18,9 +18,12 @@ func NewHistoryHandler(cfg *config.Config) *HistoryHandler {
 	}
 }
 
-func (h *HistoryHandler) bindQuery(c *gin.Context) *model.HistoryListQuery {
+func (h *HistoryHandler) bindQuery(c *gin.Context) (*model.HistoryListQuery, bool) {
 	var query model.HistoryListQuery
-	c.ShouldBindQuery(&query)
+	if err := c.ShouldBindQuery(&query); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return nil, false
+	}
 	if query.Page < 1 {
 		query.Page = 1
 	}
@@ -30,7 +33,7 @@ func (h *HistoryHandler) bindQuery(c *gin.Context) *model.HistoryListQuery {
 	if query.PageSize > 100 {
 		query.PageSize = 100
 	}
-	return &query
+	return &query, true
 }
 
 func (h *HistoryHandler) applyScope(c *gin.Context, query *model.HistoryListQuery) bool {
@@ -53,7 +56,10 @@ func (h *HistoryHandler) applyScope(c *gin.Context, query *model.HistoryListQuer
 
 // ListGroupedSNVIndels returns grouped SNV/Indel history
 func (h *HistoryHandler) ListGroupedSNVIndels(c *gin.Context) {
-	query := h.bindQuery(c)
+	query, ok := h.bindQuery(c)
+	if !ok {
+		return
+	}
 	if !h.applyScope(c, query) {
 		return
 	}
@@ -67,7 +73,10 @@ func (h *HistoryHandler) ListGroupedSNVIndels(c *gin.Context) {
 
 // ListGroupedCNVSegments returns grouped CNV segment history
 func (h *HistoryHandler) ListGroupedCNVSegments(c *gin.Context) {
-	query := h.bindQuery(c)
+	query, ok := h.bindQuery(c)
+	if !ok {
+		return
+	}
 	if !h.applyScope(c, query) {
 		return
 	}
@@ -81,7 +90,10 @@ func (h *HistoryHandler) ListGroupedCNVSegments(c *gin.Context) {
 
 // ListGroupedCNVExons returns grouped CNV exon history
 func (h *HistoryHandler) ListGroupedCNVExons(c *gin.Context) {
-	query := h.bindQuery(c)
+	query, ok := h.bindQuery(c)
+	if !ok {
+		return
+	}
 	if !h.applyScope(c, query) {
 		return
 	}
@@ -95,7 +107,10 @@ func (h *HistoryHandler) ListGroupedCNVExons(c *gin.Context) {
 
 // ListGroupedSTRs returns grouped STR history
 func (h *HistoryHandler) ListGroupedSTRs(c *gin.Context) {
-	query := h.bindQuery(c)
+	query, ok := h.bindQuery(c)
+	if !ok {
+		return
+	}
 	if !h.applyScope(c, query) {
 		return
 	}
@@ -109,7 +124,10 @@ func (h *HistoryHandler) ListGroupedSTRs(c *gin.Context) {
 
 // ListGroupedMEIs returns grouped MEI history
 func (h *HistoryHandler) ListGroupedMEIs(c *gin.Context) {
-	query := h.bindQuery(c)
+	query, ok := h.bindQuery(c)
+	if !ok {
+		return
+	}
 	if !h.applyScope(c, query) {
 		return
 	}
@@ -123,7 +141,10 @@ func (h *HistoryHandler) ListGroupedMEIs(c *gin.Context) {
 
 // ListGroupedMTVariants returns grouped MT variant history
 func (h *HistoryHandler) ListGroupedMTVariants(c *gin.Context) {
-	query := h.bindQuery(c)
+	query, ok := h.bindQuery(c)
+	if !ok {
+		return
+	}
 	if !h.applyScope(c, query) {
 		return
 	}
@@ -137,7 +158,10 @@ func (h *HistoryHandler) ListGroupedMTVariants(c *gin.Context) {
 
 // ListGroupedUPDRegions returns grouped UPD region history
 func (h *HistoryHandler) ListGroupedUPDRegions(c *gin.Context) {
-	query := h.bindQuery(c)
+	query, ok := h.bindQuery(c)
+	if !ok {
+		return
+	}
 	if !h.applyScope(c, query) {
 		return
 	}

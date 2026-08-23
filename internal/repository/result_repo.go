@@ -43,12 +43,20 @@ func (r *ResultRepository) PaginateSNVIndels(query *model.SNVIndelListQuery) ([]
 		db = db.Where("acmg_classification = ?", query.Classification)
 	}
 	if query.GeneListID != "" {
-		// Filter by gene list - get genes from gene_list_genes table
-		db = db.Where("gene IN (SELECT gene FROM gene_list_genes WHERE gene_list_id = ?)", query.GeneListID)
+		// GeneListID is resolved by ResultService against the authenticated
+		// actor. Gene lists are stored as JSONB in gene_lists, so querying the
+		// legacy/non-existent gene_list_genes table is both incorrect and unsafe.
+		if len(query.GeneListGenes) == 0 {
+			db = db.Where("1 = 0")
+		} else {
+			db = db.Where("gene IN ?", query.GeneListGenes)
+		}
 	}
 
 	var total int64
-	db.Count(&total)
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page := query.Page
 	if page < 1 {
@@ -100,7 +108,9 @@ func (r *ResultRepository) PaginateCNVSegments(query *model.CNVSegmentListQuery)
 	}
 
 	var total int64
-	db.Count(&total)
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page := query.Page
 	if page < 1 {
@@ -147,7 +157,9 @@ func (r *ResultRepository) PaginateCNVExons(query *model.CNVExonListQuery) ([]mo
 	}
 
 	var total int64
-	db.Count(&total)
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page := query.Page
 	if page < 1 {
@@ -197,7 +209,9 @@ func (r *ResultRepository) PaginateSTRs(query *model.STRListQuery) ([]model.STR,
 	}
 
 	var total int64
-	db.Count(&total)
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page := query.Page
 	if page < 1 {
@@ -244,7 +258,9 @@ func (r *ResultRepository) PaginateMEIs(query *model.MEIListQuery) ([]model.MEIV
 	}
 
 	var total int64
-	db.Count(&total)
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page := query.Page
 	if page < 1 {
@@ -291,7 +307,9 @@ func (r *ResultRepository) PaginateMTVariants(query *model.MTListQuery) ([]model
 	}
 
 	var total int64
-	db.Count(&total)
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page := query.Page
 	if page < 1 {
@@ -335,7 +353,9 @@ func (r *ResultRepository) PaginateUPDRegions(query *model.UPDListQuery) ([]mode
 	}
 
 	var total int64
-	db.Count(&total)
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page := query.Page
 	if page < 1 {
@@ -448,7 +468,9 @@ func (r *ResultRepository) PaginateROHRegions(query *model.ROHListQuery) ([]mode
 	}
 
 	var total int64
-	db.Count(&total)
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	page := query.Page
 	if page < 1 {

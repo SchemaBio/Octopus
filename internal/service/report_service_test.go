@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -85,7 +86,7 @@ func TestGenerateReportDownloadStreamsAPIResponse(t *testing.T) {
 	}
 
 	download, err := svc.generateReportDownload(
-		t.Context(),
+		context.Background(),
 		&model.ReportTemplate{Name: "clinical", APIEndpoint: "https://8.8.8.8/generate", APIKey: "secret"},
 		&model.Task{UUID: "task-1", Name: "Task One", SampleID: "sample-1", Pipeline: "wes"},
 		&model.ReportCreateRequest{Name: "ignored-name", TemplateName: "clinical"},
@@ -144,7 +145,7 @@ func TestGenerateReportDownloadReturnsAPIError(t *testing.T) {
 	}
 
 	_, err := svc.generateReportDownload(
-		t.Context(),
+		context.Background(),
 		&model.ReportTemplate{Name: "clinical", APIEndpoint: "https://8.8.8.8/generate"},
 		&model.Task{UUID: "task-1"},
 		&model.ReportCreateRequest{Name: "report", TemplateName: "clinical"},

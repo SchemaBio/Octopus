@@ -72,8 +72,8 @@ type streamDelta struct {
 	} `json:"choices"`
 }
 
-// Chat sends a non-streaming chat request and returns the response
-func (c *LLMClient) Chat(messages []chatMessage) (string, error) {
+// Chat sends a non-streaming chat request and returns the response.
+func (c *LLMClient) Chat(ctx context.Context, messages []chatMessage) (string, error) {
 	targetURL, err := c.chatCompletionsURL()
 	if err != nil {
 		return "", err
@@ -90,7 +90,7 @@ func (c *LLMClient) Chat(messages []chatMessage) (string, error) {
 		return "", err
 	}
 
-	req, err := http.NewRequest("POST", targetURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -120,8 +120,8 @@ func (c *LLMClient) Chat(messages []chatMessage) (string, error) {
 	return chatResp.Choices[0].Message.Content, nil
 }
 
-// ChatStream sends a streaming chat request and calls onChunk for each delta
-func (c *LLMClient) ChatStream(messages []chatMessage, onChunk func(content string) error) error {
+// ChatStream sends a streaming chat request and calls onChunk for each delta.
+func (c *LLMClient) ChatStream(ctx context.Context, messages []chatMessage, onChunk func(content string) error) error {
 	targetURL, err := c.chatCompletionsURL()
 	if err != nil {
 		return err
@@ -138,7 +138,7 @@ func (c *LLMClient) ChatStream(messages []chatMessage, onChunk func(content stri
 		return err
 	}
 
-	req, err := http.NewRequest("POST", targetURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

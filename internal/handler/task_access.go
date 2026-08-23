@@ -24,15 +24,8 @@ func requireTaskAccess(c *gin.Context, taskRepo *repository.TaskRepository, task
 		return nil, false
 	}
 
-	if role == string(model.SystemRoleSuperAdmin) {
-		return task, true
-	}
-
-	if orgID, ok := middleware.GetCurrentOrg(c); ok && task.ExternalOrgID != "" && task.ExternalOrgID == orgID {
-		return task, true
-	}
-
-	if task.CreatedBy != 0 && task.CreatedBy == userID {
+	orgID, _ := middleware.GetCurrentOrg(c)
+	if taskAccessAllowed(task, userID, role, orgID) {
 		return task, true
 	}
 
@@ -41,6 +34,22 @@ func requireTaskAccess(c *gin.Context, taskRepo *repository.TaskRepository, task
 	c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
 	c.Abort()
 	return nil, false
+}
+
+// taskAccessAllowed keeps SaaS tenant ownership and standalone ownership
+// mutually exclusive. Once a task belongs to an organization, CreatedBy must
+// never grant access from another (or missing) organization context.
+func taskAccessAllowed(task *model.Task, userID uint, role, orgID string) bool {
+	if task == nil {
+		return false
+	}
+	if role == string(model.SystemRoleSuperAdmin) {
+		return true
+	}
+	if task.ExternalOrgID != "" {
+		return orgID != "" && task.ExternalOrgID == orgID
+	}
+	return task.CreatedBy != 0 && task.CreatedBy == userID
 }
 
 func applyTaskListScope(c *gin.Context, query *model.TaskListQuery) bool {

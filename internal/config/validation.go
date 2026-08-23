@@ -2,12 +2,21 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 )
 
 // ValidateStartup checks the configuration for common mistakes at server startup.
 func ValidateStartup(cfg *Config) error {
+	for _, proxy := range cfg.Server.TrustedProxies {
+		if net.ParseIP(proxy) != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(proxy); err != nil {
+			return fmt.Errorf("TRUSTED_PROXIES contains invalid IP or CIDR %q", proxy)
+		}
+	}
 	// In release mode, enforce stronger JWT secret
 	if cfg.Server.Mode == "release" {
 		if err := validateJWTSecret(cfg.JWT.Secret); err != nil {

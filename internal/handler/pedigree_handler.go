@@ -211,7 +211,7 @@ func (h *PedigreeHandler) CreateMember(c *gin.Context) {
 		return
 	}
 
-	member, err := h.svc.CreateMember(pedigreeID, &req)
+	member, err := h.svc.CreateMember(pedigreeID, &req, taskActorFromContext(c))
 	if err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
@@ -234,7 +234,7 @@ func (h *PedigreeHandler) UpdateMember(c *gin.Context) {
 		return
 	}
 
-	member, err := h.svc.UpdateMember(pedigreeID, memberID, &req)
+	member, err := h.svc.UpdateMember(pedigreeID, memberID, &req, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, err.Error())
 		return

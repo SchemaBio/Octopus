@@ -71,17 +71,7 @@ type ResultImportBatchAuditRow struct {
 func (r *ResultImportBatchRepository) PaginateByQuery(q *model.ResultImportBatchListQuery) ([]ResultImportBatchAuditRow, int64, error) {
 	db := r.db.Model(&model.ResultImportBatch{}).
 		Joins("LEFT JOIN tasks ON tasks.uuid = result_import_batches.task_uuid")
-
-	if !q.IncludeAll {
-		switch {
-		case q.ExternalOrgID != "":
-			db = db.Where("tasks.external_org_id = ?", q.ExternalOrgID)
-		case q.UserID != 0:
-			db = db.Where("tasks.created_by = ?", q.UserID)
-		default:
-			db = db.Where("1 = 0")
-		}
-	}
+	db = applyTaskActorScope(db, q.ExternalOrgID, q.UserID, q.IncludeAll)
 	if q.Status != "" {
 		db = db.Where("result_import_batches.status = ?", q.Status)
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type DataAssetService struct {
@@ -106,20 +108,99 @@ func (s *DataAssetService) Delete(ctx context.Context, uuid string, actor model.
 	if actor.Role != string(model.SystemRoleSuperAdmin) && asset.CreatedBy != actor.UserID {
 		return fmt.Errorf("data asset not found")
 	}
-	if err := s.deleteStoredObject(ctx, asset); err != nil {
+	return s.deleteAsset(ctx, asset)
+}
+
+type assetDeletionState struct {
+	assetStatus model.FileStatus
+	fileStatus  model.FileStatus
+	hasFile     bool
+}
+
+func (s *DataAssetService) deleteAsset(ctx context.Context, asset *model.DataAsset) error {
+	db := database.GetDB()
+	if db == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+	state, err := markAssetDeleting(db.WithContext(ctx), asset)
+	if err != nil {
 		return err
 	}
-	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+	if asset.Status == model.FileStatusDeleted {
+		return nil
+	}
+	if err := s.deleteStoredObject(ctx, asset); err != nil {
+		_ = restoreAssetDeletion(db.WithContext(ctx), asset, state)
+		return err
+	}
+	return finalizeAssetDeletion(db.WithContext(ctx), asset)
+}
+
+func markAssetDeleting(db *gorm.DB, asset *model.DataAsset) (assetDeletionState, error) {
+	state := assetDeletionState{}
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var locked model.DataAsset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, asset.ID).Error; err != nil {
+			return fmt.Errorf("data asset not found: %w", err)
+		}
+		state.assetStatus = locked.Status
+		if locked.Status == model.FileStatusDeleted {
+			*asset = locked
+			return nil
+		}
+		if locked.UploadFileID != nil {
+			var file model.UploadFile
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&file, *locked.UploadFileID).Error; err != nil {
+				return fmt.Errorf("upload file not found: %w", err)
+			}
+			state.hasFile = true
+			state.fileStatus = file.Status
+			if err := tx.Model(&file).Update("status", model.FileStatusDeleting).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&locked).Update("status", model.FileStatusDeleting).Error; err != nil {
+			return err
+		}
+		locked.Status = model.FileStatusDeleting
+		*asset = locked
+		return nil
+	})
+	return state, err
+}
+
+func restoreAssetDeletion(db *gorm.DB, asset *model.DataAsset, state assetDeletionState) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if state.assetStatus != model.FileStatusDeleting && state.assetStatus != model.FileStatusDeleted {
+			if err := tx.Model(&model.DataAsset{}).
+				Where("id = ? AND status = ?", asset.ID, model.FileStatusDeleting).
+				Update("status", state.assetStatus).Error; err != nil {
+				return err
+			}
+		}
+		if state.hasFile && state.fileStatus != model.FileStatusDeleting && state.fileStatus != model.FileStatusDeleted {
+			return tx.Model(&model.UploadFile{}).
+				Where("id = ? AND status = ?", *asset.UploadFileID, model.FileStatusDeleting).
+				Update("status", state.fileStatus).Error
+		}
+		return nil
+	})
+}
+
+func finalizeAssetDeletion(db *gorm.DB, asset *model.DataAsset) error {
+	return db.Transaction(func(tx *gorm.DB) error {
 		if err := clearSampleAssetLinks(tx, asset.ID); err != nil {
 			return err
 		}
-		asset.Status = model.FileStatusDeleted
-		if err := tx.Save(asset).Error; err != nil {
+		if err := tx.Model(&model.DataAsset{}).Where("id = ?", asset.ID).Update("status", model.FileStatusDeleted).Error; err != nil {
 			return err
 		}
 		if asset.UploadFileID != nil {
-			_ = tx.Model(&model.UploadFile{}).Where("id = ?", *asset.UploadFileID).Update("status", model.FileStatusDeleted).Error
+			if err := tx.Model(&model.UploadFile{}).Where("id = ?", *asset.UploadFileID).Update("status", model.FileStatusDeleted).Error; err != nil {
+				return err
+			}
 		}
+		asset.Status = model.FileStatusDeleted
 		return nil
 	})
 }
@@ -146,7 +227,11 @@ func (s *DataAssetService) deleteStoredObject(ctx context.Context, asset *model.
 		}
 		return storage.delete(ctx, asset.StorageKey)
 	}
-	path, err := safeLocalUploadPath(s.cfg.Storage.LocalDir, asset.StorageKey)
+	storageKey := asset.StorageKey
+	if !filepath.IsAbs(storageKey) {
+		storageKey = filepath.Join(s.cfg.Storage.LocalDir, storageKey)
+	}
+	path, err := safeLocalUploadPath(s.cfg.Storage.LocalDir, storageKey)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -187,25 +272,13 @@ func (s *DataAssetService) cleanupExpired(ctx context.Context) {
 		if err != nil || len(assets) == 0 {
 			return
 		}
+		deleted := 0
 		for i := range assets {
-			if err := s.deleteStoredObject(ctx, &assets[i]); err != nil {
-				continue
+			if err := s.deleteAsset(ctx, &assets[i]); err == nil {
+				deleted++
 			}
-			_ = database.GetDB().Transaction(func(tx *gorm.DB) error {
-				if err := clearSampleAssetLinks(tx, assets[i].ID); err != nil {
-					return err
-				}
-				assets[i].Status = model.FileStatusDeleted
-				if err := tx.Save(&assets[i]).Error; err != nil {
-					return err
-				}
-				if assets[i].UploadFileID != nil {
-					return tx.Model(&model.UploadFile{}).Where("id = ?", *assets[i].UploadFileID).Update("status", model.FileStatusDeleted).Error
-				}
-				return nil
-			})
 		}
-		if len(assets) < 100 {
+		if len(assets) < 100 || deleted == 0 {
 			return
 		}
 	}

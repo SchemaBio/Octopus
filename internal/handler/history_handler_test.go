@@ -58,7 +58,10 @@ func TestHistoryApplyScopeAllowsSuperAdminAndClampsPageSize(t *testing.T) {
 	c.Set("role", string(model.SystemRoleSuperAdmin))
 
 	h := &HistoryHandler{}
-	query := h.bindQuery(c)
+	query, ok := h.bindQuery(c)
+	if !ok {
+		t.Fatal("expected query binding to succeed")
+	}
 	if query.PageSize != 100 {
 		t.Fatalf("expected page size clamp to 100, got %d", query.PageSize)
 	}
@@ -67,5 +70,21 @@ func TestHistoryApplyScopeAllowsSuperAdminAndClampsPageSize(t *testing.T) {
 	}
 	if !query.IncludeAll || query.CreatedBy != 0 || query.ExternalOrgID != "" {
 		t.Fatalf("unexpected admin scoped query: %+v", query)
+	}
+}
+
+func TestHistoryBindQueryRejectsInvalidPagination(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/history?page=invalid", nil)
+
+	h := &HistoryHandler{}
+	query, ok := h.bindQuery(c)
+	if ok || query != nil {
+		t.Fatalf("bindQuery = (%+v, %v), want rejection", query, ok)
+	}
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
 }

@@ -80,12 +80,22 @@ func (GeneList) TableName() string {
 
 // GetGenes parses GenesJSON into a string slice
 func (g *GeneList) GetGenes() []string {
+	genes, _ := g.ParseGenes()
+	return genes
+}
+
+// ParseGenes parses GenesJSON and reports malformed persisted data. Security-
+// sensitive consumers should use this method so corruption cannot silently
+// turn an intended gene filter into an unrestricted query.
+func (g *GeneList) ParseGenes() ([]string, error) {
 	if g.GenesJSON == "" {
-		return []string{}
+		return []string{}, nil
 	}
 	var genes []string
-	json.Unmarshal([]byte(g.GenesJSON), &genes)
-	return genes
+	if err := json.Unmarshal([]byte(g.GenesJSON), &genes); err != nil {
+		return nil, err
+	}
+	return genes, nil
 }
 
 // SetGenes sets GenesJSON from a string slice

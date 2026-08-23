@@ -2,6 +2,8 @@ package service
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -16,6 +18,7 @@ type PedigreeService struct {
 	cfg        *config.Config
 	repo       *repository.PedigreeRepository
 	memberRepo *repository.PedigreeMemberRepository
+	sampleRepo *repository.SampleRepository
 }
 
 // NewPedigreeService creates a new pedigree service
@@ -24,6 +27,7 @@ func NewPedigreeService(cfg *config.Config) *PedigreeService {
 		cfg:        cfg,
 		repo:       repository.NewPedigreeRepository(),
 		memberRepo: repository.NewPedigreeMemberRepository(),
+		sampleRepo: repository.NewSampleRepository(),
 	}
 }
 
@@ -143,26 +147,36 @@ func (s *PedigreeService) SetProband(pedigreeID, memberID string) (*model.Pedigr
 	}
 
 	// Verify member exists
-	_, err = s.memberRepo.FindByStringID(memberID)
-	if err != nil {
+	member, err := s.memberRepo.FindByStringID(memberID)
+	if err != nil || member.PedigreeID != pedigreeID {
 		return nil, errors.New("member not found")
 	}
 
 	// Update proband in transaction
 	tx := database.GetDB().Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback()
+		}
+	}()
 	if err := s.memberRepo.UpdateProband(pedigreeID, memberID, tx); err != nil {
-		tx.Rollback()
 		return nil, err
 	}
 
 	// Update pedigree's proband_member_id
 	if err := tx.Model(&model.Pedigree{}).Where("id = ?", pedigreeID).
 		Update("proband_member_id", memberID).Error; err != nil {
-		tx.Rollback()
 		return nil, err
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+	committed = true
 
 	return s.Get(pedigreeID)
 }
@@ -199,11 +213,17 @@ func (s *PedigreeService) GetMember(pedigreeID, memberID string) (*model.Pedigre
 }
 
 // CreateMember creates a new member in a pedigree
-func (s *PedigreeService) CreateMember(pedigreeID string, req *model.PedigreeMemberCreateRequest) (*model.PedigreeMemberResp, error) {
+func (s *PedigreeService) CreateMember(pedigreeID string, req *model.PedigreeMemberCreateRequest, actor model.OverlayActor) (*model.PedigreeMemberResp, error) {
 	// Verify pedigree exists
 	_, err := s.repo.FindByStringID(pedigreeID)
 	if err != nil {
 		return nil, errors.New("pedigree not found")
+	}
+	if err := s.validateLinkedSample(req.SampleID, actor); err != nil {
+		return nil, err
+	}
+	if err := s.validateParentMembers(pedigreeID, "", req.FatherID, req.MotherID); err != nil {
+		return nil, err
 	}
 
 	hasSample := req.SampleID != ""
@@ -242,13 +262,27 @@ func (s *PedigreeService) CreateMember(pedigreeID string, req *model.PedigreeMem
 }
 
 // UpdateMember updates a member
-func (s *PedigreeService) UpdateMember(pedigreeID, memberID string, req *model.PedigreeMemberUpdateRequest) (*model.PedigreeMemberResp, error) {
+func (s *PedigreeService) UpdateMember(pedigreeID, memberID string, req *model.PedigreeMemberUpdateRequest, actor model.OverlayActor) (*model.PedigreeMemberResp, error) {
 	member, err := s.memberRepo.FindByStringID(memberID)
 	if err != nil {
 		return nil, errors.New("member not found")
 	}
 	if member.PedigreeID != pedigreeID {
 		return nil, errors.New("member does not belong to this pedigree")
+	}
+	if err := s.validateLinkedSample(req.SampleID, actor); err != nil {
+		return nil, err
+	}
+	effectiveFatherID := member.FatherID
+	if req.FatherID != "" {
+		effectiveFatherID = req.FatherID
+	}
+	effectiveMotherID := member.MotherID
+	if req.MotherID != "" {
+		effectiveMotherID = req.MotherID
+	}
+	if err := s.validateParentMembers(pedigreeID, memberID, effectiveFatherID, effectiveMotherID); err != nil {
+		return nil, err
 	}
 
 	if req.Name != "" {
@@ -298,6 +332,38 @@ func (s *PedigreeService) UpdateMember(pedigreeID, memberID string, req *model.P
 
 	resp := MemberToResponse(member)
 	return &resp, nil
+}
+
+func (s *PedigreeService) validateLinkedSample(sampleID string, actor model.OverlayActor) error {
+	sampleID = strings.TrimSpace(sampleID)
+	if sampleID == "" {
+		return nil
+	}
+	if _, err := s.sampleRepo.FindScopedByUUID(sampleID, actor); err != nil {
+		return errors.New("sample not found")
+	}
+	return nil
+}
+
+func (s *PedigreeService) validateParentMembers(pedigreeID, memberID, fatherID, motherID string) error {
+	fatherID = strings.TrimSpace(fatherID)
+	motherID = strings.TrimSpace(motherID)
+	if fatherID != "" && fatherID == motherID {
+		return errors.New("father and mother must be different members")
+	}
+	for label, id := range map[string]string{"father": fatherID, "mother": motherID} {
+		if id == "" {
+			continue
+		}
+		if memberID != "" && id == memberID {
+			return fmt.Errorf("%s cannot reference the member itself", label)
+		}
+		parent, err := s.memberRepo.FindByStringID(id)
+		if err != nil || parent.PedigreeID != pedigreeID {
+			return fmt.Errorf("%s member not found in this pedigree", label)
+		}
+	}
+	return nil
 }
 
 // DeleteMember deletes a member

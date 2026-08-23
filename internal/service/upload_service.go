@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -13,9 +14,12 @@ import (
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type UploadService struct {
@@ -29,6 +33,11 @@ type UploadService struct {
 var safeUploadFilename = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+=-]{0,254}$`)
 
 const maxBEDUploadBytes int64 = 20 << 20
+
+type preparedUploadMetadata struct {
+	file  *model.UploadFile
+	asset *model.DataAsset
+}
 
 func normalizeReferenceGenome(value string) (string, error) {
 	switch strings.ToUpper(strings.TrimSpace(value)) {
@@ -154,15 +163,6 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 			return nil, nil, nil, err
 		}
 	}
-	if req.StorageQuotaBytes > 0 && orgID != "" {
-		usedBytes, err := s.fileRepo.SumFileSize(&model.UploadFileListQuery{ExternalOrgID: orgID})
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to check organization storage quota: %w", err)
-		}
-		if err := validateStorageQuota(usedBytes, requestedBytes, req.StorageQuotaBytes); err != nil {
-			return nil, nil, nil, err
-		}
-	}
 	var objectStore *s3Storage
 	if provider == model.UploadProviderS3 {
 		var err error
@@ -194,10 +194,6 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		job.UploadPolicyAcknowledgedAt = &acknowledgedAt
 	}
 
-	if err := s.jobRepo.Create(job); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to create upload job: %w", err)
-	}
-
 	storageFolder := ""
 	if provider != model.UploadProviderS3 || orgID == "" {
 		var err error
@@ -207,9 +203,9 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		}
 	}
 
-	files := make([]*model.UploadFile, 0, len(req.Files))
+	prepared := make([]preparedUploadMetadata, 0, len(req.Files))
 	presignedURLs := make([]string, 0, len(req.Files))
-
+	assetTime := time.Now()
 	for _, f := range req.Files {
 		fileUUID := uuid.New().String()
 		storageKey := ""
@@ -225,7 +221,6 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 
 		uploadFile := &model.UploadFile{
 			UUID:       fileUUID,
-			JobID:      job.ID,
 			JobUUID:    jobUUID,
 			FileName:   f.FileName,
 			StorageKey: storageKey,
@@ -234,23 +229,14 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 			Status:     model.FileStatusPending,
 		}
 
-		if err := s.fileRepo.Create(uploadFile); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to create upload file record: %w", err)
-		}
-		expiresAt := dataAssetExpiry(s.cfg.Storage.RetentionDays, f.ReadType, time.Now())
+		expiresAt := dataAssetExpiry(s.cfg.Storage.RetentionDays, f.ReadType, assetTime)
 		asset := &model.DataAsset{
 			UUID: fileUUID, ExternalOrgID: orgID, CreatedBy: userID,
-			UploadFileID: &uploadFile.ID, Provider: provider, StorageKey: storageKey,
+			Provider: provider, StorageKey: storageKey,
 			FileName: f.FileName, InternalID: req.InternalID, FileSize: f.FileSize, ReadType: f.ReadType,
 			ReferenceGenome: req.ReferenceGenome,
 			Status:          model.FileStatusPending, Source: model.DataAssetSourceUpload, ExpiresAt: expiresAt,
 		}
-		if err := s.assetRepo.Create(asset); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to register data asset: %w", err)
-		}
-
-		files = append(files, uploadFile)
-
 		if objectStore != nil {
 			url, err := objectStore.presignUpload(ctx, storageKey)
 			if err != nil {
@@ -260,9 +246,65 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		} else {
 			presignedURLs = append(presignedURLs, "")
 		}
+		prepared = append(prepared, preparedUploadMetadata{file: uploadFile, asset: asset})
+	}
+	db := database.GetDB()
+	if db == nil {
+		return nil, nil, nil, fmt.Errorf("database is not initialized")
+	}
+	if err := persistUploadMetadata(db.WithContext(ctx), job, prepared, requestedBytes, req.StorageQuotaBytes); err != nil {
+		return nil, nil, nil, err
+	}
+	files := make([]*model.UploadFile, len(prepared))
+	for i := range prepared {
+		files[i] = prepared[i].file
 	}
 
 	return job, files, presignedURLs, nil
+}
+
+func persistUploadMetadata(db *gorm.DB, job *model.UploadJob, prepared []preparedUploadMetadata, requestedBytes, quotaBytes int64) error {
+	if db == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if quotaBytes > 0 && job.ExternalOrgID != "" {
+			lockKey := "octopus:storage-quota:" + job.ExternalOrgID
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockKey).Error; err != nil {
+				return fmt.Errorf("failed to lock organization storage quota: %w", err)
+			}
+			usedBytes, err := sumReservedOrganizationBytes(tx, job.ExternalOrgID)
+			if err != nil {
+				return fmt.Errorf("failed to check organization storage quota: %w", err)
+			}
+			if err := validateStorageQuota(usedBytes, requestedBytes, quotaBytes); err != nil {
+				return err
+			}
+		}
+		if err := tx.Create(job).Error; err != nil {
+			return fmt.Errorf("failed to create upload job: %w", err)
+		}
+		for _, item := range prepared {
+			item.file.JobID = job.ID
+			if err := tx.Create(item.file).Error; err != nil {
+				return fmt.Errorf("failed to create upload file record: %w", err)
+			}
+			item.asset.UploadFileID = &item.file.ID
+			if err := tx.Create(item.asset).Error; err != nil {
+				return fmt.Errorf("failed to register data asset: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+func sumReservedOrganizationBytes(tx *gorm.DB, orgID string) (int64, error) {
+	var sum int64
+	err := tx.Model(&model.DataAsset{}).
+		Where("external_org_id = ? AND status <> ?", orgID, model.FileStatusDeleted).
+		Select("COALESCE(SUM(file_size), 0)").
+		Scan(&sum).Error
+	return sum, err
 }
 
 func validateStorageQuota(usedBytes, requestedBytes, quotaBytes int64) error {
@@ -311,7 +353,7 @@ func (s *UploadService) buildStorageKey(provider model.UploadProvider, orgID, st
 	return filepath.Join(storageFolder, jobUUID, fileName)
 }
 
-func (s *UploadService) SaveLocalFile(ctx context.Context, userID uint, fileUUID string, reader io.Reader, fileSize int64) (*model.UploadFile, error) {
+func (s *UploadService) SaveLocalFile(ctx context.Context, actor model.OverlayActor, fileUUID string, reader io.Reader, fileSize int64) (*model.UploadFile, error) {
 	existingFile, err := s.fileRepo.FindByUUID(fileUUID)
 	if err != nil {
 		return nil, fmt.Errorf("upload file record not found: %w", err)
@@ -321,14 +363,20 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, userID uint, fileUUID
 	if err != nil {
 		return nil, fmt.Errorf("upload job not found: %w", err)
 	}
-	if job.UserID != userID {
-		return nil, fmt.Errorf("upload file does not belong to current user")
+	if !uploadJobAccessAllowed(job, actor) {
+		return nil, fmt.Errorf("upload file not found")
 	}
 	if job.Provider != model.UploadProviderLocal {
 		return nil, fmt.Errorf("upload job does not use local storage")
 	}
+	if existingFile.Status != model.FileStatusPending && existingFile.Status != model.FileStatusFailed {
+		return nil, fmt.Errorf("upload file is not writable")
+	}
 	if err := validateUploadFilename(existingFile.FileName); err != nil {
 		return nil, err
+	}
+	if fileSize <= 0 || (existingFile.FileSize > 0 && fileSize != existingFile.FileSize) {
+		return nil, fmt.Errorf("uploaded file size mismatch: expected %d, got %d", existingFile.FileSize, fileSize)
 	}
 
 	storagePath := existingFile.StorageKey
@@ -339,59 +387,94 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, userID uint, fileUUID
 		return nil, err
 	}
 	dir := filepath.Dir(storagePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create upload directory: %w", err)
 	}
 
 	filePath := storagePath
-	f, err := os.Create(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create file: %w", err)
-	}
-	defer f.Close()
-
-	written, err := io.Copy(f, reader)
-	if err != nil {
-		os.Remove(filePath)
-		return nil, fmt.Errorf("failed to write file: %w", err)
-	}
-	if s.cfg.Storage.MaxSizeMB > 0 && written > int64(s.cfg.Storage.MaxSizeMB)*1024*1024 {
-		os.Remove(filePath)
-		return nil, fmt.Errorf("file exceeds maximum size of %d MB", s.cfg.Storage.MaxSizeMB)
-	}
-	if job.FileType == model.UploadFileTypeBed && written > maxBEDUploadBytes {
-		os.Remove(filePath)
-		return nil, fmt.Errorf("BED file exceeds maximum size of 20 MB")
-	}
-
-	existingFile.StorageKey = filePath
-	existingFile.FileSize = written
-	existingFile.Status = model.FileStatusCompleted
-	if err := s.fileRepo.Update(existingFile); err != nil {
-		os.Remove(filePath)
-		return nil, fmt.Errorf("failed to update file record: %w", err)
-	}
-	if asset, err := s.assetRepo.FindByUploadFileID(existingFile.ID); err == nil {
-		asset.StorageKey = filePath
-		asset.FileSize = written
-		asset.Status = model.FileStatusCompleted
-		if err := s.assetRepo.Update(asset); err != nil {
-			return nil, fmt.Errorf("failed to update data asset: %w", err)
+	maxSize := existingFile.FileSize
+	if s.cfg.Storage.MaxSizeMB > 0 {
+		configuredMax := int64(s.cfg.Storage.MaxSizeMB) * 1024 * 1024
+		if maxSize <= 0 || configuredMax < maxSize {
+			maxSize = configuredMax
 		}
 	}
-
-	s.syncJobStatus(job)
+	if job.FileType == model.UploadFileTypeBed && (maxSize <= 0 || maxBEDUploadBytes < maxSize) {
+		maxSize = maxBEDUploadBytes
+	}
+	written, err := writeLocalUploadFile(filePath, reader, existingFile.FileSize, maxSize)
+	if err != nil {
+		return nil, err
+	}
+	db := database.GetDB()
+	if db == nil {
+		_ = os.Remove(filePath)
+		return nil, fmt.Errorf("database is not initialized")
+	}
+	allComplete, err := completeUploadMetadata(db.WithContext(ctx), existingFile, job, written, filePath)
+	if err != nil {
+		_ = os.Remove(filePath)
+		return nil, err
+	}
+	if allComplete {
+		NewSampleMatcher().run(context.Background())
+	}
 
 	return existingFile, nil
 }
 
-func (s *UploadService) CompleteS3File(ctx context.Context, userID uint, fileUUID string) (*model.UploadFile, error) {
+func writeLocalUploadFile(filePath string, reader io.Reader, expectedSize, maxSize int64) (int64, error) {
+	temp, err := os.CreateTemp(filepath.Dir(filePath), ".upload-*")
+	if err != nil {
+		return 0, fmt.Errorf("failed to create temporary upload file: %w", err)
+	}
+	tempPath := temp.Name()
+	keep := false
+	defer func() {
+		_ = temp.Close()
+		if !keep {
+			_ = os.Remove(tempPath)
+		}
+	}()
+
+	limit := expectedSize
+	if maxSize > 0 && (limit <= 0 || maxSize < limit) {
+		limit = maxSize
+	}
+	copyReader := reader
+	if limit > 0 && limit < math.MaxInt64 {
+		copyReader = io.LimitReader(reader, limit+1)
+	}
+	written, err := io.Copy(temp, copyReader)
+	if err != nil {
+		return 0, fmt.Errorf("failed to write file: %w", err)
+	}
+	if maxSize > 0 && written > maxSize {
+		return 0, fmt.Errorf("uploaded file exceeds maximum size of %d bytes", maxSize)
+	}
+	if expectedSize > 0 && written != expectedSize {
+		return 0, fmt.Errorf("uploaded file size mismatch: expected %d, got %d", expectedSize, written)
+	}
+	if err := temp.Sync(); err != nil {
+		return 0, fmt.Errorf("failed to sync uploaded file: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return 0, fmt.Errorf("failed to close uploaded file: %w", err)
+	}
+	if err := os.Rename(tempPath, filePath); err != nil {
+		return 0, fmt.Errorf("failed to publish uploaded file: %w", err)
+	}
+	keep = true
+	return written, nil
+}
+
+func (s *UploadService) CompleteS3File(ctx context.Context, actor model.OverlayActor, fileUUID string) (*model.UploadFile, error) {
 	file, err := s.fileRepo.FindByUUID(fileUUID)
 	if err != nil {
 		return nil, fmt.Errorf("upload file not found")
 	}
 	job, err := s.jobRepo.FindByUUID(file.JobUUID)
-	if err != nil || job.UserID != userID || job.Provider != model.UploadProviderS3 {
+	if err != nil || !uploadJobAccessAllowed(job, actor) || job.Provider != model.UploadProviderS3 {
 		return nil, fmt.Errorf("upload file not found")
 	}
 	storage, err := newS3Storage(ctx, s.cfg.Storage)
@@ -408,33 +491,29 @@ func (s *UploadService) CompleteS3File(ctx context.Context, userID uint, fileUUI
 	if job.FileType == model.UploadFileTypeBed && size > maxBEDUploadBytes {
 		return nil, fmt.Errorf("BED file exceeds maximum size of 20 MB")
 	}
-	file.FileSize = size
-	file.Status = model.FileStatusCompleted
-	if err := s.fileRepo.Update(file); err != nil {
-		return nil, err
+	db := database.GetDB()
+	if db == nil {
+		return nil, fmt.Errorf("database is not initialized")
 	}
-	asset, err := s.assetRepo.FindByUploadFileID(file.ID)
+	allComplete, err := completeUploadMetadata(db.WithContext(ctx), file, job, size, file.StorageKey)
 	if err != nil {
-		return nil, fmt.Errorf("data asset not found")
-	}
-	asset.FileSize = size
-	asset.Status = model.FileStatusCompleted
-	if err := s.assetRepo.Update(asset); err != nil {
 		return nil, err
 	}
-	s.syncJobStatus(job)
+	if allComplete {
+		NewSampleMatcher().run(context.Background())
+	}
 	return file, nil
 }
 
 // RetryS3File reissues a presigned URL for an interrupted file without
 // creating a second data-asset record.
-func (s *UploadService) RetryS3File(ctx context.Context, userID uint, fileUUID string) (*model.UploadFile, string, error) {
+func (s *UploadService) RetryS3File(ctx context.Context, actor model.OverlayActor, fileUUID string) (*model.UploadFile, string, error) {
 	file, err := s.fileRepo.FindByUUID(fileUUID)
 	if err != nil {
 		return nil, "", fmt.Errorf("upload file not found")
 	}
 	job, err := s.jobRepo.FindByUUID(file.JobUUID)
-	if err != nil || job.UserID != userID || job.Provider != model.UploadProviderS3 {
+	if err != nil || !uploadJobAccessAllowed(job, actor) || job.Provider != model.UploadProviderS3 {
 		return nil, "", fmt.Errorf("upload file not found")
 	}
 	if file.Status != model.FileStatusPending && file.Status != model.FileStatusFailed {
@@ -455,33 +534,103 @@ func (s *UploadService) RetryS3File(ctx context.Context, userID uint, fileUUID s
 	return file, url, nil
 }
 
-func (s *UploadService) syncJobStatus(job *model.UploadJob) {
-	allFiles, _ := s.fileRepo.FindByJobID(job.ID)
-	allComplete := true
-	for _, f := range allFiles {
-		if f.Status != model.FileStatusCompleted {
-			allComplete = false
-			break
-		}
+func completeUploadMetadata(db *gorm.DB, file *model.UploadFile, job *model.UploadJob, size int64, storageKey string) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("database is not initialized")
 	}
+	allComplete := false
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var lockedJob model.UploadJob
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedJob, job.ID).Error; err != nil {
+			return fmt.Errorf("upload job not found: %w", err)
+		}
+		var lockedFile model.UploadFile
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, file.ID).Error; err != nil || lockedFile.JobID != lockedJob.ID {
+			return fmt.Errorf("upload file not found")
+		}
+		if lockedFile.Status == model.FileStatusDeleted {
+			return fmt.Errorf("upload file was deleted")
+		}
+		lockedFile.StorageKey = storageKey
+		lockedFile.FileSize = size
+		lockedFile.Status = model.FileStatusCompleted
+		if err := tx.Save(&lockedFile).Error; err != nil {
+			return fmt.Errorf("failed to update file record: %w", err)
+		}
+		var asset model.DataAsset
+		if err := tx.Where("upload_file_id = ?", lockedFile.ID).First(&asset).Error; err != nil {
+			return fmt.Errorf("data asset not found: %w", err)
+		}
+		asset.StorageKey = storageKey
+		asset.FileSize = size
+		asset.Status = model.FileStatusCompleted
+		if err := tx.Save(&asset).Error; err != nil {
+			return fmt.Errorf("failed to update data asset: %w", err)
+		}
+		var incomplete int64
+		if err := tx.Model(&model.UploadFile{}).Where("job_id = ? AND status <> ?", lockedJob.ID, model.FileStatusCompleted).Count(&incomplete).Error; err != nil {
+			return fmt.Errorf("failed to reconcile upload job: %w", err)
+		}
+		allComplete = incomplete == 0
+		if allComplete {
+			lockedJob.Status = model.UploadJobStatusCompleted
+		} else {
+			lockedJob.Status = model.UploadJobStatusUploading
+		}
+		if err := tx.Save(&lockedJob).Error; err != nil {
+			return fmt.Errorf("failed to update upload job: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	file.StorageKey = storageKey
+	file.FileSize = size
+	file.Status = model.FileStatusCompleted
 	if allComplete {
 		job.Status = model.UploadJobStatusCompleted
 	} else {
 		job.Status = model.UploadJobStatusUploading
 	}
-	if err := s.jobRepo.Update(job); err == nil && allComplete {
-		// Reconcile immediately after the pair finishes uploading. The periodic
-		// matcher remains as a fallback for scanned or externally registered data.
-		NewSampleMatcher().run(context.Background())
-	}
+	return allComplete, nil
 }
 
-func (s *UploadService) GetJob(ctx context.Context, userID uint, uuid string) (*model.UploadJob, []model.UploadFile, error) {
+func uploadJobAccessAllowed(job *model.UploadJob, actor model.OverlayActor) bool {
+	if job == nil {
+		return false
+	}
+	if actor.Role == string(model.SystemRoleSuperAdmin) {
+		return true
+	}
+	if job.ExternalOrgID != "" {
+		return actor.OrgID != "" && job.ExternalOrgID == actor.OrgID && job.UserID == actor.UserID
+	}
+	return job.UserID != 0 && job.UserID == actor.UserID
+}
+
+// uploadJobUseAllowed is broader than uploadJobAccessAllowed: completed data
+// belongs to the organization and may be selected by another organization
+// member, while upload lifecycle operations remain restricted to the uploader.
+func uploadJobUseAllowed(job *model.UploadJob, actor model.OverlayActor) bool {
+	if job == nil {
+		return false
+	}
+	if actor.Role == string(model.SystemRoleSuperAdmin) {
+		return true
+	}
+	if job.ExternalOrgID != "" {
+		return actor.OrgID != "" && job.ExternalOrgID == actor.OrgID
+	}
+	return job.UserID != 0 && job.UserID == actor.UserID
+}
+
+func (s *UploadService) GetJob(ctx context.Context, actor model.OverlayActor, uuid string) (*model.UploadJob, []model.UploadFile, error) {
 	job, err := s.jobRepo.FindByUUID(uuid)
 	if err != nil {
 		return nil, nil, fmt.Errorf("upload job not found: %w", err)
 	}
-	if job.UserID != userID {
+	if !uploadJobAccessAllowed(job, actor) {
 		return nil, nil, fmt.Errorf("upload job not found")
 	}
 
@@ -493,8 +642,8 @@ func (s *UploadService) GetJob(ctx context.Context, userID uint, uuid string) (*
 	return job, files, nil
 }
 
-func (s *UploadService) ListJobs(ctx context.Context, userID uint, query *model.UploadJobListQuery) ([]model.UploadJob, int64, error) {
-	jobs, total, err := s.jobRepo.PaginateByQuery(query, userID)
+func (s *UploadService) ListJobs(ctx context.Context, actor model.OverlayActor, query *model.UploadJobListQuery) ([]model.UploadJob, int64, error) {
+	jobs, total, err := s.jobRepo.PaginateByQuery(query, actor)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -502,13 +651,32 @@ func (s *UploadService) ListJobs(ctx context.Context, userID uint, query *model.
 	return jobs, total, nil
 }
 
-func (s *UploadService) DeleteJob(ctx context.Context, userID uint, uuid string) error {
+func (s *UploadService) DeleteJob(ctx context.Context, actor model.OverlayActor, uuid string) error {
 	job, err := s.jobRepo.FindByUUID(uuid)
 	if err != nil {
 		return fmt.Errorf("upload job not found: %w", err)
 	}
-	if job.UserID != userID {
+	if !uploadJobAccessAllowed(job, actor) {
 		return fmt.Errorf("upload job not found")
+	}
+	if job.Status == model.UploadJobStatusDeleted {
+		return nil
+	}
+	db := database.GetDB()
+	if db == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.UploadJob
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, job.ID).Error; err != nil || !uploadJobAccessAllowed(&locked, actor) {
+			return fmt.Errorf("upload job not found")
+		}
+		if locked.Status != model.UploadJobStatusDeleted {
+			return tx.Model(&locked).Update("status", model.UploadJobStatusDeleting).Error
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	files, err := s.fileRepo.FindByJobID(job.ID)
@@ -516,15 +684,29 @@ func (s *UploadService) DeleteJob(ctx context.Context, userID uint, uuid string)
 		return err
 	}
 
-	for _, file := range files {
-		os.Remove(file.StorageKey)
+	assetSvc := NewDataAssetService(s.cfg)
+	for i := range files {
+		asset, assetErr := s.assetRepo.FindByUploadFileID(files[i].ID)
+		if assetErr == nil {
+			if err := assetSvc.deleteAsset(ctx, asset); err != nil {
+				return fmt.Errorf("failed to delete upload file %s: %w", files[i].UUID, err)
+			}
+			continue
+		}
+		if !errors.Is(assetErr, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("failed to load data asset for upload file %s: %w", files[i].UUID, assetErr)
+		}
+		legacyAsset := &model.DataAsset{Provider: job.Provider, StorageKey: files[i].StorageKey}
+		if err := assetSvc.deleteStoredObject(ctx, legacyAsset); err != nil {
+			return fmt.Errorf("failed to delete legacy upload file %s: %w", files[i].UUID, err)
+		}
 	}
-
-	if err := s.fileRepo.DeleteByJobID(job.ID); err != nil {
-		return err
-	}
-
-	return s.jobRepo.Delete(job.ID)
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.UploadFile{}).Where("job_id = ?", job.ID).Update("status", model.FileStatusDeleted).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.UploadJob{}).Where("id = ?", job.ID).Update("status", model.UploadJobStatusDeleted).Error
+	})
 }
 
 func (s *UploadService) GetJobFiles(ctx context.Context, jobID uint) ([]model.UploadFile, error) {
@@ -563,24 +745,16 @@ func (s *UploadService) ListFiles(ctx context.Context, query *model.UploadFileLi
 // GetFileStats returns the total count and total bytes of completed files
 // under the same scope (for the /upload/files/stats aggregate endpoint).
 func (s *UploadService) GetFileStats(ctx context.Context, query *model.UploadFileListQuery) (int64, int64, error) {
-	_, total, err := s.fileRepo.PaginateFilesByQuery(query)
-	if err != nil {
-		return 0, 0, err
-	}
-	bytes, err := s.fileRepo.SumFileSize(query)
-	if err != nil {
-		return total, 0, err
-	}
-	return total, bytes, nil
+	return s.fileRepo.CompletedStorageStats(query)
 }
 
-func (s *UploadService) GetLocalFilePath(ctx context.Context, userID uint, fileUUID string) (string, error) {
+func (s *UploadService) GetLocalFilePath(ctx context.Context, actor model.OverlayActor, fileUUID string) (string, error) {
 	file, err := s.fileRepo.FindByUUID(fileUUID)
 	if err != nil {
 		return "", fmt.Errorf("upload file not found: %w", err)
 	}
 	job, err := s.jobRepo.FindByUUID(file.JobUUID)
-	if err != nil || job.UserID != userID {
+	if err != nil || !uploadJobAccessAllowed(job, actor) {
 		return "", fmt.Errorf("upload file not found")
 	}
 	if file.Status != model.FileStatusCompleted {

@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
+	"gorm.io/gorm"
 )
 
 // AIFilter controls which variants are sent to the LLM
@@ -43,7 +45,6 @@ func DefaultAIFilter() AIFilter {
 // AIEvaluator collects task data and sends it to LLM for evaluation
 type AIEvaluator struct {
 	llm          *LLMClient
-	taskRepo     *repository.TaskRepository
 	sampleRepo   *repository.SampleRepository
 	resultRepo   *repository.ResultRepository
 	geneListRepo *repository.GeneListRepository
@@ -62,7 +63,6 @@ func NewAIEvaluator(cfg *config.Config) *AIEvaluator {
 	}
 	return &AIEvaluator{
 		llm:          llm,
-		taskRepo:     repository.NewTaskRepository(),
 		sampleRepo:   repository.NewSampleRepository(),
 		resultRepo:   repository.NewResultRepository(),
 		geneListRepo: repository.NewGeneListRepository(),
@@ -75,8 +75,8 @@ func (e *AIEvaluator) IsEnabled() bool {
 }
 
 // Evaluate streams an LLM evaluation with filtering
-func (e *AIEvaluator) Evaluate(ctx context.Context, taskID string, filter AIFilter, onChunk func(string) error) error {
-	task, sampleInfo, qc, snvs, totalRaw, err := e.collectData(taskID, filter)
+func (e *AIEvaluator) Evaluate(ctx context.Context, task *model.Task, actor model.OverlayActor, filter AIFilter, onChunk func(string) error) error {
+	task, sampleInfo, qc, snvs, totalRaw, err := e.collectData(task, actor, filter)
 	if err != nil {
 		return err
 	}
@@ -88,12 +88,12 @@ func (e *AIEvaluator) Evaluate(ctx context.Context, taskID string, filter AIFilt
 		{Role: "user", Content: prompt},
 	}
 
-	return e.llm.ChatStream(messages, onChunk)
+	return e.llm.ChatStream(ctx, messages, onChunk)
 }
 
 // EvaluateSync returns the full LLM response with filtering
-func (e *AIEvaluator) EvaluateSync(ctx context.Context, taskID string, filter AIFilter) (string, error) {
-	task, sampleInfo, qc, snvs, totalRaw, err := e.collectData(taskID, filter)
+func (e *AIEvaluator) EvaluateSync(ctx context.Context, task *model.Task, actor model.OverlayActor, filter AIFilter) (string, error) {
+	task, sampleInfo, qc, snvs, totalRaw, err := e.collectData(task, actor, filter)
 	if err != nil {
 		return "", err
 	}
@@ -105,34 +105,52 @@ func (e *AIEvaluator) EvaluateSync(ctx context.Context, taskID string, filter AI
 		{Role: "user", Content: prompt},
 	}
 
-	return e.llm.Chat(messages)
+	return e.llm.Chat(ctx, messages)
 }
 
 // collectData gathers and filters all data for a task
-func (e *AIEvaluator) collectData(taskID string, filter AIFilter) (
+func (e *AIEvaluator) collectData(authorizedTask *model.Task, actor model.OverlayActor, filter AIFilter) (
 	task *model.Task, sampleInfo string, qc *model.QCResult,
 	snvs []model.SNVIndel, totalRaw int, err error,
 ) {
-	task, err = e.taskRepo.FindByUUID(taskID)
-	if err != nil {
-		err = fmt.Errorf("task not found: %s", taskID)
+	if authorizedTask == nil {
+		err = errors.New("task is required")
 		return
 	}
+	task = authorizedTask
 
 	if task.SampleID != "" {
-		sample, serr := e.sampleRepo.FindByUUID(task.SampleID)
+		sample, serr := e.sampleRepo.FindScopedByUUID(task.SampleID, actor)
 		if serr == nil {
 			sampleInfo = formatSampleForPrompt(sample)
+		} else if !errors.Is(serr, gorm.ErrRecordNotFound) {
+			err = fmt.Errorf("failed to load task sample: %w", serr)
+			return
 		}
 	}
 
-	qc, _ = e.resultRepo.FindQCByTaskID(task.ID)
+	qc, err = e.resultRepo.FindQCByTaskID(task.ID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		qc = nil
+		err = nil
+	} else if err != nil {
+		err = fmt.Errorf("failed to load task QC result: %w", err)
+		return
+	}
 
-	allSNVs, _ := e.resultRepo.FindSNVIndelsByTaskID(task.ID)
+	allSNVs, snvErr := e.resultRepo.FindSNVIndelsByTaskID(task.ID)
+	if snvErr != nil {
+		err = fmt.Errorf("failed to load task SNV results: %w", snvErr)
+		return
+	}
 	totalRaw = len(allSNVs)
 
 	// Resolve gene set from filter
-	geneSet := e.resolveGeneSet(filter)
+	geneSet, resolveErr := e.resolveGeneSet(filter, actor)
+	if resolveErr != nil {
+		err = resolveErr
+		return
+	}
 
 	// Apply filters
 	snvs = filterVariants(allSNVs, filter, geneSet)
@@ -140,30 +158,50 @@ func (e *AIEvaluator) collectData(taskID string, filter AIFilter) (
 }
 
 // resolveGeneSet builds the gene set from filter (gene list ID or explicit genes)
-func (e *AIEvaluator) resolveGeneSet(filter AIFilter) map[string]bool {
+func (e *AIEvaluator) resolveGeneSet(filter AIFilter, actor model.OverlayActor) (map[string]bool, error) {
 	geneSet := make(map[string]bool)
 
 	// Load from gene list ID
 	if filter.GeneListID != "" {
-		gl, err := e.geneListRepo.FindByStringID(filter.GeneListID)
-		if err == nil {
-			for _, g := range gl.GetGenes() {
-				geneSet[g] = true
+		gl, err := e.geneListRepo.FindScopedByStringID(filter.GeneListID, actor)
+		if err != nil {
+			return nil, fmt.Errorf("gene list not found: %w", err)
+		}
+		genes, err := gl.ParseGenes()
+		if err != nil {
+			return nil, fmt.Errorf("invalid gene list data: %w", err)
+		}
+		for _, g := range genes {
+			if gene := strings.TrimSpace(g); gene != "" {
+				geneSet[gene] = true
 			}
 		}
 	}
 
 	// Add explicit genes
 	for _, g := range filter.Genes {
-		geneSet[g] = true
+		if gene := strings.TrimSpace(g); gene != "" {
+			geneSet[gene] = true
+		}
 	}
 
-	return geneSet
+	return geneSet, nil
+}
+
+// ValidateFilter performs access-controlled filter resolution before an SSE
+// response is opened, allowing authorization and database failures to use a
+// normal HTTP status instead of being buried in a successful event stream.
+func (e *AIEvaluator) ValidateFilter(filter AIFilter, actor model.OverlayActor) error {
+	_, err := e.resolveGeneSet(filter, actor)
+	return err
 }
 
 // filterVariants applies multi-level filtering for WES data
 func filterVariants(snvs []model.SNVIndel, filter AIFilter, geneSet map[string]bool) []model.SNVIndel {
-	hasGeneFilter := len(geneSet) > 0
+	// A selected but empty gene list is an explicit filter that matches no
+	// variants. Falling back to an unrestricted result would disclose more
+	// clinical data to the LLM than the caller requested.
+	hasGeneFilter := filter.GeneListID != "" || len(filter.Genes) > 0
 
 	// Defaults
 	maxPLPAF := filter.MaxPLPAF

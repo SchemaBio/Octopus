@@ -119,3 +119,19 @@ func TestTenantStorageEndpointRejectsInvalidInternalSecret(t *testing.T) {
 		t.Fatalf("expected invalid internal secret to be rejected, got %d", resp.Code)
 	}
 }
+
+func TestWorkflowTemplateCatalogRequiresAuthentication(t *testing.T) {
+	router := New(testRouterConfig())
+	for _, path := range []string{
+		"/api/v1/templates",
+		"/api/v1/templates/germline_single",
+		"/api/v1/templates/germline_single/inputs",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusUnauthorized {
+			t.Fatalf("expected unauthenticated GET %s to be rejected, got %d", path, resp.Code)
+		}
+	}
+}

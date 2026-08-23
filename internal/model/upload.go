@@ -27,6 +27,8 @@ const (
 	UploadJobStatusUploading UploadJobStatus = "uploading"
 	UploadJobStatusCompleted UploadJobStatus = "completed"
 	UploadJobStatusFailed    UploadJobStatus = "failed"
+	UploadJobStatusDeleting  UploadJobStatus = "deleting"
+	UploadJobStatusDeleted   UploadJobStatus = "deleted"
 )
 
 const (
@@ -52,6 +54,7 @@ const (
 	FileStatusCompleted FileStatus = "completed"
 	FileStatusFailed    FileStatus = "failed"
 	FileStatusMissing   FileStatus = "missing"
+	FileStatusDeleting  FileStatus = "deleting"
 	FileStatusDeleted   FileStatus = "deleted"
 )
 

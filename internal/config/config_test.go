@@ -154,6 +154,21 @@ func TestSplitComma(t *testing.T) {
 	}
 }
 
+func TestLoadTrustedProxies(t *testing.T) {
+	t.Setenv("TRUSTED_PROXIES", "127.0.0.1, 10.0.0.0/8")
+	cfg := Load()
+	if len(cfg.Server.TrustedProxies) != 2 || cfg.Server.TrustedProxies[0] != "127.0.0.1" || cfg.Server.TrustedProxies[1] != "10.0.0.0/8" {
+		t.Fatalf("TrustedProxies = %#v", cfg.Server.TrustedProxies)
+	}
+}
+
+func TestValidateStartupRejectsInvalidTrustedProxy(t *testing.T) {
+	cfg := &Config{Server: ServerConfig{Mode: "debug", TrustedProxies: []string{"not-an-ip"}}}
+	if err := ValidateStartup(cfg); err == nil {
+		t.Fatal("expected invalid trusted proxy configuration to be rejected")
+	}
+}
+
 func TestGetEnvFloat(t *testing.T) {
 	t.Setenv("TEST_FLOAT", "3.14")
 	val := getEnvFloat("TEST_FLOAT", 1.0)

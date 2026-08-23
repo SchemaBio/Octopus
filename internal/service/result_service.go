@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -14,15 +15,17 @@ import (
 
 // ResultService handles result business logic
 type ResultService struct {
-	cfg  *config.Config
-	repo *repository.ResultRepository
+	cfg          *config.Config
+	repo         *repository.ResultRepository
+	geneListRepo *repository.GeneListRepository
 }
 
 // NewResultService creates a new result service
 func NewResultService(cfg *config.Config) *ResultService {
 	return &ResultService{
-		cfg:  cfg,
-		repo: repository.NewResultRepository(),
+		cfg:          cfg,
+		repo:         repository.NewResultRepository(),
+		geneListRepo: repository.NewGeneListRepository(),
 	}
 }
 
@@ -34,7 +37,18 @@ func (s *ResultService) GetQC(ctx context.Context, taskID string) (*model.QCResu
 
 // ========== SNV/Indel ==========
 
-func (s *ResultService) ListSNVIndels(ctx context.Context, query *model.SNVIndelListQuery) ([]model.SNVIndel, int64, error) {
+func (s *ResultService) ListSNVIndels(ctx context.Context, query *model.SNVIndelListQuery, actor model.OverlayActor) ([]model.SNVIndel, int64, error) {
+	if query.GeneListID != "" {
+		geneList, err := s.geneListRepo.FindScopedByStringID(query.GeneListID, actor)
+		if err != nil {
+			return nil, 0, fmt.Errorf("gene list not found: %w", err)
+		}
+		genes, err := geneList.ParseGenes()
+		if err != nil {
+			return nil, 0, fmt.Errorf("invalid gene list data: %w", err)
+		}
+		query.GeneListGenes = genes
+	}
 	return s.repo.PaginateSNVIndels(query)
 }
 

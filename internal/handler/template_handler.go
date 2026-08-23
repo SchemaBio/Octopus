@@ -99,7 +99,7 @@ func readTemplateFile(path string) ([]byte, error) {
 
 // ListTemplates godoc
 // @Summary List available WDL templates
-// @Description Get a list of available WDL workflow templates (from catalog and filesystem)
+// @Description Get an authenticated list of available WDL workflow templates (from catalog and filesystem)
 // @Tags templates
 // @Produce json
 // @Success 200 {array} model.Template
@@ -137,7 +137,7 @@ func ListTemplates(c *gin.Context) {
 
 // GetTemplate godoc
 // @Summary Get template details
-// @Description Get detailed information about a specific WDL template
+// @Description Get authenticated details for a specific WDL template
 // @Tags templates
 // @Produce json
 // @Param name path string true "Template name"
@@ -182,7 +182,7 @@ func GetTemplate(c *gin.Context) {
 
 // GetTemplateInputs godoc
 // @Summary Get template default inputs
-// @Description Get default input values for a specific template
+// @Description Get authenticated default input values for a specific template
 // @Tags templates
 // @Produce json
 // @Param name path string true "Template name"

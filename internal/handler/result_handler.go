@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"errors"
+
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/middleware"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/SchemaBio/Octopus/internal/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type ResultHandler struct {
@@ -51,8 +54,12 @@ func (h *ResultHandler) ListSNVIndels(c *gin.Context) {
 	query.TaskID = taskID
 	setQueryDefaults(&query.Page, &query.PageSize)
 
-	results, total, err := h.svc.ListSNVIndels(c.Request.Context(), &query)
+	results, total, err := h.svc.ListSNVIndels(c.Request.Context(), &query, taskActorFromContext(c))
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ErrorNotFound(c, "Gene list not found")
+			return
+		}
 		ErrorInternal(c, err.Error())
 		return
 	}

@@ -520,7 +520,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		inputs = make(map[string]interface{})
 	}
 	if req.Template == "baseline_fix" {
-		inputs["CNVBaselineFix.prefix"] = taskID
+		inputs["CNVBaselineFix.prefix"] = taskOutputPrefix(workflowUUID)
 	}
 	if err := validateActorTaskFileInputs(s.cfg, actor, inputs); err != nil {
 		return nil, err
@@ -638,7 +638,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		if err != nil {
 			return nil, fmt.Errorf("upload job not found: %s", req.UploadJobID)
 		}
-		if actor.Role != string(model.SystemRoleSuperAdmin) && ((actor.OrgID != "" && uploadJob.ExternalOrgID != actor.OrgID) || (actor.OrgID == "" && uploadJob.UserID != actor.UserID)) {
+		if !uploadJobUseAllowed(uploadJob, actor) {
 			return nil, fmt.Errorf("upload job not found: %s", req.UploadJobID)
 		}
 		files, _ := s.uploadFileRepo.FindByJobID(uploadJob.ID)
@@ -676,21 +676,21 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		if req.Template == "trio" {
 			prefix = "TrioWES"
 		}
-		inputs[prefix+".prefix"] = taskID
+		inputs[prefix+".prefix"] = taskOutputPrefix(workflowUUID)
 		thresholds, configErr := NewWorkflowConfigService().Get(req.Template, fmt.Sprint(inputs["reference_genome"]))
 		if configErr != nil {
 			return nil, configErr
 		}
 		applyWorkflowThresholds(inputs, thresholds)
 		if req.Template == "trio" {
-			inputs["TrioWES.ped"] = filepath.Join(s.cfg.Task.OutputDir, workflowUUID, taskID+".ped")
+			inputs["TrioWES.ped"] = filepath.Join(s.cfg.Task.OutputDir, workflowUUID, taskOutputPrefix(workflowUUID)+".ped")
 		}
 	} else if req.Template == "baseline_fix" {
 		inputs, err = buildCVMWDLInputs(req.Template, fmt.Sprint(inputs["reference_genome"]), inputs)
 		if err != nil {
 			return nil, err
 		}
-		inputs["CNVBaselineFix.prefix"] = taskID
+		inputs["CNVBaselineFix.prefix"] = taskOutputPrefix(workflowUUID)
 	}
 	inputJSON, err := json.Marshal(inputs)
 	if err != nil {
@@ -1005,21 +1005,25 @@ func (s *TaskService) launchTask(task *model.Task) {
 		}
 	}
 	inputJSON, _ = json.Marshal(executionInputs)
-	if err := os.WriteFile(inputFile, inputJSON, 0644); err != nil {
+	if err := os.WriteFile(inputFile, inputJSON, 0600); err != nil {
 		s.updateTaskError(task, fmt.Sprintf("Failed to write input file: %v", err))
 		return
 	}
 
 	// Create log directory
 	logPath := filepath.Join(s.cfg.Task.OutputDir, task.UUID, "octopus.log")
-	os.MkdirAll(filepath.Dir(logPath), 0755)
+	if err := os.MkdirAll(filepath.Dir(logPath), 0750); err != nil {
+		_ = os.Remove(inputFile)
+		s.updateTaskError(task, fmt.Sprintf("Failed to create task log directory: %v", err))
+		return
+	}
 
 	cmd := s.miniWDLCommand(task, inputFile)
 
 	// Detach from parent process
 	cmd.SysProcAttr = &syscall.SysProcAttr{}
 
-	logFile, err := os.Create(logPath)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err == nil {
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
@@ -1027,6 +1031,10 @@ func (s *TaskService) launchTask(task *model.Task) {
 
 	// Start (non-blocking) — returns immediately
 	if err := cmd.Start(); err != nil {
+		if logFile != nil {
+			_ = logFile.Close()
+		}
+		_ = os.Remove(inputFile)
 		s.updateTaskError(task, fmt.Sprintf("Failed to start miniwdl: %v", err))
 		return
 	}
@@ -1042,8 +1050,11 @@ func (s *TaskService) launchTask(task *model.Task) {
 	// This is a fallback — Sepiida Agent is the authoritative status source.
 	go func() {
 		err := cmd.Wait()
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 
-		os.Remove(inputFile)
+		_ = os.Remove(inputFile)
 
 		s.mu.Lock()
 		delete(s.running, task.ID)
@@ -2039,7 +2050,7 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 		if content == "" {
 			return model.CVMDispatchRequest{}, fmt.Errorf("Trio PED content is missing")
 		}
-		target := path.Join("/mnt/data/inputs", task.UUID[:8]+".ped")
+		target := path.Join("/mnt/data/inputs", taskOutputPrefix(task.UUID)+".ped")
 		inputs["TrioWES.ped"] = target
 		delete(inputs, "TrioWES.ped_content")
 		inlineFiles = append(inlineFiles, model.CVMInlineFile{Target: target, Content: content})
@@ -2141,8 +2152,8 @@ func (s *TaskService) prepareTrioInputs(pedigreeID, workflowUUID string, actor m
 		}
 		read1[i], read2[i] = pair.R1Path, pair.R2Path
 		for _, item := range []struct{ storage, role string }{{pair.R1Path, model.TaskAssetRoleTrioRead1}, {pair.R2Path, model.TaskAssetRoleTrioRead2}} {
-			var asset model.DataAsset
-			if err := database.GetDB().Where("storage_key = ? AND status = ?", item.storage, model.FileStatusCompleted).First(&asset).Error; err != nil {
+			asset, err := s.assetRepo.FindCompletedByStorageKey(item.storage, actor)
+			if err != nil {
 				return nil, nil, fmt.Errorf("trio member %s data asset is unavailable", member.Name)
 			}
 			assets = append(assets, model.TaskDataAsset{AssetID: asset.ID, InputRole: item.role, InputIndex: i})
@@ -2151,10 +2162,14 @@ func (s *TaskService) prepareTrioInputs(pedigreeID, workflowUUID string, actor m
 			probandSample = sample
 		}
 	}
-	prefix := workflowUUID[:8]
+	prefix := taskOutputPrefix(workflowUUID)
 	inputs["TrioWES.meta_info"] = map[string]interface{}{"members": []string{"proband", "father", "mother"}, "read_1": read1, "read_2": read2}
 	inputs["TrioWES.ped_content"] = trioPED(prefix, ordered)
 	return probandSample, assets, nil
+}
+
+func taskOutputPrefix(workflowUUID string) string {
+	return workflowUUID
 }
 
 func trioPED(familyID string, members []model.PedigreeMember) string {

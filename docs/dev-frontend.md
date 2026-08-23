@@ -70,7 +70,7 @@ CLIENT_PASSWORD_HASH_ENABLED=false
 
 CREATE_DEFAULT_ADMIN=true
 DEFAULT_ADMIN_EMAIL=admin@octopus.local
-DEFAULT_ADMIN_PASSWORD=admin123
+DEFAULT_ADMIN_PASSWORD=replace-with-a-strong-local-password
 ```
 
 > 注意：当前进程从**环境变量**读配置。可在 shell 中 `export`/`$env:` 注入，或使用你习惯的 dotenv 工具加载 `.env` 后再启动。
@@ -108,7 +108,7 @@ go run ./cmd/seed -reset   # 删除 seed 数据后重插
 默认登录（与 seed / server 一致，可被 env 覆盖）：
 
 - Email: `admin@octopus.local`
-- Password: `admin123`（若设置了 `DEFAULT_ADMIN_PASSWORD` 则以 env 为准）
+- Password: 你在 `DEFAULT_ADMIN_PASSWORD` 中显式设置的强密码
 
 ## 6. YiJian 前端
 

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/model"
+	"gorm.io/gorm"
 )
 
 type DataAssetRepository struct {
@@ -27,6 +28,25 @@ func (r *DataAssetRepository) ExistsByProviderKey(provider model.UploadProvider,
 
 func (r *DataAssetRepository) FindScopedByUUID(uuid string, actor model.OverlayActor) (*model.DataAsset, error) {
 	db := r.db.Where("uuid = ?", uuid)
+	db = scopeDataAssetActor(db, actor)
+	var asset model.DataAsset
+	if err := db.First(&asset).Error; err != nil {
+		return nil, err
+	}
+	return &asset, nil
+}
+
+func (r *DataAssetRepository) FindCompletedByStorageKey(storageKey string, actor model.OverlayActor) (*model.DataAsset, error) {
+	db := r.db.Where("storage_key = ? AND status = ?", storageKey, model.FileStatusCompleted)
+	db = scopeDataAssetActor(db, actor)
+	var asset model.DataAsset
+	if err := db.First(&asset).Error; err != nil {
+		return nil, err
+	}
+	return &asset, nil
+}
+
+func scopeDataAssetActor(db *gorm.DB, actor model.OverlayActor) *gorm.DB {
 	if actor.Role != string(model.SystemRoleSuperAdmin) {
 		if actor.OrgID != "" {
 			db = db.Where("external_org_id = ?", actor.OrgID)
@@ -34,11 +54,7 @@ func (r *DataAssetRepository) FindScopedByUUID(uuid string, actor model.OverlayA
 			db = db.Where("external_org_id = '' AND created_by = ?", actor.UserID)
 		}
 	}
-	var asset model.DataAsset
-	if err := db.First(&asset).Error; err != nil {
-		return nil, err
-	}
-	return &asset, nil
+	return db
 }
 
 func (r *DataAssetRepository) Paginate(query *model.DataAssetListQuery) ([]model.DataAsset, int64, error) {

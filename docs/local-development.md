@@ -142,7 +142,7 @@ CLIENT_PASSWORD_HASH_ENABLED=false
 
 CREATE_DEFAULT_ADMIN=true
 DEFAULT_ADMIN_EMAIL=admin@octopus.local
-DEFAULT_ADMIN_PASSWORD=admin123
+DEFAULT_ADMIN_PASSWORD=replace-with-a-strong-local-password
 ```
 
 > **重要：** 当前 server / seed 从 **进程环境变量** 读取配置，不会自动加载 `.env` 文件。  
@@ -188,7 +188,7 @@ go run ./cmd/server
 
 - `Initializing database`
 - `Running database migrations`（GORM AutoMigrate）
-- `Default admin user ready: admin@octopus.local`（非 release 或 `CREATE_DEFAULT_ADMIN=true`）
+- `Default admin user ready: admin@octopus.local`（仅当 `CREATE_DEFAULT_ADMIN=true`）
 - `Starting schema-platform server on port 8080`
 
 健康检查：
@@ -222,7 +222,7 @@ pnpm dev
 登录：
 
 - Email：`admin@octopus.local`（或 `DEFAULT_ADMIN_EMAIL`）
-- Password：`admin123`（或 `DEFAULT_ADMIN_PASSWORD`）
+- Password：你在 `DEFAULT_ADMIN_PASSWORD` 中显式设置的强密码
 
 ---
 

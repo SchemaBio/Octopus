@@ -23,7 +23,8 @@ type Config struct {
 type ServerConfig struct {
 	Port           string
 	Mode           string
-	AllowedOrigins string // comma-separated CORS allowed origins
+	AllowedOrigins string   // comma-separated CORS allowed origins
+	TrustedProxies []string // explicit IP/CIDR list allowed to supply forwarded client IPs
 }
 
 type DatabaseConfig struct {
@@ -158,6 +159,7 @@ func Load() *Config {
 			Port:           getEnv("SERVER_PORT", "8080"),
 			Mode:           getEnv("GIN_MODE", "debug"),
 			AllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:3002"),
+			TrustedProxies: splitComma(getEnv("TRUSTED_PROXIES", "")),
 		},
 		Database: DatabaseConfig{
 			Driver: getEnv("DB_DRIVER", "postgres"),

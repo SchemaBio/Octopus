@@ -65,6 +65,9 @@ type SNVIndelListQuery struct {
 	Gene           string `form:"gene"`
 	Classification string `form:"classification"`
 	GeneListID     string `form:"geneListId"`
-	Page           int    `form:"page" binding:"omitempty,min=1"`
-	PageSize       int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+	// GeneListGenes is populated by ResultService only after GeneListID has
+	// been resolved within the authenticated actor's scope.
+	GeneListGenes []string `form:"-" json:"-"`
+	Page          int      `form:"page" binding:"omitempty,min=1"`
+	PageSize      int      `form:"page_size" binding:"omitempty,min=1,max=100"`
 }

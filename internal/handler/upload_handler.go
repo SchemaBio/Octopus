@@ -58,7 +58,7 @@ func (h *UploadHandler) CreateJob(c *gin.Context) {
 }
 
 func (h *UploadHandler) ListJobs(c *gin.Context) {
-	userID, _, _, ok := middleware.GetCurrentUser(c)
+	_, _, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
@@ -77,7 +77,7 @@ func (h *UploadHandler) ListJobs(c *gin.Context) {
 		query.PageSize = 10
 	}
 
-	jobs, total, err := h.svc.ListJobs(c.Request.Context(), userID, &query)
+	jobs, total, err := h.svc.ListJobs(c.Request.Context(), taskActorFromContext(c), &query)
 	if err != nil {
 		ErrorInternal(c, err.Error())
 		return
@@ -97,8 +97,8 @@ func (h *UploadHandler) ListJobs(c *gin.Context) {
 }
 
 // ListFiles returns the file-level audit list for Cuttlefish (storage_path,
-// file_size, org_id exposed for admin/monitoring only). Cross-org for
-// SUPER_ADMIN (reachable via applyExternalAuth mapping); org-scoped otherwise.
+// file_size, org_id exposed for admin/monitoring only). It is restricted to
+// SUPER_ADMIN, reached by Cuttlefish through the external-auth role mapping.
 func (h *UploadHandler) ListFiles(c *gin.Context) {
 	var query model.UploadFileListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
@@ -112,18 +112,16 @@ func (h *UploadHandler) ListFiles(c *gin.Context) {
 		query.PageSize = 10
 	}
 
-	userID, _, role, ok := middleware.GetCurrentUser(c)
+	_, _, role, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
-	if role == string(model.SystemRoleSuperAdmin) {
-		query.IncludeAll = true
-	} else if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg && orgID != "" {
-		query.ExternalOrgID = orgID
-	} else {
-		query.UserID = userID
+	if role != string(model.SystemRoleSuperAdmin) {
+		Error(c, http.StatusForbidden, "Admin access required")
+		return
 	}
+	query.IncludeAll = true
 
 	resp, err := h.svc.ListFiles(c.Request.Context(), &query)
 	if err != nil {
@@ -165,7 +163,7 @@ func (h *UploadHandler) GetFileStats(c *gin.Context) {
 }
 
 func (h *UploadHandler) GetJob(c *gin.Context) {
-	userID, _, _, ok := middleware.GetCurrentUser(c)
+	_, _, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
@@ -173,7 +171,7 @@ func (h *UploadHandler) GetJob(c *gin.Context) {
 
 	uuid := c.Param("uuid")
 
-	job, files, err := h.svc.GetJob(c.Request.Context(), userID, uuid)
+	job, files, err := h.svc.GetJob(c.Request.Context(), taskActorFromContext(c), uuid)
 	if err != nil {
 		ErrorNotFound(c, "Upload job not found")
 		return
@@ -189,7 +187,7 @@ func (h *UploadHandler) GetJob(c *gin.Context) {
 }
 
 func (h *UploadHandler) DeleteJob(c *gin.Context) {
-	userID, _, _, ok := middleware.GetCurrentUser(c)
+	_, _, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
@@ -197,7 +195,7 @@ func (h *UploadHandler) DeleteJob(c *gin.Context) {
 
 	uuid := c.Param("uuid")
 
-	if err := h.svc.DeleteJob(c.Request.Context(), userID, uuid); err != nil {
+	if err := h.svc.DeleteJob(c.Request.Context(), taskActorFromContext(c), uuid); err != nil {
 		ErrorNotFound(c, err.Error())
 		return
 	}
@@ -206,7 +204,7 @@ func (h *UploadHandler) DeleteJob(c *gin.Context) {
 }
 
 func (h *UploadHandler) UploadLocal(c *gin.Context) {
-	userID, _, _, ok := middleware.GetCurrentUser(c)
+	_, _, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
@@ -236,7 +234,7 @@ func (h *UploadHandler) UploadLocal(c *gin.Context) {
 
 	uploadFile, err := h.svc.SaveLocalFile(
 		c.Request.Context(),
-		userID,
+		taskActorFromContext(c),
 		fileUUID,
 		f,
 		fileHeader.Size,
@@ -250,12 +248,12 @@ func (h *UploadHandler) UploadLocal(c *gin.Context) {
 }
 
 func (h *UploadHandler) CompleteS3(c *gin.Context) {
-	userID, _, _, ok := middleware.GetCurrentUser(c)
+	_, _, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
-	file, err := h.svc.CompleteS3File(c.Request.Context(), userID, c.Param("file_uuid"))
+	file, err := h.svc.CompleteS3File(c.Request.Context(), taskActorFromContext(c), c.Param("file_uuid"))
 	if err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
@@ -264,12 +262,12 @@ func (h *UploadHandler) CompleteS3(c *gin.Context) {
 }
 
 func (h *UploadHandler) RetryS3(c *gin.Context) {
-	userID, _, _, ok := middleware.GetCurrentUser(c)
+	_, _, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
-	file, url, err := h.svc.RetryS3File(c.Request.Context(), userID, c.Param("file_uuid"))
+	file, url, err := h.svc.RetryS3File(c.Request.Context(), taskActorFromContext(c), c.Param("file_uuid"))
 	if err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
@@ -280,7 +278,7 @@ func (h *UploadHandler) RetryS3(c *gin.Context) {
 }
 
 func (h *UploadHandler) GetDownloadURL(c *gin.Context) {
-	userID, _, _, ok := middleware.GetCurrentUser(c)
+	_, _, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
@@ -288,7 +286,7 @@ func (h *UploadHandler) GetDownloadURL(c *gin.Context) {
 
 	fileUUID := c.Param("file_uuid")
 
-	path, err := h.svc.GetLocalFilePath(c.Request.Context(), userID, fileUUID)
+	path, err := h.svc.GetLocalFilePath(c.Request.Context(), taskActorFromContext(c), fileUUID)
 	if err != nil {
 		ErrorNotFound(c, "Upload file not found")
 		return

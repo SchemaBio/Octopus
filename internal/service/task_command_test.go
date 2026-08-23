@@ -32,3 +32,10 @@ func TestMiniWDLCommandUsesAbsoluteConfiguredOutputDirectory(t *testing.T) {
 		t.Fatalf("miniwdl -d argument = %q, want %q", got, want)
 	}
 }
+
+func TestTaskOutputPrefixUsesFullWorkflowUUID(t *testing.T) {
+	workflowUUID := "8da4d946-8af2-41e2-a8e8-df51ec4f6ffd"
+	if got := taskOutputPrefix(workflowUUID); got != workflowUUID {
+		t.Fatalf("taskOutputPrefix() = %q, want full UUID %q", got, workflowUUID)
+	}
+}

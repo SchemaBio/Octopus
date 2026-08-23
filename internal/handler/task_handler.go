@@ -173,41 +173,55 @@ func (h *TaskHandler) GetTaskStats(c *gin.Context) {
 
 	db := database.GetDB()
 
-	// Status distribution (all time) + total.
+	// Status distribution (all time) + total in one grouped query.
 	statuses := []model.TaskStatus{
 		model.TaskStatusQueued, model.TaskStatusWaitingData, model.TaskStatusRunning,
 		model.TaskStatusCompleted, model.TaskStatusFailed, model.TaskStatusCancelled,
 		model.TaskStatusPendingInterpretation,
 	}
 	dist := make(map[string]int, len(statuses))
-	totalTasks := 0
 	for _, s := range statuses {
-		var count int64
-		taskScope(db.Model(&model.Task{})).Where("status = ?", s).Count(&count)
-		dist[string(s)] = int(count)
-		totalTasks += int(count)
+		dist[string(s)] = 0
 	}
-
-	var running int64
-	taskScope(db.Model(&model.Task{})).Where("status = ?", model.TaskStatusRunning).Count(&running)
+	var statusRows []struct {
+		Status model.TaskStatus
+		Count  int64
+	}
+	if err := taskScope(db.Model(&model.Task{})).
+		Select("status, COUNT(*) AS count").
+		Group("status").
+		Scan(&statusRows).Error; err != nil {
+		ErrorInternal(c, "Failed to load task statistics")
+		return
+	}
+	totalTasks := 0
+	for _, row := range statusRows {
+		dist[string(row.Status)] = int(row.Count)
+		totalTasks += int(row.Count)
+	}
+	running := dist[string(model.TaskStatusRunning)]
 
 	since24h := time.Now().Add(-24 * time.Hour)
 	var failed24h int64
-	taskScope(db.Model(&model.Task{})).
+	if err := taskScope(db.Model(&model.Task{})).
 		Where("status = ? AND updated_at >= ?", model.TaskStatusFailed, since24h).
-		Count(&failed24h)
+		Count(&failed24h).Error; err != nil {
+		ErrorInternal(c, "Failed to load task statistics")
+		return
+	}
 
 	// Result-import failures: cross-table, handled by the batch repo.
 	since7d := time.Now().Add(-7 * 24 * time.Hour)
 	batchRepo := repository.NewResultImportBatchRepository()
-	var riFailed int64
-	if n, err := batchRepo.CountFailedSinceScoped(&since7d, taskScope); err == nil {
-		riFailed = n
+	riFailed, err := batchRepo.CountFailedSinceScoped(&since7d, taskScope)
+	if err != nil {
+		ErrorInternal(c, "Failed to load task statistics")
+		return
 	}
 
 	Success(c, model.TaskStatsResponse{
 		TotalTasks:               totalTasks,
-		RunningTasks:             int(running),
+		RunningTasks:             running,
 		FailedLast24h:            int(failed24h),
 		StatusDistribution:       dist,
 		ResultImportFailedLast7d: int(riFailed),
@@ -234,13 +248,8 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 // GetTaskSample returns the sample associated with a task
 func (h *TaskHandler) GetTaskSample(c *gin.Context) {
 	id := c.Param("id")
-	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
-		return
-	}
-
-	task, err := h.svc.GetTask(c.Request.Context(), id)
-	if err != nil {
-		ErrorNotFound(c, "Task not found")
+	task, ok := requireTaskAccess(c, h.taskRepo, id)
+	if !ok {
 		return
 	}
 
@@ -249,7 +258,7 @@ func (h *TaskHandler) GetTaskSample(c *gin.Context) {
 		return
 	}
 
-	sample, err := h.sampleSvc.GetSample(c.Request.Context(), task.SampleID)
+	sample, err := h.sampleSvc.GetSampleScoped(c.Request.Context(), task.SampleID, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, "Sample not found")
 		return

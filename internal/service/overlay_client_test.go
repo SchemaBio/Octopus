@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -44,7 +45,7 @@ func TestOverlayClientAdmitTaskAllowsRequest(t *testing.T) {
 	defer server.Close()
 
 	client := testOverlayClient(server.URL, false)
-	err := client.AdmitTask(t.Context(), model.OverlayTaskAdmissionRequest{
+	err := client.AdmitTask(context.Background(), model.OverlayTaskAdmissionRequest{
 		Action: model.OverlayAdmissionActionStart,
 		Task:   model.OverlayTaskSnapshot{UUID: "task-1"},
 	})
@@ -60,7 +61,7 @@ func TestOverlayClientAdmitTaskReturnsDeniedReason(t *testing.T) {
 	defer server.Close()
 
 	client := testOverlayClient(server.URL, false)
-	err := client.AdmitTask(t.Context(), model.OverlayTaskAdmissionRequest{Action: model.OverlayAdmissionActionStart})
+	err := client.AdmitTask(context.Background(), model.OverlayTaskAdmissionRequest{Action: model.OverlayAdmissionActionStart})
 	if err == nil || !strings.Contains(err.Error(), "credits exhausted") {
 		t.Fatalf("expected denied reason in error, got %v", err)
 	}
@@ -68,7 +69,7 @@ func TestOverlayClientAdmitTaskReturnsDeniedReason(t *testing.T) {
 
 func TestOverlayClientAdmitTaskCanFailOpen(t *testing.T) {
 	client := testOverlayClient("http://127.0.0.1:1", true)
-	err := client.AdmitTask(t.Context(), model.OverlayTaskAdmissionRequest{Action: model.OverlayAdmissionActionStart})
+	err := client.AdmitTask(context.Background(), model.OverlayTaskAdmissionRequest{Action: model.OverlayAdmissionActionStart})
 	if err != nil {
 		t.Fatalf("expected fail-open admission to ignore transport error: %v", err)
 	}
@@ -91,7 +92,7 @@ func TestOverlayClientEmitTaskEventPostsEvent(t *testing.T) {
 	defer server.Close()
 
 	client := testOverlayClient(server.URL, false)
-	err := client.EmitTaskEvent(t.Context(), model.OverlayTaskEventRequest{
+	err := client.EmitTaskEvent(context.Background(), model.OverlayTaskEventRequest{
 		Event: model.OverlayTaskEventCompleted,
 		Task:  model.OverlayTaskSnapshot{UUID: "task-1"},
 	})
@@ -116,7 +117,7 @@ func TestOverlayClientChargesFixedCredits(t *testing.T) {
 	}))
 	defer server.Close()
 	client := testOverlayClient(server.URL, false)
-	resp, err := client.ChargeCredits(t.Context(), model.OverlayCreditChargeRequest{ReferenceID: "baseline-task", Credits: 6})
+	resp, err := client.ChargeCredits(context.Background(), model.OverlayCreditChargeRequest{ReferenceID: "baseline-task", Credits: 6})
 	if err != nil {
 		t.Fatalf("expected fixed credit charge to succeed: %v", err)
 	}

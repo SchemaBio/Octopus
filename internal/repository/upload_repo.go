@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/model"
+	"gorm.io/gorm"
 )
 
 type UploadJobRepository struct {
@@ -24,8 +25,17 @@ func (r *UploadJobRepository) FindByUserID(userID uint) ([]model.UploadJob, erro
 	return r.FindByCondition(map[string]interface{}{"user_id": userID})
 }
 
-func (r *UploadJobRepository) PaginateByQuery(query *model.UploadJobListQuery, userID uint) ([]model.UploadJob, int64, error) {
-	db := r.db.Model(&model.UploadJob{}).Where("user_id = ?", userID)
+func (r *UploadJobRepository) PaginateByQuery(query *model.UploadJobListQuery, actor model.OverlayActor) ([]model.UploadJob, int64, error) {
+	db := r.db.Model(&model.UploadJob{}).Where("status <> ?", model.UploadJobStatusDeleted)
+	if actor.Role != string(model.SystemRoleSuperAdmin) {
+		if actor.OrgID != "" {
+			db = db.Where("external_org_id = ? AND user_id = ?", actor.OrgID, actor.UserID)
+		} else if actor.UserID != 0 {
+			db = db.Where("external_org_id = '' AND user_id = ?", actor.UserID)
+		} else {
+			db = db.Where("1 = 0")
+		}
+	}
 
 	if query.Status != "" {
 		db = db.Where("status = ?", query.Status)
@@ -117,7 +127,7 @@ func (r *UploadFileRepository) PaginateFilesByQuery(q *model.UploadFileListQuery
 		case q.ExternalOrgID != "":
 			db = db.Where("upload_jobs.external_org_id = ?", q.ExternalOrgID)
 		case q.UserID != 0:
-			db = db.Where("upload_jobs.user_id = ?", q.UserID)
+			db = db.Where("upload_jobs.external_org_id = '' AND upload_jobs.user_id = ?", q.UserID)
 		default:
 			db = db.Where("1 = 0")
 		}
@@ -156,28 +166,36 @@ func (r *UploadFileRepository) PaginateFilesByQuery(q *model.UploadFileListQuery
 	return rows, total, err
 }
 
-// SumFileSize returns total bytes of completed (uploaded) files under the same
-// scope. Used by the /upload/files/stats aggregate endpoint.
-func (r *UploadFileRepository) SumFileSize(q *model.UploadFileListQuery) (int64, error) {
-	db := r.db.Model(&model.UploadFile{}).
-		Joins("JOIN upload_jobs ON upload_jobs.id = upload_files.job_id")
+func (r *UploadFileRepository) completedStorageAssets(q *model.UploadFileListQuery) *gorm.DB {
+	db := r.db.Model(&model.DataAsset{})
 
 	if !q.IncludeAll {
 		switch {
 		case q.ExternalOrgID != "":
-			db = db.Where("upload_jobs.external_org_id = ?", q.ExternalOrgID)
+			db = db.Where("data_assets.external_org_id = ?", q.ExternalOrgID)
 		case q.UserID != 0:
-			db = db.Where("upload_jobs.user_id = ?", q.UserID)
+			db = db.Where("data_assets.external_org_id = '' AND data_assets.created_by = ?", q.UserID)
 		default:
 			db = db.Where("1 = 0")
 		}
 	}
 	if q.OrgID != "" {
-		db = db.Where("upload_jobs.external_org_id = ?", q.OrgID)
+		db = db.Where("data_assets.external_org_id = ?", q.OrgID)
 	}
-	db = db.Where("upload_files.status = ?", model.FileStatusCompleted)
+	db = db.Where("data_assets.status = ?", model.FileStatusCompleted)
+	return db
+}
 
-	var sum int64
-	err := db.Select("COALESCE(SUM(upload_files.file_size), 0)").Scan(&sum).Error
-	return sum, err
+// CompletedStorageStats returns count and bytes from the same authoritative
+// completed-asset inventory. It includes BED assets hidden from Data Center
+// and scanner-discovered assets that do not have an upload_files row.
+func (r *UploadFileRepository) CompletedStorageStats(q *model.UploadFileListQuery) (int64, int64, error) {
+	var stats struct {
+		Total      int64
+		TotalBytes int64
+	}
+	err := r.completedStorageAssets(q).
+		Select("COUNT(*) AS total, COALESCE(SUM(data_assets.file_size), 0) AS total_bytes").
+		Scan(&stats).Error
+	return stats.Total, stats.TotalBytes, err
 }
