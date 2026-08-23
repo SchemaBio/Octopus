@@ -98,6 +98,7 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 	if err := validateUploadPolicyAcknowledgement(s.cfg.Storage.RetentionDays, req.UploadPolicyAcknowledged); err != nil {
 		return nil, nil, nil, err
 	}
+	req.InternalID = strings.TrimSpace(req.InternalID)
 
 	if req.FileType == model.UploadFileTypeBed {
 		genome, err := normalizeReferenceGenome(req.ReferenceGenome)
@@ -162,6 +163,7 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		UserID:          userID,
 		ExternalOrgID:   orgID,
 		SampleID:        req.SampleID,
+		InternalID:      req.InternalID,
 		Name:            req.Name,
 		FileType:        req.FileType,
 		ReferenceGenome: req.ReferenceGenome,
@@ -225,7 +227,7 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 		asset := &model.DataAsset{
 			UUID: fileUUID, ExternalOrgID: orgID, CreatedBy: userID,
 			UploadFileID: &uploadFile.ID, Provider: provider, StorageKey: storageKey,
-			FileName: f.FileName, FileSize: f.FileSize, ReadType: f.ReadType,
+			FileName: f.FileName, InternalID: req.InternalID, FileSize: f.FileSize, ReadType: f.ReadType,
 			ReferenceGenome: req.ReferenceGenome,
 			Status:          model.FileStatusPending, Source: model.DataAssetSourceUpload, ExpiresAt: expiresAt,
 		}

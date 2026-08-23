@@ -69,22 +69,10 @@ func (m *SampleMatcher) matchSample(ctx context.Context, sample *model.Sample) {
 	if err != nil {
 		return
 	}
-	var read1, read2 []model.DataAsset
-	for i := range assets {
-		key, readType, ok := parseFASTQPairName(assets[i].FileName)
-		if !ok || !strings.EqualFold(strings.TrimSpace(key), strings.TrimSpace(sample.InternalID)) {
-			continue
-		}
-		if readType == model.ReadTypeRead1 && assets[i].ReadType == model.ReadTypeRead1 {
-			read1 = append(read1, assets[i])
-		}
-		if readType == model.ReadTypeRead2 && assets[i].ReadType == model.ReadTypeRead2 {
-			read2 = append(read2, assets[i])
-		}
-	}
+	read1, read2, matchRule := selectMatchCandidates(assets, sample.InternalID)
 	switch {
 	case len(read1) == 1 && len(read2) == 1:
-		_ = m.autoLink(sample.ID, &read1[0], &read2[0])
+		_ = m.autoLink(sample.ID, &read1[0], &read2[0], matchRule)
 	case len(read1) > 1 || len(read2) > 1:
 		m.clearAutoMatch(sample.ID, model.SampleMatchConflict)
 	case len(read1)+len(read2) > 0:
@@ -96,7 +84,42 @@ func (m *SampleMatcher) matchSample(ctx context.Context, sample *model.Sample) {
 	}
 }
 
-func (m *SampleMatcher) autoLink(sampleID uint, read1, read2 *model.DataAsset) error {
+func selectMatchCandidates(assets []model.DataAsset, sampleInternalID string) (read1, read2 []model.DataAsset, matchRule string) {
+	var explicitRead1, explicitRead2, filenameRead1, filenameRead2 []model.DataAsset
+	for i := range assets {
+		internalID := strings.TrimSpace(assets[i].InternalID)
+		if internalID != "" {
+			if strings.EqualFold(internalID, strings.TrimSpace(sampleInternalID)) {
+				if assets[i].ReadType == model.ReadTypeRead1 {
+					explicitRead1 = append(explicitRead1, assets[i])
+				}
+				if assets[i].ReadType == model.ReadTypeRead2 {
+					explicitRead2 = append(explicitRead2, assets[i])
+				}
+			}
+			continue
+		}
+		key, readType, ok := parseFASTQPairName(assets[i].FileName)
+		if !ok || !strings.EqualFold(strings.TrimSpace(key), strings.TrimSpace(sampleInternalID)) {
+			continue
+		}
+		if readType == model.ReadTypeRead1 && assets[i].ReadType == model.ReadTypeRead1 {
+			filenameRead1 = append(filenameRead1, assets[i])
+		}
+		if readType == model.ReadTypeRead2 && assets[i].ReadType == model.ReadTypeRead2 {
+			filenameRead2 = append(filenameRead2, assets[i])
+		}
+	}
+	read1, read2 = filenameRead1, filenameRead2
+	matchRule = "filename_internal_id_exact"
+	if len(explicitRead1)+len(explicitRead2) > 0 {
+		read1, read2 = explicitRead1, explicitRead2
+		matchRule = "data_asset_internal_id_exact"
+	}
+	return read1, read2, matchRule
+}
+
+func (m *SampleMatcher) autoLink(sampleID uint, read1, read2 *model.DataAsset, matchRule string) error {
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		var sample model.Sample
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sample, sampleID).Error; err != nil {
@@ -109,7 +132,7 @@ func (m *SampleMatcher) autoLink(sampleID uint, read1, read2 *model.DataAsset) e
 		link := model.SampleDataLink{
 			SampleID: sample.ID, ExternalOrgID: sample.ExternalOrgID,
 			Read1AssetID: read1.ID, Read2AssetID: read2.ID,
-			MatchMode: model.SampleMatchModeAutomatic, MatchRule: "filename_internal_id_exact",
+			MatchMode: model.SampleMatchModeAutomatic, MatchRule: matchRule,
 			MatchedAt: now,
 		}
 		if err := tx.Clauses(clause.OnConflict{

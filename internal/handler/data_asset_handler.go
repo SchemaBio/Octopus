@@ -61,6 +61,20 @@ func (h *DataAssetHandler) Get(c *gin.Context) {
 	Success(c, model.DataAssetToResponse(asset))
 }
 
+func (h *DataAssetHandler) Update(c *gin.Context) {
+	var req model.DataAssetUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	asset, err := h.svc.Update(c.Param("uuid"), &req, taskActorFromContext(c))
+	if err != nil {
+		ErrorNotFound(c, "Data asset not found")
+		return
+	}
+	Success(c, model.DataAssetToResponse(asset))
+}
+
 func (h *DataAssetHandler) Download(c *gin.Context) {
 	target, filename, err := h.svc.Download(c.Request.Context(), c.Param("uuid"), taskActorFromContext(c))
 	if err != nil {

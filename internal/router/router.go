@@ -337,6 +337,7 @@ func New(cfg *config.Config) *gin.Engine {
 			data.GET("/config", dataAssetHandler.Config)
 			data.GET("/assets", dataAssetHandler.List)
 			data.GET("/assets/:uuid", dataAssetHandler.Get)
+			data.PUT("/assets/:uuid", dataAssetHandler.Update)
 			data.GET("/assets/:uuid/download", dataAssetHandler.Download)
 			data.DELETE("/assets/:uuid", dataAssetHandler.Delete)
 		}

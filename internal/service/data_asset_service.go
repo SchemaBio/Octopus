@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -56,6 +57,21 @@ func (s *DataAssetService) List(query *model.DataAssetListQuery) ([]model.DataAs
 
 func (s *DataAssetService) Get(uuid string, actor model.OverlayActor) (*model.DataAsset, error) {
 	return s.repo.FindScopedByUUID(uuid, actor)
+}
+
+func (s *DataAssetService) Update(uuid string, req *model.DataAssetUpdateRequest, actor model.OverlayActor) (*model.DataAsset, error) {
+	asset, err := s.Get(uuid, actor)
+	if err != nil || asset.Status == model.FileStatusDeleted {
+		return nil, fmt.Errorf("data asset not found")
+	}
+	if actor.Role != string(model.SystemRoleSuperAdmin) && asset.CreatedBy != actor.UserID {
+		return nil, fmt.Errorf("data asset not found")
+	}
+	asset.InternalID = strings.TrimSpace(req.InternalID)
+	if err := s.repo.Update(asset); err != nil {
+		return nil, err
+	}
+	return asset, nil
 }
 
 func (s *DataAssetService) Download(ctx context.Context, uuid string, actor model.OverlayActor) (*DataAssetDownload, string, error) {

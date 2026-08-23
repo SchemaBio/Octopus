@@ -20,6 +20,7 @@ type DataAsset struct {
 	Provider        UploadProvider  `json:"provider" gorm:"size:20;index;uniqueIndex:idx_data_assets_provider_key;not null"`
 	StorageKey      string          `json:"-" gorm:"size:1000;uniqueIndex:idx_data_assets_provider_key;not null"`
 	FileName        string          `json:"file_name" gorm:"size:500;not null"`
+	InternalID      string          `json:"internal_id,omitempty" gorm:"size:100;index"`
 	FileSize        int64           `json:"file_size" gorm:"default:0"`
 	ReadType        ReadType        `json:"read_type" gorm:"size:20;index;not null"`
 	ReferenceGenome string          `json:"reference_genome,omitempty" gorm:"size:20;index"`
@@ -33,6 +34,7 @@ type DataAsset struct {
 type DataAssetResponse struct {
 	ID              string          `json:"id"`
 	FileName        string          `json:"file_name"`
+	InternalID      string          `json:"internal_id,omitempty"`
 	FileSize        int64           `json:"file_size"`
 	ReadType        ReadType        `json:"read_type"`
 	ReferenceGenome string          `json:"reference_genome,omitempty"`
@@ -42,6 +44,10 @@ type DataAssetResponse struct {
 	ExpiresAt       *string         `json:"expires_at,omitempty"`
 	CreatedAt       string          `json:"created_at"`
 	UpdatedAt       string          `json:"updated_at"`
+}
+
+type DataAssetUpdateRequest struct {
+	InternalID string `json:"internal_id" binding:"omitempty,max=100"`
 }
 
 type DataAssetListQuery struct {
@@ -66,7 +72,7 @@ type DataCenterConfigResponse struct {
 
 func DataAssetToResponse(asset *DataAsset) DataAssetResponse {
 	response := DataAssetResponse{
-		ID: asset.UUID, FileName: asset.FileName, FileSize: asset.FileSize,
+		ID: asset.UUID, FileName: asset.FileName, InternalID: asset.InternalID, FileSize: asset.FileSize,
 		ReadType: asset.ReadType, Provider: asset.Provider, Status: asset.Status,
 		ReferenceGenome: asset.ReferenceGenome,
 		Source:          asset.Source, CreatedAt: asset.CreatedAt.Format(time.RFC3339),

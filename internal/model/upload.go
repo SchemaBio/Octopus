@@ -60,6 +60,7 @@ type UploadJob struct {
 	UserID                     uint            `json:"user_id" gorm:"index;not null"`
 	ExternalOrgID              string          `json:"-" gorm:"size:100;index"` // optional external tenant reference (mirrors Task.ExternalOrgID)
 	SampleID                   string          `json:"sample_id" gorm:"size:36;index"`
+	InternalID                 string          `json:"internal_id,omitempty" gorm:"size:100;index"`
 	Name                       string          `json:"name" gorm:"size:255;not null"`
 	FileType                   UploadFileType  `json:"file_type" gorm:"size:50;not null"`
 	ReferenceGenome            string          `json:"reference_genome,omitempty" gorm:"size:20;index"`
@@ -87,6 +88,7 @@ type UploadFile struct {
 
 type UploadJobCreateRequest struct {
 	SampleID                 string                 `json:"sample_id"`
+	InternalID               string                 `json:"internal_id" binding:"omitempty,max=100"`
 	Name                     string                 `json:"name" binding:"required"`
 	FileType                 UploadFileType         `json:"file_type" binding:"required"`
 	ReferenceGenome          string                 `json:"reference_genome"`
@@ -105,6 +107,7 @@ type UploadJobResponse struct {
 	ID                         string               `json:"id"`
 	UserID                     uint                 `json:"user_id"`
 	SampleID                   string               `json:"sample_id,omitempty"`
+	InternalID                 string               `json:"internal_id,omitempty"`
 	Name                       string               `json:"name"`
 	FileType                   UploadFileType       `json:"file_type"`
 	ReferenceGenome            string               `json:"reference_genome,omitempty"`
@@ -150,6 +153,7 @@ func UploadJobToResponse(job *UploadJob, files []UploadFileResponse) UploadJobRe
 		ID:                         job.UUID,
 		UserID:                     job.UserID,
 		SampleID:                   job.SampleID,
+		InternalID:                 job.InternalID,
 		Name:                       job.Name,
 		FileType:                   job.FileType,
 		ReferenceGenome:            job.ReferenceGenome,
