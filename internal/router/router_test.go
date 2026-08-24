@@ -27,7 +27,7 @@ func testRouterConfig() *config.Config {
 	}
 }
 
-func TestReportTemplateCreateRequiresAdmin(t *testing.T) {
+func TestReportTemplateCreateAllowsAuthenticatedUser(t *testing.T) {
 	cfg := testRouterConfig()
 
 	token, _, _, err := service.NewJWTService(cfg).GenerateToken(&model.User{
@@ -48,8 +48,8 @@ func TestReportTemplateCreateRequiresAdmin(t *testing.T) {
 
 	router.ServeHTTP(resp, req)
 
-	if resp.Code != http.StatusForbidden {
-		t.Fatalf("expected non-admin template creation to be forbidden, got %d", resp.Code)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected ordinary user request to reach template validation, got %d", resp.Code)
 	}
 }
 

@@ -136,6 +136,7 @@ func New(cfg *config.Config) *gin.Engine {
 		aiHandler := handler.NewAIHandler(cfg)
 		exportHandler := handler.NewExportHandler(cfg)
 		reportHandler := handler.NewReportHandler(cfg)
+		resultPackageHandler := handler.NewResultPackageHandler(cfg)
 		tasks := v1.Group("/tasks")
 		tasks.Use(middleware.JWTAuth(cfg))
 		{
@@ -154,6 +155,8 @@ func New(cfg *config.Config) *gin.Engine {
 			tasks.POST("/:id/retry", taskHandler.RetryTask)
 			tasks.POST("/:id/results/import/retry", taskHandler.RetryResultImport)
 			tasks.POST("/:id/ai-evaluate", aiHandler.Evaluate)
+			tasks.POST("/:id/result-package/prepare", resultPackageHandler.Prepare)
+			tasks.GET("/:id/result-package", resultPackageHandler.Status)
 
 			// AI proxy for frontend page-agent.
 			aiProxy := v1.Group("/ai/proxy")
@@ -180,17 +183,11 @@ func New(cfg *config.Config) *gin.Engine {
 		reportTemplates.Use(middleware.JWTAuth(cfg))
 		{
 			reportTemplates.GET("", reportHandler.ListTemplates)
-		}
-		// Admin-only report template management
-		reportTemplatesAdmin := v1.Group("/report-templates")
-		reportTemplatesAdmin.Use(middleware.JWTAuth(cfg))
-		reportTemplatesAdmin.Use(middleware.RequireAdmin())
-		{
-			reportTemplatesAdmin.POST("", reportHandler.CreateTemplate)
-			reportTemplatesAdmin.POST("/validate-endpoint", reportHandler.ValidateTemplateEndpoint)
-			reportTemplatesAdmin.PUT("/:id", reportHandler.UpdateTemplate)
-			reportTemplatesAdmin.PUT("/:id/status", reportHandler.UpdateTemplateStatus)
-			reportTemplatesAdmin.DELETE("/:id", reportHandler.DeleteTemplate)
+			reportTemplates.POST("", reportHandler.CreateTemplate)
+			reportTemplates.POST("/validate-endpoint", reportHandler.ValidateTemplateEndpoint)
+			reportTemplates.PUT("/:id", reportHandler.UpdateTemplate)
+			reportTemplates.PUT("/:id/status", reportHandler.UpdateTemplateStatus)
+			reportTemplates.DELETE("/:id", reportHandler.DeleteTemplate)
 		}
 
 		// ========== Result management (protected) ==========

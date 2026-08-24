@@ -18,6 +18,7 @@ type Config struct {
 	Overlay      OverlayConfig
 	LLM          LLMConfig
 	Storage      StorageConfig
+	Report       ReportConfig
 }
 
 type ServerConfig struct {
@@ -118,6 +119,11 @@ type StorageConfig struct {
 	ScanOrgID        string
 	ScanUserID       int
 	ScanInterval     time.Duration
+}
+
+type ReportConfig struct {
+	PackageMaxSizeMB int
+	RequestTimeout   time.Duration
 }
 
 // Load loads configuration from environment and files
@@ -243,6 +249,10 @@ func Load() *Config {
 			ScanOrgID:        strings.TrimSpace(getEnv("DATA_SCAN_ORG_ID", "")),
 			ScanUserID:       parseIntEnv("DATA_SCAN_USER_ID", 1),
 			ScanInterval:     parseDuration(getEnv("DATA_SCAN_INTERVAL", "1m")),
+		},
+		Report: ReportConfig{
+			PackageMaxSizeMB: parseIntEnv("REPORT_PACKAGE_MAX_SIZE_MB", 20*1024),
+			RequestTimeout:   parseDuration(getEnv("REPORT_REQUEST_TIMEOUT", "5m")),
 		},
 	}
 }

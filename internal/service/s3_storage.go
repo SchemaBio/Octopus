@@ -82,6 +82,21 @@ func (s *s3Storage) put(ctx context.Context, key, contentType string, body []byt
 	return nil
 }
 
+// putReader uploads a stream without materialising the object in memory.
+func (s *s3Storage) putReader(ctx context.Context, key, contentType string, body io.Reader, size int64) error {
+	input := &s3.PutObjectInput{
+		Bucket: aws.String(s.bucket), Key: aws.String(key), Body: body,
+		ContentType: aws.String(contentType),
+	}
+	if size >= 0 {
+		input.ContentLength = aws.Int64(size)
+	}
+	if _, err := s.client.PutObject(ctx, input); err != nil {
+		return fmt.Errorf("put S3 object %s: %w", key, err)
+	}
+	return nil
+}
+
 func (s *s3Storage) presignDownload(ctx context.Context, key, filename string) (string, error) {
 	disposition := fmt.Sprintf("attachment; filename=%q", filename)
 	request, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{

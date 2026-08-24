@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	defaultReportContentType = "application/octet-stream"
-	maxReportDownloadBytes   = 50 << 20
+	defaultReportContentType    = "application/octet-stream"
+	maxReportDownloadBytes      = 50 << 20
+	defaultReportRequestTimeout = 5 * time.Minute
 )
 
 var (
@@ -38,6 +39,7 @@ type ReportService struct {
 	cfg          *config.Config
 	repo         *repository.ReportRepository
 	templateRepo *repository.ReportTemplateRepository
+	packageSvc   *ResultPackageService
 	http         *http.Client
 }
 
@@ -50,11 +52,16 @@ type ReportDownload struct {
 }
 
 func NewReportService(cfg *config.Config) *ReportService {
+	timeout := defaultReportRequestTimeout
+	if cfg != nil && cfg.Report.RequestTimeout > 0 {
+		timeout = cfg.Report.RequestTimeout
+	}
 	return &ReportService{
 		cfg:          cfg,
 		repo:         repository.NewReportRepository(),
 		templateRepo: repository.NewReportTemplateRepository(),
-		http:         reportHTTPClient(),
+		packageSvc:   NewResultPackageService(cfg),
+		http:         reportHTTPClientWithTimeout(timeout),
 	}
 }
 
@@ -75,23 +82,54 @@ func (s *ReportService) ListByTaskID(taskID string) ([]model.ReportResponse, err
 // GenerateReportDownload calls the configured report API and returns its file
 // response as a stream. Octopus does not store, archive, or later serve reports
 // generated through this endpoint.
-func (s *ReportService) GenerateReportDownload(ctx context.Context, task *model.Task, req *model.ReportCreateRequest, userID string) (*ReportDownload, error) {
-	templateName := strings.TrimSpace(req.TemplateName)
-	if templateName == "" {
-		return nil, fmt.Errorf("templateName is required")
+func (s *ReportService) GenerateReportDownload(ctx context.Context, ownerUserID uint, task *model.Task, req *model.ReportCreateRequest, userEmail string, roles ...string) (*ReportDownload, error) {
+	var tmpl *model.ReportTemplate
+	var err error
+	if templateID := strings.TrimSpace(req.TemplateID); templateID != "" {
+		tmpl, err = s.templateRepo.FindActiveByIDAndOwner(templateID, ownerUserID)
+	} else if templateName := strings.TrimSpace(req.TemplateName); templateName != "" {
+		// Backward-compatible lookup for older clients, scoped to the current user.
+		tmpl, err = s.templateRepo.FindActiveByNameAndOwner(templateName, ownerUserID)
+	} else {
+		return nil, fmt.Errorf("templateId is required")
 	}
-
-	tmpl, err := s.templateRepo.FindByName(templateName)
 	if err != nil {
-		return nil, fmt.Errorf("report template not found")
+		return nil, err
+	}
+	if tmpl == nil {
+		return nil, ErrReportTemplateNotFound
+	}
+	if s.packageSvc != nil {
+		isAdmin := len(roles) > 0 && roles[0] == string(model.SystemRoleSuperAdmin)
+		if !isAdmin && (task == nil || task.CreatedBy != ownerUserID) {
+			return nil, ErrResultPackageNotReady
+		}
 	}
 
-	return s.generateReportDownload(ctx, tmpl, task, req, userID)
+	return s.generateReportDownload(ctx, tmpl, task, req, userEmail)
 }
 
 func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.ReportTemplate, task *model.Task, req *model.ReportCreateRequest, userID string) (*ReportDownload, error) {
 	if err := validateReportAPIEndpoint(tmpl.APIEndpoint); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(tmpl.APIKey) == "" {
+		return nil, fmt.Errorf("report API key is required")
+	}
+
+	var packageStatus *model.ResultPackageResponse
+	if s.packageSvc != nil {
+		var packageErr error
+		packageStatus, packageErr = s.packageSvc.Status(ctx, task)
+		if packageErr != nil {
+			return nil, packageErr
+		}
+		if packageStatus.Status != model.ResultPackageReady || packageStatus.ResultPackageURL == "" {
+			if strings.TrimSpace(packageStatus.Error) != "" {
+				return nil, fmt.Errorf("%w: %s", ErrResultPackageNotReady, packageStatus.Error)
+			}
+			return nil, ErrResultPackageNotReady
+		}
 	}
 
 	requestID := uuid.New().String()
@@ -100,14 +138,21 @@ func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.
 		reportName = tmpl.Name
 	}
 	payload := map[string]interface{}{
-		"requestId":  requestID,
-		"reportId":   requestID,
-		"taskId":     task.UUID,
-		"taskName":   task.Name,
-		"sampleId":   task.SampleID,
-		"pipeline":   task.Pipeline,
-		"reportName": reportName,
-		"createdBy":  userID,
+		"request_id":       requestID,
+		"report_id":        requestID,
+		"task_result_uuid": task.UUID,
+		"task_name":        task.Name,
+		"sample_id":        task.SampleID,
+		"pipeline":         task.Pipeline,
+		"report_name":      reportName,
+		"created_by":       userID,
+	}
+	if packageStatus != nil {
+		payload["task_uuid"] = task.UUID
+		payload["result_package_url"] = packageStatus.ResultPackageURL
+		payload["result_package_filename"] = packageStatus.FileName
+		payload["result_package_size_bytes"] = packageStatus.SizeBytes
+		payload["result_package_expires_at"] = packageStatus.ExpiresAt
 	}
 
 	body, _ := json.Marshal(payload)
@@ -118,9 +163,7 @@ func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.
 
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/octet-stream,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*")
-	if tmpl.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+tmpl.APIKey)
-	}
+	httpReq.Header.Set("Authorization", "Bearer "+tmpl.APIKey)
 
 	resp, err := s.httpClient().Do(httpReq)
 	if err != nil {
@@ -141,6 +184,11 @@ func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.
 	}
 
 	contentType := resp.Header.Get("Content-Type")
+	mediaType, _, _ := mime.ParseMediaType(contentType)
+	if strings.EqualFold(strings.TrimSpace(mediaType), "application/json") {
+		resp.Body.Close()
+		return nil, fmt.Errorf("report API returned a non-file response")
+	}
 	if contentType == "" {
 		contentType = defaultReportContentType
 	}
@@ -200,19 +248,41 @@ func (s *ReportService) ValidateTemplateEndpoint(ctx context.Context, endpoint, 
 	if err := validateReportAPIEndpoint(endpoint); err != nil {
 		return 0, err
 	}
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return 0, fmt.Errorf("report API key is required")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, endpoint, nil)
 	if err != nil {
 		return 0, err
 	}
-	if apiKey = strings.TrimSpace(apiKey); apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	resp, err := s.httpClient().Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("report API endpoint is unreachable: %w", err)
 	}
 	resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return resp.StatusCode, fmt.Errorf("report API rejected the authentication key with status %d", resp.StatusCode)
+	}
 	return resp.StatusCode, nil
+}
+
+// ValidateOwnedTemplateEndpoint reuses a saved key when an owner validates an
+// existing template. The key never needs to be returned to the browser.
+func (s *ReportService) ValidateOwnedTemplateEndpoint(ctx context.Context, ownerUserID uint, templateID, endpoint, apiKey string) (int, error) {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" && strings.TrimSpace(templateID) != "" {
+		tmpl, err := s.templateRepo.FindAnyByIDAndOwner(strings.TrimSpace(templateID), ownerUserID)
+		if err != nil {
+			return 0, err
+		}
+		if tmpl == nil {
+			return 0, ErrReportTemplateNotFound
+		}
+		apiKey = tmpl.APIKey
+	}
+	return s.ValidateTemplateEndpoint(ctx, endpoint, apiKey)
 }
 
 func reportDownloadFileName(requestName, templateName, taskID, contentDisposition, contentType string) string {
@@ -272,9 +342,9 @@ func reportFileExtension(contentType string) string {
 	}
 }
 
-// ListActiveTemplates returns all active report templates.
-func (s *ReportService) ListActiveTemplates() ([]model.ReportTemplateResponse, error) {
-	templates, err := s.templateRepo.FindActive()
+// ListActiveTemplates returns the current user's active report templates.
+func (s *ReportService) ListActiveTemplates(ownerUserID uint) ([]model.ReportTemplateResponse, error) {
+	templates, err := s.templateRepo.FindActiveByOwner(ownerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -285,9 +355,9 @@ func (s *ReportService) ListActiveTemplates() ([]model.ReportTemplateResponse, e
 	return results, nil
 }
 
-// ListTemplatesAdmin returns all templates with admin-safe metadata.
-func (s *ReportService) ListTemplatesAdmin() ([]model.ReportTemplateAdminResponse, error) {
-	templates, err := s.templateRepo.FindAllOrdered()
+// ListTemplatesForOwner returns a user's templates with endpoint metadata but never the API key.
+func (s *ReportService) ListTemplatesForOwner(ownerUserID uint) ([]model.ReportTemplateAdminResponse, error) {
+	templates, err := s.templateRepo.FindAllByOwner(ownerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +369,7 @@ func (s *ReportService) ListTemplatesAdmin() ([]model.ReportTemplateAdminRespons
 }
 
 // CreateTemplate creates a new report template.
-func (s *ReportService) CreateTemplate(req *model.ReportTemplateCreateRequest) (*model.ReportTemplateAdminResponse, error) {
+func (s *ReportService) CreateTemplate(ownerUserID uint, req *model.ReportTemplateCreateRequest) (*model.ReportTemplateAdminResponse, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
 	req.APIEndpoint = strings.TrimSpace(req.APIEndpoint)
@@ -307,10 +377,13 @@ func (s *ReportService) CreateTemplate(req *model.ReportTemplateCreateRequest) (
 	if req.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+	if req.APIKey == "" {
+		return nil, fmt.Errorf("report API key is required")
+	}
 	if err := validateReportAPIEndpoint(req.APIEndpoint); err != nil {
 		return nil, err
 	}
-	if existing, err := s.templateRepo.FindAnyByName(req.Name); err != nil {
+	if existing, err := s.templateRepo.FindAnyByNameAndOwner(req.Name, ownerUserID); err != nil {
 		return nil, err
 	} else if existing != nil {
 		return nil, ErrReportTemplateNameExists
@@ -318,6 +391,7 @@ func (s *ReportService) CreateTemplate(req *model.ReportTemplateCreateRequest) (
 
 	tmpl := &model.ReportTemplate{
 		ID:          uuid.New().String(),
+		OwnerUserID: ownerUserID,
 		Name:        req.Name,
 		Description: req.Description,
 		APIEndpoint: req.APIEndpoint,
@@ -333,8 +407,8 @@ func (s *ReportService) CreateTemplate(req *model.ReportTemplateCreateRequest) (
 }
 
 // UpdateTemplate updates mutable report template metadata and optionally rotates the API key.
-func (s *ReportService) UpdateTemplate(id string, req *model.ReportTemplateUpdateRequest) (*model.ReportTemplateAdminResponse, error) {
-	tmpl, err := s.templateRepo.FindAnyByID(strings.TrimSpace(id))
+func (s *ReportService) UpdateTemplate(ownerUserID uint, id string, req *model.ReportTemplateUpdateRequest) (*model.ReportTemplateAdminResponse, error) {
+	tmpl, err := s.templateRepo.FindAnyByIDAndOwner(strings.TrimSpace(id), ownerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +418,7 @@ func (s *ReportService) UpdateTemplate(id string, req *model.ReportTemplateUpdat
 
 	name := strings.TrimSpace(req.Name)
 	if name != "" && name != tmpl.Name {
-		if existing, err := s.templateRepo.FindAnyByName(name); err != nil {
+		if existing, err := s.templateRepo.FindAnyByNameAndOwner(name, ownerUserID); err != nil {
 			return nil, err
 		} else if existing != nil && existing.ID != tmpl.ID {
 			return nil, ErrReportTemplateNameExists
@@ -375,8 +449,8 @@ func (s *ReportService) UpdateTemplate(id string, req *model.ReportTemplateUpdat
 }
 
 // SetTemplateActive toggles report template availability.
-func (s *ReportService) SetTemplateActive(id string, active bool) (*model.ReportTemplateAdminResponse, error) {
-	tmpl, err := s.templateRepo.FindAnyByID(strings.TrimSpace(id))
+func (s *ReportService) SetTemplateActive(ownerUserID uint, id string, active bool) (*model.ReportTemplateAdminResponse, error) {
+	tmpl, err := s.templateRepo.FindAnyByIDAndOwner(strings.TrimSpace(id), ownerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -392,8 +466,8 @@ func (s *ReportService) SetTemplateActive(id string, active bool) (*model.Report
 }
 
 // DeleteTemplate deletes an inactive report template.
-func (s *ReportService) DeleteTemplate(id string) error {
-	tmpl, err := s.templateRepo.FindAnyByID(strings.TrimSpace(id))
+func (s *ReportService) DeleteTemplate(ownerUserID uint, id string) error {
+	tmpl, err := s.templateRepo.FindAnyByIDAndOwner(strings.TrimSpace(id), ownerUserID)
 	if err != nil {
 		return err
 	}
@@ -451,8 +525,15 @@ func isPublicIP(ip net.IP) bool {
 }
 
 func reportHTTPClient() *http.Client {
+	return reportHTTPClientWithTimeout(defaultReportRequestTimeout)
+}
+
+func reportHTTPClientWithTimeout(timeout time.Duration) *http.Client {
+	if timeout <= 0 {
+		timeout = defaultReportRequestTimeout
+	}
 	return &http.Client{
-		Timeout:   30 * time.Second,
+		Timeout:   timeout,
 		Transport: reportHTTPTransport(),
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 3 {

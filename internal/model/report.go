@@ -40,10 +40,11 @@ func (Report) TableName() string {
 // ReportTemplate represents an available report generation template/API
 type ReportTemplate struct {
 	ID          string    `json:"id" gorm:"primaryKey;size:36"`
-	Name        string    `json:"name" gorm:"size:200;not null"`
+	OwnerUserID uint      `json:"-" gorm:"index:idx_report_templates_owner_name,unique"`
+	Name        string    `json:"name" gorm:"size:200;not null;index:idx_report_templates_owner_name,unique"`
 	Description string    `json:"description" gorm:"type:text"`
 	APIEndpoint string    `json:"apiEndpoint" gorm:"size:500;not null"` // User's report generation API
-	APIKey      string    `json:"apiKey,omitempty" gorm:"size:500"`
+	APIKey      string    `json:"-" gorm:"size:500;not null"`
 	IsActive    bool      `json:"isActive" gorm:"default:true"`
 	CreatedAt   time.Time `json:"created_at" gorm:"type:timestamptz"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"type:timestamptz"`
@@ -56,6 +57,7 @@ func (ReportTemplate) TableName() string {
 // ReportCreateRequest is the request for creating a report
 type ReportCreateRequest struct {
 	Name         string `json:"name" binding:"required"`
+	TemplateID   string `json:"templateId"`
 	TemplateName string `json:"templateName"`
 }
 
@@ -134,6 +136,7 @@ type ReportTemplateStatusRequest struct {
 type ReportEndpointValidateRequest struct {
 	APIEndpoint string `json:"apiEndpoint" binding:"required"`
 	APIKey      string `json:"apiKey"`
+	TemplateID  string `json:"templateId"`
 }
 
 // ReportTemplateResponse is the public-safe template payload (omits APIEndpoint and APIKey)

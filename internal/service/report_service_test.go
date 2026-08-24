@@ -106,7 +106,7 @@ func TestGenerateReportDownloadStreamsAPIResponse(t *testing.T) {
 	if !strings.Contains(gotAccept, "application/pdf") {
 		t.Fatalf("expected Accept to include application/pdf, got %q", gotAccept)
 	}
-	if !strings.Contains(gotBody, `"taskId":"task-1"`) || !strings.Contains(gotBody, `"createdBy":"user@example.com"`) {
+	if !strings.Contains(gotBody, `"task_result_uuid":"task-1"`) || !strings.Contains(gotBody, `"created_by":"user@example.com"`) {
 		t.Fatalf("unexpected report API payload: %s", gotBody)
 	}
 	if download.FileName != "case-report.pdf" {
@@ -118,6 +118,33 @@ func TestGenerateReportDownloadStreamsAPIResponse(t *testing.T) {
 	data, _ := io.ReadAll(download.Body)
 	if string(data) != "report-bytes" {
 		t.Fatalf("unexpected download body: %q", string(data))
+	}
+}
+
+func TestValidateTemplateEndpointRequiresAndVerifiesBearerKey(t *testing.T) {
+	var gotAuthorization string
+	svc := &ReportService{
+		http: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			gotAuthorization = req.Header.Get("Authorization")
+			return &http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Body:       io.NopCloser(strings.NewReader("unauthorized")),
+				Request:    req,
+			}, nil
+		})},
+	}
+
+	_, err := svc.ValidateTemplateEndpoint(context.Background(), "https://8.8.8.8/generate", "secret")
+	if err == nil || !strings.Contains(err.Error(), "authentication key") {
+		t.Fatalf("expected authentication rejection, got %v", err)
+	}
+	if gotAuthorization != "Bearer secret" {
+		t.Fatalf("unexpected authorization header: %q", gotAuthorization)
+	}
+
+	_, err = svc.ValidateTemplateEndpoint(context.Background(), "https://8.8.8.8/generate", "")
+	if err == nil || !strings.Contains(err.Error(), "API key is required") {
+		t.Fatalf("expected missing key validation error, got %v", err)
 	}
 }
 
@@ -146,7 +173,7 @@ func TestGenerateReportDownloadReturnsAPIError(t *testing.T) {
 
 	_, err := svc.generateReportDownload(
 		context.Background(),
-		&model.ReportTemplate{Name: "clinical", APIEndpoint: "https://8.8.8.8/generate"},
+		&model.ReportTemplate{Name: "clinical", APIEndpoint: "https://8.8.8.8/generate", APIKey: "secret"},
 		&model.Task{UUID: "task-1"},
 		&model.ReportCreateRequest{Name: "report", TemplateName: "clinical"},
 		"user@example.com",

@@ -21,7 +21,7 @@
 - **审核/回报**：统一通过数据库管理变异的审核和回报状态，支持 toggleable 状态
 - **AI 辅助评估**：对接 LLM 对变异进行临床遗传学分析，支持多级过滤，Proxy 安全加固
 - **结果查询**：根据 UUID 和 outputs.resolved.json 中的 key 查询归档文件路径
-- **报告生成**：通过本地配置的 Report API 直接生成并流式下载报告，不依赖对象存储
+- **报告生成**：从 COS/S3 归档按 execution attempt 生成并缓存完整结果 ZIP，再通过用户配置的 Bearer Key FastAPI 端点同步生成报告
 - **WDL 模板管理**：内置工作流目录 + 文件系统模板，支持默认输入值
 - **资源访问控制**：基于任务的访问验证，防止跨任务数据泄露
 - **启动配置验证**：release 模式下自动检查 JWT 密钥强度和配置一致性
@@ -204,16 +204,30 @@ go run ./cmd/seed -reset # 清空 seed 后重插
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/v1/report-templates | 列出可用报告模板 |
-| POST | /api/v1/report-templates | 创建报告模板 (admin) |
+| GET | /api/v1/report-templates | 列出当前用户启用的报告服务；`include_inactive=true` 返回当前用户的完整配置摘要 |
+| POST | /api/v1/report-templates | 创建当前用户的报告服务（HTTPS 端点和 API Key 必填） |
+| POST | /api/v1/report-templates/validate-endpoint | 使用 Bearer Key 测试报告服务连通性 |
+| PUT | /api/v1/report-templates/:id | 更新当前用户的报告服务或轮换 API Key |
+| PUT | /api/v1/report-templates/:id/status | 启用或停用当前用户的报告服务 |
+| DELETE | /api/v1/report-templates/:id | 删除当前用户已停用的报告服务 |
+| POST | /api/v1/tasks/:id/result-package/prepare | 异步创建或复用完整结果包（仅任务所有者/平台管理员） |
+| GET | /api/v1/tasks/:id/result-package | 查询结果包状态并获取短期预签名下载 URL |
 | GET | /api/v1/tasks/:id/reports | 查询历史兼容报告记录 |
-| POST | /api/v1/tasks/:id/reports | 调用配置的 Report API 并直接下载生成文件 |
+| POST | /api/v1/tasks/:id/reports | 结果包 ready 后调用配置的 Report API 并直接下载生成文件 |
 | POST | /api/v1/tasks/:id/reports/upload | 已禁用，返回 410 |
 | PATCH | /api/v1/tasks/:id/reports/:reportId/status | 已禁用，返回 410 |
 | DELETE | /api/v1/tasks/:id/reports/:reportId | 已禁用，返回 410 |
 | GET | /api/v1/tasks/:id/reports/:reportId/download-url | 已禁用，返回 410 |
 
-Octopus 不保存新生成报告，也不生成对象存储下载链接；报告 API 的响应会以附件形式直接流式返回给客户端。
+结果包仅在配置 COS/S3 时可用；本地存储部署会明确返回不支持，不回退到公开下载。ZIP 包含该 execution attempt 下的全部
+`.parquet` 和 `outputs.resolved.json`，首次请求异步生成并缓存，后续按源文件指纹复用。结果包 URL 是短期只读预签名地址，
+不会进入日志或前端持久化。Octopus 不保存新生成报告，报告 API 的响应会以附件形式直接流式返回给客户端。
+
+外部报告服务应提供一个 HTTPS `POST` 端点。Octopus 在服务端添加
+`Authorization: Bearer <API Key>`，并发送 JSON 请求体；任务结果 UUID 位于
+`task_uuid`、`result_package_url`、`result_package_filename`、`result_package_size_bytes`、
+`result_package_expires_at` 和 `report_name` 字段，同时保留 `task_result_uuid` 兼容旧客户端。端点应直接返回报告文件，推荐同时返回正确的
+`Content-Type` 和 `Content-Disposition`。API Key 永不通过查询接口返回给前端。
 
 ### 结果管理 (需要认证)
 
@@ -249,6 +263,8 @@ Octopus 不保存新生成报告，也不生成对象存储下载链接；报告
 | STORAGE_PROVIDER | local | 本地开源版固定为 local |
 | STORAGE_LOCAL_DIR | /mnt/data/uploads | 本地上传目录 |
 | UPLOAD_MAX_SIZE_MB | 0 | 上传文件大小限制，0 表示不限制 |
+| REPORT_PACKAGE_MAX_SIZE_MB | 20480 | 结果包源文件总量上限（默认 20 GiB） |
+| REPORT_REQUEST_TIMEOUT | 5m | 外部报告 FastAPI 同步请求超时 |
 | COS_REGION / COS_BUCKET | | `STORAGE_PROVIDER=cos` 时的腾讯云 COS 地域和 bucket |
 | COS_SECRET_ID / COS_SECRET_KEY | | COS 专用凭据对；必须成对配置 |
 | COS_SECRET_ID_FILE / COS_SECRET_KEY_FILE | | 从文件读取 COS 专用凭据 |

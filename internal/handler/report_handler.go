@@ -58,14 +58,18 @@ func (h *ReportHandler) CreateReport(c *gin.Context) {
 		return
 	}
 
-	_, email, _, ok := middleware.GetCurrentUser(c)
+	userID, email, role, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	download, err := h.svc.GenerateReportDownload(c.Request.Context(), task, &req, email)
+	download, err := h.svc.GenerateReportDownload(c.Request.Context(), userID, task, &req, email, role)
 	if err != nil {
+		if errors.Is(err, service.ErrResultPackageNotReady) {
+			c.JSON(http.StatusConflict, gin.H{"error": service.ErrResultPackageNotReady.Error(), "detail": err.Error()})
+			return
+		}
 		ErrorBadRequest(c, err.Error())
 		return
 	}
@@ -129,9 +133,13 @@ func (h *ReportHandler) GetReportDownloadURL(c *gin.Context) {
 
 // ListTemplates returns active report templates.
 func (h *ReportHandler) ListTemplates(c *gin.Context) {
-	_, _, role, ok := middleware.GetCurrentUser(c)
-	if ok && role == string(model.SystemRoleSuperAdmin) && c.Query("include_inactive") == "true" {
-		templates, err := h.svc.ListTemplatesAdmin()
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	if c.Query("include_inactive") == "true" {
+		templates, err := h.svc.ListTemplatesForOwner(userID)
 		if err != nil {
 			ErrorInternal(c, err.Error())
 			return
@@ -140,7 +148,7 @@ func (h *ReportHandler) ListTemplates(c *gin.Context) {
 		return
 	}
 
-	templates, err := h.svc.ListActiveTemplates()
+	templates, err := h.svc.ListActiveTemplates(userID)
 	if err != nil {
 		ErrorInternal(c, err.Error())
 		return
@@ -151,13 +159,18 @@ func (h *ReportHandler) ListTemplates(c *gin.Context) {
 
 // CreateTemplate creates a new report template.
 func (h *ReportHandler) CreateTemplate(c *gin.Context) {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
 	var req model.ReportTemplateCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
 
-	tmpl, err := h.svc.CreateTemplate(&req)
+	tmpl, err := h.svc.CreateTemplate(userID, &req)
 	if err != nil {
 		writeReportTemplateError(c, err)
 		return
@@ -167,12 +180,17 @@ func (h *ReportHandler) CreateTemplate(c *gin.Context) {
 }
 
 func (h *ReportHandler) ValidateTemplateEndpoint(c *gin.Context) {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
 	var req model.ReportEndpointValidateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	status, err := h.svc.ValidateTemplateEndpoint(c.Request.Context(), req.APIEndpoint, req.APIKey)
+	status, err := h.svc.ValidateOwnedTemplateEndpoint(c.Request.Context(), userID, req.TemplateID, req.APIEndpoint, req.APIKey)
 	if err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
@@ -182,13 +200,18 @@ func (h *ReportHandler) ValidateTemplateEndpoint(c *gin.Context) {
 
 // UpdateTemplate updates a report template.
 func (h *ReportHandler) UpdateTemplate(c *gin.Context) {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
 	var req model.ReportTemplateUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
 
-	tmpl, err := h.svc.UpdateTemplate(c.Param("id"), &req)
+	tmpl, err := h.svc.UpdateTemplate(userID, c.Param("id"), &req)
 	if err != nil {
 		writeReportTemplateError(c, err)
 		return
@@ -199,13 +222,18 @@ func (h *ReportHandler) UpdateTemplate(c *gin.Context) {
 
 // UpdateTemplateStatus toggles a report template's active state.
 func (h *ReportHandler) UpdateTemplateStatus(c *gin.Context) {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
 	var req model.ReportTemplateStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
 
-	tmpl, err := h.svc.SetTemplateActive(c.Param("id"), req.IsActive)
+	tmpl, err := h.svc.SetTemplateActive(userID, c.Param("id"), req.IsActive)
 	if err != nil {
 		writeReportTemplateError(c, err)
 		return
@@ -216,7 +244,12 @@ func (h *ReportHandler) UpdateTemplateStatus(c *gin.Context) {
 
 // DeleteTemplate deletes an inactive report template.
 func (h *ReportHandler) DeleteTemplate(c *gin.Context) {
-	if err := h.svc.DeleteTemplate(c.Param("id")); err != nil {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := h.svc.DeleteTemplate(userID, c.Param("id")); err != nil {
 		writeReportTemplateError(c, err)
 		return
 	}
@@ -231,7 +264,7 @@ func writeReportTemplateError(c *gin.Context, err error) {
 		ErrorConflict(c, err.Error())
 	case errors.Is(err, service.ErrReportTemplateActive):
 		ErrorBadRequest(c, err.Error())
-	case strings.Contains(err.Error(), "report API endpoint") || strings.Contains(err.Error(), "name is required"):
+	case strings.Contains(err.Error(), "report API endpoint") || strings.Contains(err.Error(), "authentication key") || strings.Contains(err.Error(), "name is required") || strings.Contains(err.Error(), "API key is required") || strings.Contains(err.Error(), "templateId is required"):
 		ErrorBadRequest(c, err.Error())
 	default:
 		ErrorInternal(c, err.Error())
