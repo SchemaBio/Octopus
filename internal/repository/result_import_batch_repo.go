@@ -33,10 +33,9 @@ func (r *ResultImportBatchRepository) FindLatestByTaskUUID(taskUUID string, limi
 }
 
 // CountFailedSinceScoped counts result_import_batches with status='failed'
-// started since `since` (nil = all time), org-scoped by joining to tasks
-// (ResultImportBatch itself carries no org). The scope func is provided by
-// the handler (e.g. built from taskDashboardScope) to keep the repository
-// free of handler-package concerns.
+// started since `since` (nil = all time). The compatibility scope callback is
+// retained for dashboard callers that have not yet been migrated to a direct
+// tenant predicate.
 func (r *ResultImportBatchRepository) CountFailedSinceScoped(since *time.Time, scope func(*gorm.DB) *gorm.DB) (int64, error) {
 	db := r.db.Model(&model.ResultImportBatch{}).
 		Joins("JOIN tasks ON tasks.uuid = result_import_batches.task_uuid").
@@ -51,8 +50,7 @@ func (r *ResultImportBatchRepository) CountFailedSinceScoped(since *time.Time, s
 	return count, db.Count(&count).Error
 }
 
-// ResultImportBatchAuditRow is the scanned row for the import-batch audit list:
-// the batch columns plus the owning task's org (joined).
+// ResultImportBatchAuditRow is the scanned row for the import-batch audit list.
 type ResultImportBatchAuditRow struct {
 	ID          uint
 	TaskUUID    string
@@ -65,13 +63,16 @@ type ResultImportBatchAuditRow struct {
 	OrgID       string
 }
 
-// PaginateByQuery lists import batches with status/since filters and org/user
-// scoping via a JOIN to tasks (org lives on tasks.external_org_id). Mirrors
-// the scope switch in TaskRepository.PaginateByQuery.
+// PaginateByQuery lists import batches with status/since filters. New callers
+// use TenantID directly; old callers retain the task-ownership fallback.
 func (r *ResultImportBatchRepository) PaginateByQuery(q *model.ResultImportBatchListQuery) ([]ResultImportBatchAuditRow, int64, error) {
-	db := r.db.Model(&model.ResultImportBatch{}).
-		Joins("LEFT JOIN tasks ON tasks.uuid = result_import_batches.task_uuid")
-	db = applyTaskActorScope(db, q.ExternalOrgID, q.UserID, q.IncludeAll)
+	db := r.db.Model(&model.ResultImportBatch{})
+	if q.TenantID != "" && !q.IncludeAll {
+		db = db.Where("result_import_batches.tenant_id = ?", q.TenantID)
+	} else {
+		db = db.Joins("LEFT JOIN tasks ON tasks.uuid = result_import_batches.task_uuid")
+		db = applyTaskActorScope(db, q.ExternalOrgID, q.UserID, q.IncludeAll)
+	}
 	if q.Status != "" {
 		db = db.Where("result_import_batches.status = ?", q.Status)
 	}
@@ -95,10 +96,16 @@ func (r *ResultImportBatchRepository) PaginateByQuery(q *model.ResultImportBatch
 
 	var rows []ResultImportBatchAuditRow
 	offset := (page - 1) * pageSize
-	err := db.Select(`result_import_batches.id, result_import_batches.task_uuid, result_import_batches.source,
+	selectColumns := `result_import_batches.id, result_import_batches.task_uuid, result_import_batches.source,
 		result_import_batches.status, result_import_batches.fingerprint, result_import_batches.error,
 		result_import_batches.started_at, result_import_batches.finished_at,
-		tasks.external_org_id AS org_id`).
+		COALESCE(tasks.external_org_id, '') AS org_id`
+	if q.TenantID != "" && !q.IncludeAll {
+		selectColumns = `result_import_batches.id, result_import_batches.task_uuid, result_import_batches.source,
+			result_import_batches.status, result_import_batches.fingerprint, result_import_batches.error,
+			result_import_batches.started_at, result_import_batches.finished_at, '' AS org_id`
+	}
+	err := db.Select(selectColumns).
 		Order("result_import_batches.started_at DESC").Offset(offset).Limit(pageSize).Scan(&rows).Error
 	return rows, total, err
 }

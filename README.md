@@ -212,6 +212,7 @@ go run ./cmd/seed -reset # 清空 seed 后重插
 | DELETE | /api/v1/report-templates/:id | 删除当前用户已停用的报告服务 |
 | POST | /api/v1/tasks/:id/result-package/prepare | 异步创建或复用完整结果包（仅任务所有者/平台管理员） |
 | GET | /api/v1/tasks/:id/result-package | 查询结果包状态并获取短期预签名下载 URL |
+| GET | /api/v1/tasks/:id/results/review-events | 查询任务结果审核/撤销审核事件时间线 |
 | GET | /api/v1/tasks/:id/reports | 查询历史兼容报告记录 |
 | POST | /api/v1/tasks/:id/reports | 结果包 ready 后调用配置的 Report API 并直接下载生成文件 |
 | POST | /api/v1/tasks/:id/reports/upload | 已禁用，返回 410 |

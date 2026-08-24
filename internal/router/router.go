@@ -207,6 +207,7 @@ func New(cfg *config.Config) *gin.Engine {
 			results.GET("/cnv-assessments", resultHandler.ListCNVAssessments)
 			results.GET("/cnv-assessments/:type/:vid", resultHandler.GetCNVAssessment)
 			results.PUT("/cnv-assessments/:type/:vid", resultHandler.SaveCNVAssessment)
+			results.GET("/review-events", resultHandler.ListReviewEvents)
 			results.PUT("/:type/:vid/review", resultHandler.ReviewVariant)
 			results.PUT("/:type/:vid/report", resultHandler.ReportVariant)
 		}

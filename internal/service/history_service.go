@@ -23,29 +23,29 @@ func NewHistoryService(cfg *config.Config) *HistoryService {
 }
 
 func (s *HistoryService) GetGroupedSNVIndels(ctx context.Context, query *model.HistoryListQuery) ([]model.GroupedSNVIndel, int64, error) {
-	return s.repo.GetGroupedSNVIndels(query)
+	return s.repo.GetGroupedSNVIndelsFromEvents(query)
 }
 
 func (s *HistoryService) GetGroupedCNVSegments(ctx context.Context, query *model.HistoryListQuery) ([]model.GroupedCNVSegment, int64, error) {
-	return s.repo.GetGroupedCNVSegments(query)
+	return s.repo.GetGroupedCNVSegmentsFromEvents(query)
 }
 
 func (s *HistoryService) GetGroupedCNVExons(ctx context.Context, query *model.HistoryListQuery) ([]model.GroupedCNVExon, int64, error) {
-	return s.repo.GetGroupedCNVExons(query)
+	return s.repo.GetGroupedCNVExonsFromEvents(query)
 }
 
 func (s *HistoryService) GetGroupedSTRs(ctx context.Context, query *model.HistoryListQuery) ([]model.GroupedSTR, int64, error) {
-	return s.repo.GetGroupedSTRs(query)
+	return s.repo.GetGroupedSTRsFromEvents(query)
 }
 
 func (s *HistoryService) GetGroupedMEIs(ctx context.Context, query *model.HistoryListQuery) ([]model.GroupedMEI, int64, error) {
-	return s.repo.GetGroupedMEIs(query)
+	return s.repo.GetGroupedMEIsFromEvents(query)
 }
 
 func (s *HistoryService) GetGroupedMTVariants(ctx context.Context, query *model.HistoryListQuery) ([]model.GroupedMTVariant, int64, error) {
-	return s.repo.GetGroupedMTVariants(query)
+	return s.repo.GetGroupedMTVariantsFromEvents(query)
 }
 
 func (s *HistoryService) GetGroupedUPDRegions(ctx context.Context, query *model.HistoryListQuery) ([]model.GroupedUPDRegion, int64, error) {
-	return s.repo.GetGroupedUPDRegions(query)
+	return s.repo.GetGroupedUPDRegionsFromEvents(query)
 }

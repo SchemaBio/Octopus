@@ -10,15 +10,18 @@ import (
 // the scoring UI can evolve without requiring a schema migration for every
 // ClinGen rule-field change.
 type CNVAssessment struct {
-	ID          string    `json:"id" gorm:"primaryKey;size:36"`
-	TaskID      string    `json:"task_id" gorm:"size:36;not null;uniqueIndex:idx_cnv_assessment_variant;index"`
-	VariantType string    `json:"variant_type" gorm:"size:20;not null;uniqueIndex:idx_cnv_assessment_variant"`
-	VariantID   string    `json:"variant_id" gorm:"size:100;not null;uniqueIndex:idx_cnv_assessment_variant"`
-	PayloadJSON string    `json:"-" gorm:"type:jsonb;not null"`
-	CreatedBy   string    `json:"created_by" gorm:"size:100"`
-	UpdatedBy   string    `json:"updated_by" gorm:"size:100"`
-	CreatedAt   time.Time `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"type:timestamptz"`
+	TenantID           string    `json:"-" gorm:"size:160;index;uniqueIndex:idx_cnv_assessment_variant,priority:1"`
+	ExecutionAttemptID string    `json:"-" gorm:"size:36;index;uniqueIndex:idx_cnv_assessment_variant,priority:3"`
+	ImportBatchID      uint      `json:"-" gorm:"index"`
+	ID                 string    `json:"id" gorm:"primaryKey;size:36"`
+	TaskID             string    `json:"task_id" gorm:"size:36;not null;uniqueIndex:idx_cnv_assessment_variant,priority:2;index"`
+	VariantType        string    `json:"variant_type" gorm:"size:20;not null;uniqueIndex:idx_cnv_assessment_variant,priority:4"`
+	VariantID          string    `json:"variant_id" gorm:"size:100;not null;uniqueIndex:idx_cnv_assessment_variant,priority:5"`
+	PayloadJSON        string    `json:"-" gorm:"type:jsonb;not null"`
+	CreatedBy          string    `json:"created_by" gorm:"size:100"`
+	UpdatedBy          string    `json:"updated_by" gorm:"size:100"`
+	CreatedAt          time.Time `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt          time.Time `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 func (CNVAssessment) TableName() string {

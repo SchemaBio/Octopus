@@ -2,6 +2,7 @@ package model
 
 // CNVSegment represents a CNV region-level segment result (42 columns from region.cnvanno.txt)
 type CNVSegment struct {
+	ResultProvenance     `json:"-" gorm:"embedded"`
 	ID                   string   `json:"id" gorm:"primaryKey;size:36"`
 	TaskID               string   `json:"taskId" gorm:"size:36;index"`
 	Chromosome           string   `json:"chromosome" gorm:"size:10"`
@@ -54,9 +55,11 @@ func (CNVSegment) TableName() string {
 
 // CNVSegmentListQuery query parameters
 type CNVSegmentListQuery struct {
-	TaskID   string `form:"taskId"`
-	Search   string `form:"search"`
-	Type     string `form:"type"`
-	Page     int    `form:"page" binding:"omitempty,min=1"`
-	PageSize int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+	TaskID             string `form:"taskId"`
+	TenantID           string `form:"-" json:"-"`
+	ExecutionAttemptID string `form:"-" json:"-"`
+	Search             string `form:"search"`
+	Type               string `form:"type"`
+	Page               int    `form:"page" binding:"omitempty,min=1"`
+	PageSize           int    `form:"page_size" binding:"omitempty,min=1,max=100"`
 }

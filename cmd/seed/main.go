@@ -168,29 +168,50 @@ func insertSeedData(db *gorm.DB, adminID uint) error {
 	tasks := buildTasks(adminID, now)
 	for i := range tasks {
 		tasks[i].ExternalOrgID = externalOrgID
+		tasks[i].TenantID = model.TenantIDForIdentity(externalOrgID, tasks[i].CreatedBy)
+		if tasks[i].ExecutionAttemptID == "" {
+			tasks[i].ExecutionAttemptID = tasks[i].UUID
+		}
 		if err := db.Create(&tasks[i]).Error; err != nil {
 			return fmt.Errorf("task %s: %w", tasks[i].UUID, err)
 		}
 	}
 
 	qc := buildQC(now)
+	qc.TenantID = model.TenantIDForIdentity(externalOrgID, adminID)
+	qc.ExecutionAttemptID = taskCompletedUUID
 	if err := db.Create(&qc).Error; err != nil {
 		return fmt.Errorf("qc: %w", err)
 	}
 
 	snvs := buildSNVs(now)
+	for i := range snvs {
+		snvs[i].TenantID = model.TenantIDForIdentity(externalOrgID, adminID)
+		snvs[i].ExecutionAttemptID = taskCompletedUUID
+	}
 	if err := db.CreateInBatches(snvs, 50).Error; err != nil {
 		return fmt.Errorf("snv: %w", err)
 	}
 
 	segments := buildCNVSegments(now)
+	for i := range segments {
+		segments[i].TenantID = model.TenantIDForIdentity(externalOrgID, adminID)
+		segments[i].ExecutionAttemptID = taskCompletedUUID
+	}
 	if err := db.CreateInBatches(segments, 50).Error; err != nil {
 		return fmt.Errorf("cnv segment: %w", err)
 	}
 
 	exons := buildCNVExons(now)
+	for i := range exons {
+		exons[i].TenantID = model.TenantIDForIdentity(externalOrgID, adminID)
+		exons[i].ExecutionAttemptID = taskCompletedUUID
+	}
 	if err := db.CreateInBatches(exons, 50).Error; err != nil {
 		return fmt.Errorf("cnv exon: %w", err)
+	}
+	if err := database.BackfillAuditEvents(); err != nil {
+		return fmt.Errorf("audit events: %w", err)
 	}
 
 	fmt.Printf("  samples=%d pipelines=%d gene_lists=%d pedigree_members=%d tasks=%d snv=%d cnv_seg=%d cnv_exon=%d\n",

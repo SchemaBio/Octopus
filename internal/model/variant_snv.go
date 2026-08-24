@@ -2,6 +2,7 @@ package model
 
 // SNVIndel represents a SNV/Indel variant
 type SNVIndel struct {
+	ResultProvenance    `json:"-" gorm:"embedded"`
 	ID                  string             `json:"id" gorm:"primaryKey;size:36"`
 	TaskID              string             `json:"taskId" gorm:"size:36;index"`
 	Chromosome          string             `json:"chromosome" gorm:"size:10"`
@@ -60,11 +61,13 @@ func (SNVIndel) TableName() string {
 
 // SNVIndelListQuery query parameters
 type SNVIndelListQuery struct {
-	TaskID         string `form:"taskId"`
-	Search         string `form:"search"`
-	Gene           string `form:"gene"`
-	Classification string `form:"classification"`
-	GeneListID     string `form:"geneListId"`
+	TaskID             string `form:"taskId"`
+	TenantID           string `form:"-" json:"-"`
+	ExecutionAttemptID string `form:"-" json:"-"`
+	Search             string `form:"search"`
+	Gene               string `form:"gene"`
+	Classification     string `form:"classification"`
+	GeneListID         string `form:"geneListId"`
 	// GeneListGenes is populated by ResultService only after GeneListID has
 	// been resolved within the authenticated actor's scope.
 	GeneListGenes []string `form:"-" json:"-"`

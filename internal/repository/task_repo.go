@@ -120,7 +120,11 @@ func (r *TaskRepository) CountByStatusAndProject(projectID uint) (map[model.Task
 // PaginateByQuery paginates tasks with multiple filters
 func (r *TaskRepository) PaginateByQuery(query *model.TaskListQuery) ([]model.Task, int64, error) {
 	db := r.db.Model(&model.Task{})
-	db = applyTaskActorScope(db, query.ExternalOrgID, query.CreatedBy, query.IncludeAll)
+	if query.TenantID != "" && !query.IncludeAll {
+		db = db.Where("tenant_id = ?", query.TenantID)
+	} else {
+		db = applyTaskActorScope(db, query.ExternalOrgID, query.CreatedBy, query.IncludeAll)
+	}
 	if query.Status != "" {
 		db = db.Where("status = ?", query.Status)
 	}

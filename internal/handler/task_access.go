@@ -64,9 +64,11 @@ func applyTaskListScope(c *gin.Context, query *model.TaskListQuery) bool {
 	}
 	if orgID, ok := middleware.GetCurrentOrg(c); ok && orgID != "" {
 		query.ExternalOrgID = orgID
+		query.TenantID = model.TenantIDForIdentity(orgID, 0)
 		return true
 	}
 	query.CreatedBy = userID
+	query.TenantID = model.TenantIDForIdentity("", userID)
 	return true
 }
 

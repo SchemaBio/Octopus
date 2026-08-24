@@ -2,6 +2,14 @@ package model
 
 import "time"
 
+// ResultProvenance identifies the tenant and execution that produced a
+// structured result.
+type ResultProvenance struct {
+	TenantID           string `json:"-" gorm:"size:160;index"`
+	ExecutionAttemptID string `json:"-" gorm:"size:36;index"`
+	ImportBatchID      uint   `json:"-" gorm:"index"`
+}
+
 // VariantReviewStatus is the base review/report status for all variant types
 type VariantReviewStatus struct {
 	Reviewed   bool       `json:"reviewed" gorm:"default:false"`

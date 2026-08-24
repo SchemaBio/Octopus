@@ -733,6 +733,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		CreatedBy:          actor.UserID,
 		ResultImportStatus: model.ResultImportStatusPending,
 		ExternalOrgID:      actor.OrgID,
+		TenantID:           model.TenantIDForIdentity(actor.OrgID, actor.UserID),
 		EstimatedMinutes:   s.estimateTaskMinutes(sampleIDRef, uploadJob),
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -804,6 +805,14 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 	if task.Executor == model.ExecutorCVM {
 		if err := s.prepareCVMExecutionAttempt(task, false); err != nil {
 			return nil, err
+		}
+	} else if task.ExecutionAttemptID == "" || previousStatus == model.TaskStatusFailed || previousStatus == model.TaskStatusCancelled {
+		// Local/Slurm/LSF tasks also need a stable attempt identity so a
+		// re-import of the same attempt cannot double-count a review event.
+		task.ExecutionAttemptID = uuid.New().String()
+		task.UpdatedAt = time.Now()
+		if err := s.repo.Update(task); err != nil {
+			return nil, fmt.Errorf("persist execution attempt: %w", err)
 		}
 	}
 	if err := s.admitTask(ctx, model.OverlayAdmissionActionStart, actor, task); err != nil {
@@ -924,6 +933,12 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 		forceNew := !strings.EqualFold(strings.TrimSpace(task.VMStatus), "DISPATCHING")
 		if err := s.prepareCVMExecutionAttempt(task, forceNew); err != nil {
 			return nil, err
+		}
+	} else {
+		task.ExecutionAttemptID = uuid.New().String()
+		task.UpdatedAt = time.Now()
+		if err := s.repo.Update(task); err != nil {
+			return nil, fmt.Errorf("persist execution attempt: %w", err)
 		}
 	}
 	if err := s.admitTask(ctx, model.OverlayAdmissionActionRetry, actor, task); err != nil {
@@ -1150,7 +1165,11 @@ func (s *TaskService) runTaskArchiveImport(task *model.Task, archiveDir string) 
 	_ = s.repo.Update(task)
 
 	batch := s.startResultImportBatch(task, archiveDir, fingerprint, now)
-	result, err := NewImporter(s.cfg).ImportFromTaskArchive(task, archiveDir)
+	var batchID uint
+	if batch != nil {
+		batchID = batch.ID
+	}
+	result, err := NewImporter(s.cfg).ImportFromTaskArchive(task, archiveDir, batchID)
 	finishedAt := time.Now()
 	task.ResultImportedAt = &finishedAt
 	task.UpdatedAt = finishedAt
@@ -1180,16 +1199,22 @@ func (s *TaskService) startResultImportBatch(task *model.Task, archiveDir, finge
 	if task == nil || s.importBatchRepo == nil {
 		return nil
 	}
+	attemptID := task.ExecutionAttemptID
+	if attemptID == "" {
+		attemptID = task.UUID
+	}
 
 	batch := &model.ResultImportBatch{
-		TaskUUID:      task.UUID,
-		Source:        "local",
-		Status:        model.ResultImportBatchStatusRunning,
-		Fingerprint:   fingerprint,
-		ArchiveBase:   s.cfg.Task.ArchiveDir,
-		ArchivePrefix: task.UUID,
-		OutputsKey:    "outputs.resolved.json",
-		StartedAt:     startedAt,
+		TaskUUID:           task.UUID,
+		TenantID:           model.TenantIDForTask(task),
+		ExecutionAttemptID: attemptID,
+		Source:             "local",
+		Status:             model.ResultImportBatchStatusRunning,
+		Fingerprint:        fingerprint,
+		ArchiveBase:        s.cfg.Task.ArchiveDir,
+		ArchivePrefix:      task.UUID,
+		OutputsKey:         "outputs.resolved.json",
+		StartedAt:          startedAt,
 	}
 	if err := s.importBatchRepo.Create(batch); err != nil {
 		fmt.Printf("WARNING: failed to create result import batch for task %s: %v\n", task.UUID, err)

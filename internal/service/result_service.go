@@ -157,6 +157,13 @@ func (s *ResultService) ReviewVariant(ctx context.Context, variantType string, t
 	return s.repo.UpdateVariantReview(variantType, taskID, id, true, reviewer)
 }
 
+// ReviewVariantWithEvent updates the current state and appends an immutable
+// audit event. The legacy ReviewVariant method remains for internal callers
+// that only need the old one-way projection update.
+func (s *ResultService) ReviewVariantWithEvent(ctx context.Context, task *model.Task, variantType, id string, reviewed bool, actorID uint, reviewer string) (*repository.ReviewMutation, error) {
+	return s.repo.ReviewVariantWithEvent(task, variantType, id, reviewed, actorID, reviewer)
+}
+
 // ReportVariant marks a variant as reported by type
 func (s *ResultService) ReportVariant(ctx context.Context, variantType string, taskID string, id string, reporter string) error {
 	return s.repo.UpdateVariantReport(variantType, taskID, id, true, reporter)
@@ -246,6 +253,35 @@ func (s *ResultService) SaveCNVAssessment(taskID, variantType, variantID string,
 		return nil, errors.New("CNV variant not found")
 	}
 	row, err := s.repo.UpsertCNVAssessment(taskID, variantType, variantID, string(payload), actor)
+	if err != nil {
+		return nil, err
+	}
+	resp := model.CNVAssessmentToResponse(row)
+	return &resp, nil
+}
+
+func (s *ResultService) SaveCNVAssessmentScoped(task *model.Task, variantType, variantID string, payload json.RawMessage, actor string) (*model.CNVAssessmentResponse, error) {
+	if task == nil {
+		return nil, errors.New("task is required")
+	}
+	if !isCNVAssessmentType(variantType) {
+		return nil, errors.New("unsupported CNV assessment type")
+	}
+	if err := validateCNVAssessmentPayload(payload, variantID); err != nil {
+		return nil, err
+	}
+	attemptID := task.ExecutionAttemptID
+	if attemptID == "" {
+		attemptID = task.UUID
+	}
+	exists, err := s.repo.VariantExistsScoped(variantType, task.UUID, model.TenantIDForTask(task), attemptID, variantID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.New("CNV variant not found")
+	}
+	row, err := s.repo.UpsertCNVAssessmentScoped(task.UUID, model.TenantIDForTask(task), attemptID, variantType, variantID, string(payload), actor)
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/google/uuid"
@@ -18,8 +19,12 @@ import (
 
 // Importer handles importing archived data into the database
 type Importer struct {
-	cfg  *config.Config
-	repo *repository.ResultRepository
+	cfg           *config.Config
+	repo          *repository.ResultRepository
+	task          *model.Task
+	tenantID      string
+	attemptID     string
+	importBatchID uint
 }
 
 // NewImporter creates a new importer
@@ -40,24 +45,82 @@ type ImportResult struct {
 }
 
 // ImportFromTaskArchive imports structure data from a task archive.
-func (imp *Importer) ImportFromTaskArchive(task *model.Task, archiveDir string) (*ImportResult, error) {
+func (imp *Importer) ImportFromTaskArchive(task *model.Task, archiveDir string, importBatchID ...uint) (*ImportResult, error) {
 	if task == nil {
 		return nil, fmt.Errorf("task is required")
+	}
+	imp.task = task
+	imp.tenantID = model.TenantIDForTask(task)
+	imp.attemptID = task.ExecutionAttemptID
+	imp.importBatchID = 0
+	if imp.attemptID == "" {
+		imp.attemptID = task.UUID
+	}
+	if len(importBatchID) > 0 {
+		imp.importBatchID = importBatchID[0]
 	}
 	return imp.ImportFromArchive(task.UUID, archiveDir)
 }
 
+func (imp *Importer) provenance() model.ResultProvenance {
+	return model.ResultProvenance{TenantID: imp.tenantID, ExecutionAttemptID: imp.attemptID, ImportBatchID: imp.importBatchID}
+}
+
 // ImportFromArchive imports all result data from an archive directory into the database
 func (imp *Importer) ImportFromArchive(taskID string, archiveDir string) (*ImportResult, error) {
+	if database.GetDB() == nil {
+		return nil, fmt.Errorf("database is not initialized")
+	}
+	// Keep the public task-ID entry point safe as well: callers must not be
+	// able to create unscoped rows by bypassing ImportFromTaskArchive.
+	if imp.tenantID == "" || imp.attemptID == "" {
+		var task model.Task
+		if err := database.GetDB().Where("uuid = ?", taskID).First(&task).Error; err != nil {
+			return nil, fmt.Errorf("task not found for result import: %w", err)
+		}
+		imp.task = &task
+		imp.tenantID = model.TenantIDForTask(&task)
+		imp.attemptID = task.ExecutionAttemptID
+		if imp.attemptID == "" {
+			imp.attemptID = task.UUID
+		}
+	}
+	if imp.tenantID == "" || imp.attemptID == "" {
+		return nil, fmt.Errorf("result import requires a resolvable tenant and execution attempt")
+	}
+	tx := database.GetDB().Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	originalRepo := imp.repo
+	imp.repo = originalRepo.WithDB(tx)
+	result, err := imp.importFromArchive(taskID, archiveDir)
+	imp.repo = originalRepo
+	if err != nil || result == nil || !result.Success {
+		_ = tx.Rollback().Error
+		return result, err
+	}
+	if err := tx.Commit().Error; err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func (imp *Importer) importFromArchive(taskID string, archiveDir string) (*ImportResult, error) {
 	result := &ImportResult{
 		UUID:    taskID,
 		Success: false,
 		Counts:  make(map[string]int),
 	}
+	if imp.tenantID != "" {
+		if err := imp.repo.DeleteTaskAttemptResults(taskID, imp.tenantID, imp.attemptID); err != nil {
+			return result, fmt.Errorf("clear current result attempt: %w", err)
+		}
+	}
 
 	// 1. Read and import QC from outputs.resolved.json
 	if err := imp.importQC(taskID, archiveDir, result); err != nil {
-		fmt.Printf("warning: failed to import QC: %v\n", err)
+		return result, fmt.Errorf("failed to import QC: %w", err)
 	}
 
 	// 2. Find result TSV files in the archive directory
@@ -73,56 +136,49 @@ func (imp *Importer) ImportFromArchive(taskID string, archiveDir string) (*Impor
 		case strings.Contains(fileName, "snv_indel") || strings.Contains(fileName, "snv.indel"):
 			count, err := imp.importSNVIndels(taskID, tsvPath)
 			if err != nil {
-				fmt.Printf("warning: failed to import %s: %v\n", fileName, err)
-				continue
+				return result, fmt.Errorf("failed to import %s: %w", fileName, err)
 			}
 			result.Counts["snv_indel"] = count
 
 		case strings.Contains(fileName, "region.cnvanno"):
 			count, err := imp.importCNVSegments(taskID, tsvPath)
 			if err != nil {
-				fmt.Printf("warning: failed to import %s: %v\n", fileName, err)
-				continue
+				return result, fmt.Errorf("failed to import %s: %w", fileName, err)
 			}
 			result.Counts["cnv_segment"] = count
 
 		case strings.Contains(fileName, "gene.cnvanno"):
 			count, err := imp.importCNVExons(taskID, tsvPath)
 			if err != nil {
-				fmt.Printf("warning: failed to import %s: %v\n", fileName, err)
-				continue
+				return result, fmt.Errorf("failed to import %s: %w", fileName, err)
 			}
 			result.Counts["cnv_exon"] = count
 
 		case strings.Contains(fileName, ".str") || strings.HasSuffix(fileName, "str.txt"):
 			count, err := imp.importSTRs(taskID, tsvPath)
 			if err != nil {
-				fmt.Printf("warning: failed to import %s: %v\n", fileName, err)
-				continue
+				return result, fmt.Errorf("failed to import %s: %w", fileName, err)
 			}
 			result.Counts["str"] = count
 
 		case strings.Contains(fileName, ".mei") || strings.HasSuffix(fileName, "mei.txt"):
 			count, err := imp.importMEIs(taskID, tsvPath)
 			if err != nil {
-				fmt.Printf("warning: failed to import %s: %v\n", fileName, err)
-				continue
+				return result, fmt.Errorf("failed to import %s: %w", fileName, err)
 			}
 			result.Counts["mei"] = count
 
 		case strings.Contains(fileName, "mt_report") || strings.Contains(fileName, ".mt"):
 			count, err := imp.importMTVariants(taskID, tsvPath)
 			if err != nil {
-				fmt.Printf("warning: failed to import %s: %v\n", fileName, err)
-				continue
+				return result, fmt.Errorf("failed to import %s: %w", fileName, err)
 			}
 			result.Counts["mt"] = count
 
 		case strings.Contains(fileName, "roh"):
 			count, err := imp.importROHRegions(taskID, tsvPath)
 			if err != nil {
-				fmt.Printf("warning: failed to import %s: %v\n", fileName, err)
-				continue
+				return result, fmt.Errorf("failed to import %s: %w", fileName, err)
 			}
 			result.Counts["roh"] = count
 
@@ -163,8 +219,6 @@ func (imp *Importer) importQC(taskID string, archiveDir string, result *ImportRe
 	}
 
 	// Delete existing QC for this task
-	imp.repo.DeleteQCByTaskID(taskID)
-
 	qc := imp.parseQCResult(taskID, qcData)
 	if err := imp.repo.CreateQC(qc); err != nil {
 		return err
@@ -176,8 +230,11 @@ func (imp *Importer) importQC(taskID string, archiveDir string, result *ImportRe
 // parseQCResult parses the nested qc_result JSON into a flat QCResult model
 func (imp *Importer) parseQCResult(taskID string, qc map[string]interface{}) *model.QCResult {
 	r := &model.QCResult{
-		ID:     uuid.New().String(),
-		TaskID: taskID,
+		TenantID:           imp.tenantID,
+		ExecutionAttemptID: imp.attemptID,
+		ImportBatchID:      imp.importBatchID,
+		ID:                 uuid.New().String(),
+		TaskID:             taskID,
 	}
 
 	if sid, ok := qc["sample_id"].(string); ok {
@@ -340,11 +397,10 @@ func (imp *Importer) importSNVIndels(taskID string, path string) (int, error) {
 		return 0, err
 	}
 
-	imp.repo.DeleteSNVIndelsByTaskID(taskID)
-
 	var results []model.SNVIndel
 	for _, row := range rows {
 		v := model.SNVIndel{
+			ResultProvenance:    imp.provenance(),
 			ID:                  uuid.New().String(),
 			TaskID:              taskID,
 			Chromosome:          row["Chromosome"],
@@ -408,11 +464,10 @@ func (imp *Importer) importCNVSegments(taskID string, path string) (int, error) 
 		return 0, err
 	}
 
-	imp.repo.DeleteCNVSegmentsByTaskID(taskID)
-
 	var results []model.CNVSegment
 	for _, row := range rows {
 		v := model.CNVSegment{
+			ResultProvenance:     imp.provenance(),
 			ID:                   uuid.New().String(),
 			TaskID:               taskID,
 			Chromosome:           row["Chromosome"],
@@ -473,11 +528,10 @@ func (imp *Importer) importCNVExons(taskID string, path string) (int, error) {
 		return 0, err
 	}
 
-	imp.repo.DeleteCNVExonsByTaskID(taskID)
-
 	var results []model.CNVExon
 	for _, row := range rows {
 		v := model.CNVExon{
+			ResultProvenance:     imp.provenance(),
 			ID:                   uuid.New().String(),
 			TaskID:               taskID,
 			Chromosome:           row["Chromosome"],
@@ -549,36 +603,35 @@ func (imp *Importer) importSTRs(taskID string, path string) (int, error) {
 		return 0, err
 	}
 
-	imp.repo.DeleteSTRsByTaskID(taskID)
-
 	var results []model.STR
 	for _, row := range rows {
 		v := model.STR{
-			ID:             uuid.New().String(),
-			TaskID:         taskID,
-			Chromosome:     row["Chromosome"],
-			Position:       parseInt64(row["Position"]),
-			Gene:           row["Gene"],
-			RepeatUnit:     row["Repeat_Unit"],
-			RefRepeats:     parseInt(row["Ref_Repeats"]),
-			Allele1Repeats: row["Allele1_Repeats"],
-			Allele2Repeats: row["Allele2_Repeats"],
-			RepeatDisplay:  row["Repeat_Display"],
-			Status:         row["STR_Status"],
-			Pathogenicity:  row["Pathogenicity"],
-			NormalRangeMax: parseInt(row["Normal_Max"]),
-			PathologicMin:  parseInt(row["Pathologic_Min"]),
-			Disease:        row["Disease"],
-			Inheritance:    row["Inheritance"],
-			HgncID:         row["HGNC_ID"],
-			Depth:          parseFloat(row["Depth"]),
-			SpanningReads:  row["Spanning_Reads"],
-			FlankingReads:  row["Flanking_Reads"],
-			InRepeatReads:  row["InRepeat_Reads"],
-			SwegenMean:     parseFloatPtr(row["SweGen_Mean"]),
-			SwegenStd:      parseFloatPtr(row["SweGen_Std"]),
-			Source:         row["Source"],
-			Filter:         row["Filter"],
+			ResultProvenance: imp.provenance(),
+			ID:               uuid.New().String(),
+			TaskID:           taskID,
+			Chromosome:       row["Chromosome"],
+			Position:         parseInt64(row["Position"]),
+			Gene:             row["Gene"],
+			RepeatUnit:       row["Repeat_Unit"],
+			RefRepeats:       parseInt(row["Ref_Repeats"]),
+			Allele1Repeats:   row["Allele1_Repeats"],
+			Allele2Repeats:   row["Allele2_Repeats"],
+			RepeatDisplay:    row["Repeat_Display"],
+			Status:           row["STR_Status"],
+			Pathogenicity:    row["Pathogenicity"],
+			NormalRangeMax:   parseInt(row["Normal_Max"]),
+			PathologicMin:    parseInt(row["Pathologic_Min"]),
+			Disease:          row["Disease"],
+			Inheritance:      row["Inheritance"],
+			HgncID:           row["HGNC_ID"],
+			Depth:            parseFloat(row["Depth"]),
+			SpanningReads:    row["Spanning_Reads"],
+			FlankingReads:    row["Flanking_Reads"],
+			InRepeatReads:    row["InRepeat_Reads"],
+			SwegenMean:       parseFloatPtr(row["SweGen_Mean"]),
+			SwegenStd:        parseFloatPtr(row["SweGen_Std"]),
+			Source:           row["Source"],
+			Filter:           row["Filter"],
 		}
 		results = append(results, v)
 	}
@@ -596,11 +649,10 @@ func (imp *Importer) importMEIs(taskID string, path string) (int, error) {
 		return 0, err
 	}
 
-	imp.repo.DeleteMEIsByTaskID(taskID)
-
 	var results []model.MEIVariant
 	for _, row := range rows {
 		v := model.MEIVariant{
+			ResultProvenance:  imp.provenance(),
 			ID:                uuid.New().String(),
 			TaskID:            taskID,
 			Chromosome:        row["Chromosome"],
@@ -641,11 +693,10 @@ func (imp *Importer) importMTVariants(taskID string, path string) (int, error) {
 		return 0, err
 	}
 
-	imp.repo.DeleteMTVariantsByTaskID(taskID)
-
 	var results []model.MitochondrialVariant
 	for _, row := range rows {
 		v := model.MitochondrialVariant{
+			ResultProvenance:   imp.provenance(),
 			ID:                 uuid.New().String(),
 			TaskID:             taskID,
 			Chromosome:         row["Chromosome"],
@@ -706,11 +757,10 @@ func (imp *Importer) importROHRegions(taskID string, path string) (int, error) {
 		return 0, err
 	}
 
-	imp.repo.DeleteROHRegionsByTaskID(taskID)
-
 	var results []model.ROHRegion
 	for _, row := range rows {
 		v := model.ROHRegion{
+			ResultProvenance:       imp.provenance(),
 			ID:                     uuid.New().String(),
 			TaskID:                 taskID,
 			Chr:                    row["Chr"],

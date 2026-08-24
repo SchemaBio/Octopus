@@ -52,8 +52,10 @@ func (h *ResultImportHandler) ListBatches(c *gin.Context) {
 		q.IncludeAll = true
 	} else if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg && orgID != "" {
 		q.ExternalOrgID = orgID
+		q.TenantID = model.TenantIDForIdentity(orgID, 0)
 	} else {
 		q.UserID = userID
+		q.TenantID = model.TenantIDForIdentity("", userID)
 	}
 
 	rows, total, err := h.batchRepo.PaginateByQuery(&q)

@@ -60,6 +60,7 @@ type Task struct {
 	SampleIDRef      uint         `json:"-" gorm:"index"`          // FK to samples.id (internal)
 	ProjectID        uint         `json:"-" gorm:"index"`          // FK to projects.id (internal)
 	ExternalOrgID    string       `json:"-" gorm:"size:100;index"` // optional external tenant reference for overlay events
+	TenantID         string       `json:"-" gorm:"size:160;index"` // canonical server-derived tenant scope
 	EstimatedMinutes int          `json:"-" gorm:"default:0"`      // optional runtime estimate for overlay policy
 	CreatedBy        uint         `json:"created_by" gorm:"index"`
 	StartedAt        *time.Time   `json:"started_at,omitempty" gorm:"type:timestamptz"`
@@ -128,6 +129,7 @@ type TaskListQuery struct {
 	PageSize      int        `form:"page_size" binding:"omitempty,min=1,max=100"`
 	CreatedBy     uint       `json:"-"`
 	ExternalOrgID string     `json:"-"`
+	TenantID      string     `json:"-"`
 	IncludeAll    bool       `json:"-"`
 }
 

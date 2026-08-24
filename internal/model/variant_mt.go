@@ -2,6 +2,7 @@ package model
 
 // MitochondrialVariant represents a mitochondrial variant (40 columns from mt_report.txt)
 type MitochondrialVariant struct {
+	ResultProvenance    `json:"-" gorm:"embedded"`
 	ID                  string   `json:"id" gorm:"primaryKey;size:36"`
 	TaskID              string   `json:"taskId" gorm:"size:36;index"`
 	Chromosome          string   `json:"chromosome" gorm:"size:10"`
@@ -54,8 +55,10 @@ func (MitochondrialVariant) TableName() string {
 
 // MTListQuery query parameters
 type MTListQuery struct {
-	TaskID   string `form:"taskId"`
-	Search   string `form:"search"`
-	Page     int    `form:"page" binding:"omitempty,min=1"`
-	PageSize int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+	TaskID             string `form:"taskId"`
+	TenantID           string `form:"-" json:"-"`
+	ExecutionAttemptID string `form:"-" json:"-"`
+	Search             string `form:"search"`
+	Page               int    `form:"page" binding:"omitempty,min=1"`
+	PageSize           int    `form:"page_size" binding:"omitempty,min=1,max=100"`
 }

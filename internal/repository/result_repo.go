@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
@@ -15,11 +16,28 @@ type ResultRepository struct {
 	db *gorm.DB
 }
 
+func scopedResultQuery(db *gorm.DB, taskID, tenantID, attemptID string) *gorm.DB {
+	db = db.Where("task_id = ?", taskID)
+	if tenantID != "" {
+		db = db.Where("tenant_id = ?", tenantID)
+	}
+	if attemptID != "" {
+		db = db.Where("execution_attempt_id = ?", attemptID)
+	}
+	return db
+}
+
 // NewResultRepository creates a new result repository
 func NewResultRepository() *ResultRepository {
 	return &ResultRepository{
 		db: database.GetDB(),
 	}
+}
+
+// WithDB returns a repository using the supplied transaction/connection.
+// Importers use this to replace all result tables atomically.
+func (r *ResultRepository) WithDB(db *gorm.DB) *ResultRepository {
+	return &ResultRepository{db: db}
 }
 
 // ========== SNV/Indel ==========
@@ -31,7 +49,7 @@ func (r *ResultRepository) FindSNVIndelsByTaskID(taskID string) ([]model.SNVInde
 }
 
 func (r *ResultRepository) PaginateSNVIndels(query *model.SNVIndelListQuery) ([]model.SNVIndel, int64, error) {
-	db := r.db.Model(&model.SNVIndel{}).Where("task_id = ?", query.TaskID)
+	db := scopedResultQuery(r.db.Model(&model.SNVIndel{}), query.TaskID, query.TenantID, query.ExecutionAttemptID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
 		db = db.Where("gene LIKE ? OR hgv_sc LIKE ? OR hgv_sp LIKE ?", s, s, s)
@@ -81,7 +99,7 @@ func (r *ResultRepository) FindSNVIndelByID(id string) (*model.SNVIndel, error) 
 func (r *ResultRepository) UpdateSNVIndelReview(id string, reviewed bool, reviewer string) error {
 	return r.db.Model(&model.SNVIndel{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"reviewed":    reviewed,
-		"reviewed_by": reviewer,
+		"reviewed_by": reviewer, "reviewed_at": reviewTimestamp(reviewed),
 	}).Error
 }
 
@@ -95,7 +113,7 @@ func (r *ResultRepository) UpdateSNVIndelReport(id string, reported bool, report
 // ========== CNV Segment ==========
 
 func (r *ResultRepository) PaginateCNVSegments(query *model.CNVSegmentListQuery) ([]model.CNVSegment, int64, error) {
-	db := r.db.Model(&model.CNVSegment{}).Where("task_id = ?", query.TaskID)
+	db := scopedResultQuery(r.db.Model(&model.CNVSegment{}), query.TaskID, query.TenantID, query.ExecutionAttemptID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
 		db = db.Where(
@@ -134,7 +152,7 @@ func (r *ResultRepository) FindCNVSegmentByID(id string) (*model.CNVSegment, err
 
 func (r *ResultRepository) UpdateCNVSegmentReview(id string, reviewed bool, reviewer string) error {
 	return r.db.Model(&model.CNVSegment{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reviewed": reviewed, "reviewed_by": reviewer,
+		"reviewed": reviewed, "reviewed_by": reviewer, "reviewed_at": reviewTimestamp(reviewed),
 	}).Error
 }
 
@@ -147,7 +165,7 @@ func (r *ResultRepository) UpdateCNVSegmentReport(id string, reported bool, repo
 // ========== CNV Exon ==========
 
 func (r *ResultRepository) PaginateCNVExons(query *model.CNVExonListQuery) ([]model.CNVExon, int64, error) {
-	db := r.db.Model(&model.CNVExon{}).Where("task_id = ?", query.TaskID)
+	db := scopedResultQuery(r.db.Model(&model.CNVExon{}), query.TaskID, query.TenantID, query.ExecutionAttemptID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
 		db = db.Where("gene LIKE ? OR transcript LIKE ?", s, s)
@@ -183,7 +201,7 @@ func (r *ResultRepository) FindCNVExonByID(id string) (*model.CNVExon, error) {
 
 func (r *ResultRepository) UpdateCNVExonReview(id string, reviewed bool, reviewer string) error {
 	return r.db.Model(&model.CNVExon{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reviewed": reviewed, "reviewed_by": reviewer,
+		"reviewed": reviewed, "reviewed_by": reviewer, "reviewed_at": reviewTimestamp(reviewed),
 	}).Error
 }
 
@@ -196,7 +214,7 @@ func (r *ResultRepository) UpdateCNVExonReport(id string, reported bool, reporte
 // ========== STR ==========
 
 func (r *ResultRepository) PaginateSTRs(query *model.STRListQuery) ([]model.STR, int64, error) {
-	db := r.db.Model(&model.STR{}).Where("task_id = ?", query.TaskID)
+	db := scopedResultQuery(r.db.Model(&model.STR{}), query.TaskID, query.TenantID, query.ExecutionAttemptID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
 		db = db.Where(
@@ -235,7 +253,7 @@ func (r *ResultRepository) FindSTRByID(id string) (*model.STR, error) {
 
 func (r *ResultRepository) UpdateSTRReview(id string, reviewed bool, reviewer string) error {
 	return r.db.Model(&model.STR{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reviewed": reviewed, "reviewed_by": reviewer,
+		"reviewed": reviewed, "reviewed_by": reviewer, "reviewed_at": reviewTimestamp(reviewed),
 	}).Error
 }
 
@@ -248,7 +266,7 @@ func (r *ResultRepository) UpdateSTRReport(id string, reported bool, reporter st
 // ========== MEI ==========
 
 func (r *ResultRepository) PaginateMEIs(query *model.MEIListQuery) ([]model.MEIVariant, int64, error) {
-	db := r.db.Model(&model.MEIVariant{}).Where("task_id = ?", query.TaskID)
+	db := scopedResultQuery(r.db.Model(&model.MEIVariant{}), query.TaskID, query.TenantID, query.ExecutionAttemptID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
 		db = db.Where("gene LIKE ? OR chromosome LIKE ?", s, s)
@@ -284,7 +302,7 @@ func (r *ResultRepository) FindMEIByID(id string) (*model.MEIVariant, error) {
 
 func (r *ResultRepository) UpdateMEIReview(id string, reviewed bool, reviewer string) error {
 	return r.db.Model(&model.MEIVariant{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reviewed": reviewed, "reviewed_by": reviewer,
+		"reviewed": reviewed, "reviewed_by": reviewer, "reviewed_at": reviewTimestamp(reviewed),
 	}).Error
 }
 
@@ -297,7 +315,7 @@ func (r *ResultRepository) UpdateMEIReport(id string, reported bool, reporter st
 // ========== Mitochondrial ==========
 
 func (r *ResultRepository) PaginateMTVariants(query *model.MTListQuery) ([]model.MitochondrialVariant, int64, error) {
-	db := r.db.Model(&model.MitochondrialVariant{}).Where("task_id = ?", query.TaskID)
+	db := scopedResultQuery(r.db.Model(&model.MitochondrialVariant{}), query.TaskID, query.TenantID, query.ExecutionAttemptID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
 		db = db.Where(
@@ -333,7 +351,7 @@ func (r *ResultRepository) FindMTVariantByID(id string) (*model.MitochondrialVar
 
 func (r *ResultRepository) UpdateMTVariantReview(id string, reviewed bool, reviewer string) error {
 	return r.db.Model(&model.MitochondrialVariant{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reviewed": reviewed, "reviewed_by": reviewer,
+		"reviewed": reviewed, "reviewed_by": reviewer, "reviewed_at": reviewTimestamp(reviewed),
 	}).Error
 }
 
@@ -346,7 +364,7 @@ func (r *ResultRepository) UpdateMTVariantReport(id string, reported bool, repor
 // ========== UPD ==========
 
 func (r *ResultRepository) PaginateUPDRegions(query *model.UPDListQuery) ([]model.UPDRegion, int64, error) {
-	db := r.db.Model(&model.UPDRegion{}).Where("task_id = ?", query.TaskID)
+	db := scopedResultQuery(r.db.Model(&model.UPDRegion{}), query.TaskID, query.TenantID, query.ExecutionAttemptID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
 		db = db.Where("chromosome LIKE ? OR genes LIKE ?", s, s)
@@ -379,7 +397,7 @@ func (r *ResultRepository) FindUPDRegionByID(id string) (*model.UPDRegion, error
 
 func (r *ResultRepository) UpdateUPDRegionReview(id string, reviewed bool, reviewer string) error {
 	return r.db.Model(&model.UPDRegion{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reviewed": reviewed, "reviewed_by": reviewer,
+		"reviewed": reviewed, "reviewed_by": reviewer, "reviewed_at": reviewTimestamp(reviewed),
 	}).Error
 }
 
@@ -392,9 +410,26 @@ func (r *ResultRepository) UpdateUPDRegionReport(id string, reported bool, repor
 // ========== QC ==========
 
 func (r *ResultRepository) FindQCByTaskID(taskID string) (*model.QCResult, error) {
+	tenantID, attemptID := r.taskProvenance(taskID)
+	return r.FindQCByTaskScope(taskID, tenantID, attemptID)
+}
+
+func (r *ResultRepository) FindQCByTaskScope(taskID, tenantID, attemptID string) (*model.QCResult, error) {
 	var result model.QCResult
-	err := r.db.Where("task_id = ?", taskID).First(&result).Error
+	err := scopedResultQuery(r.db, taskID, tenantID, attemptID).First(&result).Error
 	return &result, err
+}
+
+func (r *ResultRepository) taskProvenance(taskID string) (string, string) {
+	var task model.Task
+	if err := r.db.Select("uuid, tenant_id, external_org_id, created_by, execution_attempt_id").Where("uuid = ?", taskID).First(&task).Error; err != nil {
+		return "", ""
+	}
+	attemptID := task.ExecutionAttemptID
+	if attemptID == "" {
+		attemptID = task.UUID
+	}
+	return model.TenantIDForTask(&task), attemptID
 }
 
 func (r *ResultRepository) CreateQC(result *model.QCResult) error {
@@ -461,7 +496,7 @@ func (r *ResultRepository) FindROHRegionsByTaskID(taskID string) ([]model.ROHReg
 }
 
 func (r *ResultRepository) PaginateROHRegions(query *model.ROHListQuery) ([]model.ROHRegion, int64, error) {
-	db := r.db.Model(&model.ROHRegion{}).Where("task_id = ?", query.TaskID)
+	db := scopedResultQuery(r.db.Model(&model.ROHRegion{}), query.TaskID, query.TenantID, query.ExecutionAttemptID)
 	if query.Search != "" {
 		s := "%" + query.Search + "%"
 		db = db.Where("chr LIKE ? OR recessive_genes LIKE ?", s, s)
@@ -531,10 +566,26 @@ func (r *ResultRepository) DeleteQCByTaskID(taskID string) error {
 	return r.db.Where("task_id = ?", taskID).Delete(&model.QCResult{}).Error
 }
 
+// DeleteTaskAttemptResults replaces only the current tenant/attempt read
+// projection. Review events are intentionally not touched.
+func (r *ResultRepository) DeleteTaskAttemptResults(taskID, tenantID, attemptID string) error {
+	models := []interface{}{
+		&model.SNVIndel{}, &model.CNVSegment{}, &model.CNVExon{}, &model.STR{},
+		&model.MEIVariant{}, &model.MitochondrialVariant{}, &model.UPDRegion{},
+		&model.ROHRegion{}, &model.QCResult{}, &model.CNVAssessment{},
+	}
+	for _, value := range models {
+		if err := r.db.Where("task_id = ? AND tenant_id = ? AND execution_attempt_id = ?", taskID, tenantID, attemptID).Delete(value).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ROH Review/Report
 func (r *ResultRepository) UpdateROHRegionReview(id string, reviewed bool, reviewer string) error {
 	return r.db.Model(&model.ROHRegion{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reviewed": reviewed, "reviewed_by": reviewer,
+		"reviewed": reviewed, "reviewed_by": reviewer, "reviewed_at": reviewTimestamp(reviewed),
 	}).Error
 }
 
@@ -568,6 +619,7 @@ func (r *ResultRepository) UpdateVariantReview(variantType, taskID, id string, r
 	tx := r.db.Model(m).Where("id = ? AND task_id = ?", id, taskID).Updates(map[string]interface{}{
 		"reviewed":    reviewed,
 		"reviewed_by": reviewer,
+		"reviewed_at": reviewTimestamp(reviewed),
 	})
 	if tx.Error != nil {
 		return tx.Error
@@ -576,6 +628,13 @@ func (r *ResultRepository) UpdateVariantReview(variantType, taskID, id string, r
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+func reviewTimestamp(reviewed bool) interface{} {
+	if !reviewed {
+		return nil
+	}
+	return time.Now().UTC()
 }
 
 // UpdateVariantReport generically updates the report status of any variant type,
@@ -611,10 +670,23 @@ func (r *ResultRepository) VariantExists(variantType, taskID, id string) (bool, 
 	return count > 0, nil
 }
 
+func (r *ResultRepository) VariantExistsScoped(variantType, taskID, tenantID, attemptID, id string) (bool, error) {
+	m, ok := variantModel[variantType]
+	if !ok {
+		return false, fmt.Errorf("unknown variant type: %s", variantType)
+	}
+	var count int64
+	if err := scopedResultQuery(r.db.Model(m), taskID, tenantID, attemptID).Where("id = ?", id).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // ListCNVAssessments returns persisted CNV assessments scoped to a task and
 // result type. If ids is non-empty, only those variant IDs are returned.
 func (r *ResultRepository) ListCNVAssessments(taskID, variantType string, ids []string) ([]model.CNVAssessment, error) {
-	db := r.db.Where("task_id = ? AND variant_type = ?", taskID, variantType)
+	tenantID, attemptID := r.taskProvenance(taskID)
+	db := scopedResultQuery(r.db, taskID, tenantID, attemptID).Where("variant_type = ?", variantType)
 	if len(ids) > 0 {
 		db = db.Where("variant_id IN ?", ids)
 	}
@@ -624,28 +696,42 @@ func (r *ResultRepository) ListCNVAssessments(taskID, variantType string, ids []
 }
 
 func (r *ResultRepository) FindCNVAssessment(taskID, variantType, variantID string) (*model.CNVAssessment, error) {
-	var assessment model.CNVAssessment
-	err := r.db.Where(
-		"task_id = ? AND variant_type = ? AND variant_id = ?",
-		taskID, variantType, variantID,
-	).First(&assessment).Error
-	return &assessment, err
+	tenantID, attemptID := r.taskProvenance(taskID)
+	return r.FindCNVAssessmentScoped(taskID, tenantID, attemptID, variantType, variantID)
 }
 
 // UpsertCNVAssessment inserts or replaces an assessment for one CNV variant.
 func (r *ResultRepository) UpsertCNVAssessment(taskID, variantType, variantID, payload, actor string) (*model.CNVAssessment, error) {
+	var task model.Task
+	if err := r.db.Where("uuid = ?", taskID).First(&task).Error; err != nil {
+		return nil, err
+	}
+	attemptID := task.ExecutionAttemptID
+	if attemptID == "" {
+		attemptID = task.UUID
+	}
+	return r.UpsertCNVAssessmentScoped(taskID, model.TenantIDForTask(&task), attemptID, variantType, variantID, payload, actor)
+}
+
+// UpsertCNVAssessmentScoped persists an assessment with the same provenance
+// scope as its source CNV result.
+func (r *ResultRepository) UpsertCNVAssessmentScoped(taskID, tenantID, attemptID, variantType, variantID, payload, actor string) (*model.CNVAssessment, error) {
 	assessment := model.CNVAssessment{
-		ID:          uuid.New().String(),
-		TaskID:      taskID,
-		VariantType: variantType,
-		VariantID:   variantID,
-		PayloadJSON: payload,
-		CreatedBy:   actor,
-		UpdatedBy:   actor,
+		TenantID:           tenantID,
+		ExecutionAttemptID: attemptID,
+		ID:                 uuid.New().String(),
+		TaskID:             taskID,
+		VariantType:        variantType,
+		VariantID:          variantID,
+		PayloadJSON:        payload,
+		CreatedBy:          actor,
+		UpdatedBy:          actor,
 	}
 	if err := r.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{
+			{Name: "tenant_id"},
 			{Name: "task_id"},
+			{Name: "execution_attempt_id"},
 			{Name: "variant_type"},
 			{Name: "variant_id"},
 		},
@@ -657,5 +743,14 @@ func (r *ResultRepository) UpsertCNVAssessment(taskID, variantType, variantID, p
 	}).Create(&assessment).Error; err != nil {
 		return nil, err
 	}
-	return r.FindCNVAssessment(taskID, variantType, variantID)
+	return r.FindCNVAssessmentScoped(taskID, tenantID, attemptID, variantType, variantID)
+}
+
+func (r *ResultRepository) FindCNVAssessmentScoped(taskID, tenantID, attemptID, variantType, variantID string) (*model.CNVAssessment, error) {
+	var assessment model.CNVAssessment
+	err := r.db.Where(
+		"task_id = ? AND tenant_id = ? AND execution_attempt_id = ? AND variant_type = ? AND variant_id = ?",
+		taskID, tenantID, attemptID, variantType, variantID,
+	).First(&assessment).Error
+	return &assessment, err
 }

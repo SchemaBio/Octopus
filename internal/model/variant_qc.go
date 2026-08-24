@@ -3,8 +3,14 @@ package model
 // QCResult represents quality control metrics for a sample
 // Flattened from the nested qc_result structure in outputs.resolved.json
 type QCResult struct {
-	ID     string `json:"id" gorm:"primaryKey;size:36"`
-	TaskID string `json:"taskId" gorm:"size:36;uniqueIndex"`
+	// QC is a result projection and therefore carries the same immutable
+	// provenance as the variant tables.  Keep the composite uniqueness below
+	// scoped to tenant + task + execution attempt so retries can coexist.
+	TenantID           string `json:"-" gorm:"size:160;index;uniqueIndex:idx_result_qc_attempt,priority:1"`
+	ExecutionAttemptID string `json:"-" gorm:"size:36;index;uniqueIndex:idx_result_qc_attempt,priority:3"`
+	ImportBatchID      uint   `json:"-" gorm:"index"`
+	ID                 string `json:"id" gorm:"primaryKey;size:36"`
+	TaskID             string `json:"taskId" gorm:"size:36;index;uniqueIndex:idx_result_qc_attempt,priority:2"`
 
 	// Sample
 	SampleID string `json:"sampleId" gorm:"size:100"`
