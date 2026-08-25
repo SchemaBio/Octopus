@@ -67,7 +67,7 @@ func (s *DataAssetService) Update(uuid string, req *model.DataAssetUpdateRequest
 	if err != nil || asset.Status == model.FileStatusDeleted {
 		return nil, fmt.Errorf("data asset not found")
 	}
-	if actor.Role != string(model.SystemRoleSuperAdmin) && asset.CreatedBy != actor.UserID {
+	if !canMutateDataAsset(asset, actor) {
 		return nil, fmt.Errorf("data asset not found")
 	}
 	asset.InternalID = strings.TrimSpace(req.InternalID)
@@ -105,10 +105,26 @@ func (s *DataAssetService) Delete(ctx context.Context, uuid string, actor model.
 	if err != nil {
 		return fmt.Errorf("data asset not found")
 	}
-	if actor.Role != string(model.SystemRoleSuperAdmin) && asset.CreatedBy != actor.UserID {
+	if !canMutateDataAsset(asset, actor) {
 		return fmt.Errorf("data asset not found")
 	}
 	return s.deleteAsset(ctx, asset)
+}
+
+// canMutateDataAsset mirrors the scope used by data-asset reads. Assets are
+// shared within a SaaS organization, while standalone deployments remain
+// isolated by the user that created the asset.
+func canMutateDataAsset(asset *model.DataAsset, actor model.OverlayActor) bool {
+	if asset == nil {
+		return false
+	}
+	if actor.Role == string(model.SystemRoleSuperAdmin) {
+		return true
+	}
+	if actor.OrgID != "" {
+		return asset.ExternalOrgID == actor.OrgID
+	}
+	return asset.ExternalOrgID == "" && asset.CreatedBy == actor.UserID
 }
 
 type assetDeletionState struct {
@@ -151,12 +167,19 @@ func markAssetDeleting(db *gorm.DB, asset *model.DataAsset) (assetDeletionState,
 		if locked.UploadFileID != nil {
 			var file model.UploadFile
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&file, *locked.UploadFileID).Error; err != nil {
-				return fmt.Errorf("upload file not found: %w", err)
-			}
-			state.hasFile = true
-			state.fileStatus = file.Status
-			if err := tx.Model(&file).Update("status", model.FileStatusDeleting).Error; err != nil {
-				return err
+				// DataAsset is the durable asset identity. Older imports and
+				// maintenance jobs may leave an orphaned upload_file_id after the
+				// transient upload metadata has already been removed. That should
+				// not make the stored object impossible to delete.
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return fmt.Errorf("load upload file: %w", err)
+				}
+			} else {
+				state.hasFile = true
+				state.fileStatus = file.Status
+				if err := tx.Model(&file).Update("status", model.FileStatusDeleting).Error; err != nil {
+					return err
+				}
 			}
 		}
 		if err := tx.Model(&locked).Update("status", model.FileStatusDeleting).Error; err != nil {
