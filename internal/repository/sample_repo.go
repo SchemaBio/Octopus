@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"fmt"
+
 	"github.com/SchemaBio/Octopus/internal/model"
 )
 
@@ -22,7 +24,33 @@ func (r *SampleRepository) FindByUUID(uuid string) (*model.Sample, error) {
 }
 
 func (r *SampleRepository) FindScopedByUUID(uuid string, actor model.OverlayActor) (*model.Sample, error) {
-	db := r.db.Where("uuid = ?", uuid)
+	return r.findScoped("uuid = ?", actor, uuid)
+}
+
+// FindScopedByIdentifier accepts either the public sample UUID or the
+// tenant-scoped internal identifier used in batch spreadsheets.
+func (r *SampleRepository) FindScopedByIdentifier(identifier string, actor model.OverlayActor) (*model.Sample, error) {
+	if sample, err := r.findScoped("uuid = ?", actor, identifier); err == nil {
+		return sample, nil
+	}
+	db := r.db.Where("internal_id = ?", identifier)
+	if actor.OrgID != "" {
+		db = db.Where("external_org_id = ?", actor.OrgID)
+	} else if actor.Role != string(model.SystemRoleSuperAdmin) {
+		db = db.Where("external_org_id = '' AND created_by = ?", actor.UserID)
+	}
+	var samples []model.Sample
+	if err := db.Limit(2).Find(&samples).Error; err != nil {
+		return nil, err
+	}
+	if len(samples) != 1 {
+		return nil, fmt.Errorf("sample identifier is missing or ambiguous")
+	}
+	return &samples[0], nil
+}
+
+func (r *SampleRepository) findScoped(condition string, actor model.OverlayActor, args ...interface{}) (*model.Sample, error) {
+	db := r.db.Where(condition, args...)
 	if actor.Role != string(model.SystemRoleSuperAdmin) {
 		if actor.OrgID != "" {
 			db = db.Where("external_org_id = ?", actor.OrgID)

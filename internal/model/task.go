@@ -111,6 +111,67 @@ type TaskCreateRequest struct {
 	DeferStart  bool                    `json:"-"`
 }
 
+// TaskEstimateRequest identifies the same analysis inputs used during task
+// creation, without creating or starting a task.
+type TaskEstimateRequest struct {
+	SampleID   string `json:"sampleId"`
+	PedigreeID string `json:"pedigreeId"`
+	PipelineID string `json:"pipelineId" binding:"required"`
+}
+
+type TaskEstimateResponse struct {
+	EstimatedMinutes int `json:"estimated_minutes"`
+}
+
+type TaskBatchInputRow struct {
+	RowNumber        int      `json:"row_number"`
+	SampleIdentifier string   `json:"sample_identifier"`
+	PedigreeID       string   `json:"pedigree_id"`
+	PipelineID       string   `json:"pipeline_id"`
+	Remark           string   `json:"remark"`
+	EnableCNV        bool     `json:"enable_cnv"`
+	EnableSV         bool     `json:"enable_sv"`
+	ParseErrors      []string `json:"-"`
+}
+
+type TaskBatchPreviewRow struct {
+	TaskBatchInputRow
+	SampleID         string   `json:"sample_id,omitempty"`
+	SampleInternalID string   `json:"sample_internal_id,omitempty"`
+	PipelineName     string   `json:"pipeline_name,omitempty"`
+	PipelineVersion  string   `json:"pipeline_version,omitempty"`
+	Template         string   `json:"template,omitempty"`
+	EstimatedMinutes int      `json:"estimated_minutes"`
+	Valid            bool     `json:"valid"`
+	Errors           []string `json:"errors"`
+}
+
+type TaskBatchPreviewResponse struct {
+	Rows                  []TaskBatchPreviewRow `json:"rows"`
+	TotalRows             int                   `json:"total_rows"`
+	ValidRows             int                   `json:"valid_rows"`
+	InvalidRows           int                   `json:"invalid_rows"`
+	TotalEstimatedMinutes int                   `json:"total_estimated_minutes"`
+}
+
+type TaskBatchCreateRequest struct {
+	Rows []TaskBatchInputRow `json:"rows" binding:"required"`
+}
+
+type TaskBatchCreateResult struct {
+	RowNumber int           `json:"row_number"`
+	Status    string        `json:"status"`
+	Task      *TaskResponse `json:"task,omitempty"`
+	Error     string        `json:"error,omitempty"`
+}
+
+type TaskBatchCreateResponse struct {
+	Results      []TaskBatchCreateResult `json:"results"`
+	CreatedCount int                     `json:"created_count"`
+	FailedCount  int                     `json:"failed_count"`
+	SkippedCount int                     `json:"skipped_count"`
+}
+
 // TaskUpdateRequest is the request body for updating a task
 type TaskUpdateRequest struct {
 	InternalID string `json:"internalId"`

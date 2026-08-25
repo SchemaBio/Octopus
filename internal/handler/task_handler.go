@@ -2,6 +2,7 @@ package handler
 
 import (
 	"crypto/subtle"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -95,6 +96,69 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	}
 
 	SuccessCreated(c, task.ToResponse())
+}
+
+// EstimateTask previews the server-authoritative runtime estimate used for
+// Squid credit pre-deduction without creating a task.
+func (h *TaskHandler) EstimateTask(c *gin.Context) {
+	var req model.TaskEstimateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	estimate, err := h.svc.EstimateTask(&req, taskActorFromContext(c))
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, estimate)
+}
+
+func (h *TaskHandler) PreviewTaskBatch(c *gin.Context) {
+	if _, _, _, ok := middleware.GetCurrentUser(c); !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 3<<20)
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		ErrorBadRequest(c, "file field is required")
+		return
+	}
+	if fileHeader.Size <= 0 || fileHeader.Size > 2<<20 {
+		ErrorBadRequest(c, "XLSX 文件大小必须在 2 MB 以内")
+		return
+	}
+	if !service.IsTaskBatchWorkbook(fileHeader.Filename) {
+		ErrorBadRequest(c, "仅支持 .xlsx 文件")
+		return
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		ErrorBadRequest(c, "无法读取上传文件")
+		return
+	}
+	defer file.Close()
+	rows, err := service.ParseTaskBatchWorkbook(file)
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, h.svc.PreviewTaskBatch(rows, taskActorFromContext(c)))
+}
+
+func (h *TaskHandler) CreateTaskBatch(c *gin.Context) {
+	if _, _, _, ok := middleware.GetCurrentUser(c); !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 256<<10)
+	var req model.TaskBatchCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, fmt.Sprintf("invalid batch request: %v", err))
+		return
+	}
+	Success(c, h.svc.CreateTaskBatch(c.Request.Context(), &req, taskActorFromContext(c)))
 }
 
 // ListTasks returns paginated task list

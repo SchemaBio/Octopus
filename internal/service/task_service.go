@@ -83,6 +83,39 @@ func (s *TaskService) estimateTaskMinutes(sampleID uint, uploadJob *model.Upload
 	return defaultTaskEstimatedMinutes
 }
 
+// EstimateTask returns the same authoritative runtime estimate that CreateTask
+// persists and later sends to Squid for credit pre-deduction.
+func (s *TaskService) EstimateTask(req *model.TaskEstimateRequest, actor model.OverlayActor) (*model.TaskEstimateResponse, error) {
+	createReq := model.TaskCreateRequest{
+		SampleID:   strings.TrimSpace(req.SampleID),
+		PedigreeID: strings.TrimSpace(req.PedigreeID),
+		PipelineID: strings.TrimSpace(req.PipelineID),
+		Inputs:     make(map[string]interface{}),
+	}
+	if _, err := s.resolveAnalysisPipeline(&createReq, actor); err != nil {
+		return nil, err
+	}
+
+	var sample *model.Sample
+	var err error
+	if createReq.Template == "trio" {
+		if createReq.PedigreeID == "" {
+			return nil, fmt.Errorf("pedigreeId is required for trio analysis")
+		}
+		sample, _, err = s.prepareTrioInputs(createReq.PedigreeID, "estimate", actor, createReq.Inputs)
+	} else {
+		if createReq.SampleID == "" {
+			return nil, fmt.Errorf("sampleId is required for single-sample analysis")
+		}
+		sample, err = s.sampleRepo.FindScopedByUUID(createReq.SampleID, actor)
+	}
+	if err != nil || sample == nil {
+		return nil, fmt.Errorf("analysis input data is not available")
+	}
+
+	return &model.TaskEstimateResponse{EstimatedMinutes: s.estimateTaskMinutes(sample.ID, nil)}, nil
+}
+
 func NewTaskService(cfg *config.Config) *TaskService {
 	var sepClient *sepiida.Client
 	if cfg.Sepiida.Enabled && cfg.Sepiida.QueryKey != "" {

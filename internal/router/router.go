@@ -141,6 +141,9 @@ func New(cfg *config.Config) *gin.Engine {
 		tasks.Use(middleware.JWTAuth(cfg))
 		{
 			tasks.POST("", taskHandler.CreateTask)
+			tasks.POST("/estimate", taskHandler.EstimateTask)
+			tasks.POST("/batch/preview", taskHandler.PreviewTaskBatch)
+			tasks.POST("/batch", taskHandler.CreateTaskBatch)
 			tasks.GET("", taskHandler.ListTasks)
 			tasks.GET("/audit", taskHandler.ListTasksAudit)
 			tasks.GET("/stats", taskHandler.GetTaskStats)
