@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,48 @@ import (
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/model"
 )
+
+// OverlayHTTPError preserves the status returned by the trusted overlay. It
+// lets the API layer expose actionable 402/409/502/503 responses instead of
+// collapsing every admission/dispatch failure into a generic 400/500.
+type OverlayHTTPError struct {
+	Status int
+	Body   string
+}
+
+func (e *OverlayHTTPError) Error() string {
+	if strings.TrimSpace(e.Body) == "" {
+		return fmt.Sprintf("overlay returned HTTP %d", e.Status)
+	}
+	return fmt.Sprintf("overlay returned HTTP %d: %s", e.Status, strings.TrimSpace(e.Body))
+}
+
+// OverlayDeniedError represents a valid admission response whose policy
+// decision was negative (for example insufficient credits or concurrency).
+type OverlayDeniedError struct {
+	Action string
+	Reason string
+}
+
+func (e *OverlayDeniedError) Error() string {
+	return fmt.Sprintf("overlay denied task %s: %s", e.Action, e.Reason)
+}
+
+// OverlayDispatchOutcomeUnknown reports whether no HTTP response was received
+// for a dispatch request. In that case Squid/Tencent may have accepted the
+// request, so callers must retain the same attempt and avoid a duplicate
+// instance request.
+func OverlayDispatchOutcomeUnknown(err error) bool {
+	var transport *OverlayTransportError
+	return errors.As(err, &transport)
+}
+
+type OverlayTransportError struct{ Err error }
+
+func (e *OverlayTransportError) Error() string {
+	return fmt.Sprintf("overlay transport error: %v", e.Err)
+}
+func (e *OverlayTransportError) Unwrap() error { return e.Err }
 
 type OverlayClient struct {
 	cfg    config.OverlayConfig
@@ -50,7 +93,7 @@ func (c *OverlayClient) AdmitTask(ctx context.Context, req model.OverlayTaskAdmi
 			fmt.Printf("WARNING: overlay task admission returned %d and failed open: %s\n", status, strings.TrimSpace(string(body)))
 			return nil
 		}
-		return fmt.Errorf("overlay task admission returned %d: %s", status, strings.TrimSpace(string(body)))
+		return &OverlayHTTPError{Status: status, Body: strings.TrimSpace(string(body))}
 	}
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil
@@ -59,7 +102,7 @@ func (c *OverlayClient) AdmitTask(ctx context.Context, req model.OverlayTaskAdmi
 		if resp.Reason == "" {
 			resp.Reason = "request denied by overlay policy"
 		}
-		return fmt.Errorf("overlay denied task %s: %s", req.Action, resp.Reason)
+		return &OverlayDeniedError{Action: req.Action, Reason: resp.Reason}
 	}
 	return nil
 }
@@ -85,10 +128,10 @@ func (c *OverlayClient) DispatchCVMTask(ctx context.Context, req model.CVMDispat
 	var response model.CVMDispatchResponse
 	status, body, err := c.postJSON(ctx, c.cfg.TaskDispatchPath, req, &response)
 	if err != nil {
-		return nil, fmt.Errorf("CVM dispatch failed: %w", err)
+		return nil, &OverlayTransportError{Err: fmt.Errorf("CVM dispatch failed: %w", err)}
 	}
 	if status < 200 || status >= 300 {
-		return nil, fmt.Errorf("CVM dispatch returned %d: %s", status, strings.TrimSpace(string(body)))
+		return nil, &OverlayHTTPError{Status: status, Body: strings.TrimSpace(string(body))}
 	}
 	if !response.Accepted || response.InstanceID == "" {
 		if response.Reason == "" {

@@ -537,12 +537,18 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	if err := validateTemplateName(req.Template); err != nil {
 		return nil, err
 	}
-	templatePath := filepath.Join(s.cfg.Task.TemplateDir, req.Template+".wdl")
-	if err := ensurePathInsideBase(s.cfg.Task.TemplateDir, templatePath); err != nil {
-		return nil, err
-	}
-	if _, err := os.Stat(templatePath); err != nil {
-		return nil, fmt.Errorf("template not found: %s", req.Template)
+	// CVM tasks execute the WDL bundle baked into the selected image. The
+	// Octopus container only needs the embedded catalog to build inputs, so it
+	// must not require a local TEMPLATE_DIR mount in SaaS mode. Local
+	// executors still validate their filesystem-backed workflow bundle here.
+	if executor != model.ExecutorCVM {
+		templatePath := filepath.Join(s.cfg.Task.TemplateDir, req.Template+".wdl")
+		if err := ensurePathInsideBase(s.cfg.Task.TemplateDir, templatePath); err != nil {
+			return nil, err
+		}
+		if _, err := os.Stat(templatePath); err != nil {
+			return nil, fmt.Errorf("template not found: %s", req.Template)
+		}
 	}
 
 	workflowUUID := uuid.New().String()
@@ -736,7 +742,10 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		return nil, err
 	}
 
-	configFile := s.getConfigFile(executor, "")
+	configFile := ""
+	if executor != model.ExecutorCVM {
+		configFile = s.getConfigFile(executor, "")
+	}
 
 	taskStatus := model.TaskStatusQueued
 	if (req.SampleID != "" && !sampleDataReady) || needsStaging || (uploadJob != nil && uploadJob.Status != model.UploadJobStatusCompleted) {
@@ -793,6 +802,21 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	if task.Status == model.TaskStatusQueued && !req.DeferStart {
 		if started, startErr := s.StartTask(ctx, task.UUID, actor); startErr == nil {
 			return started, nil
+		} else if refreshed, findErr := s.repo.FindByUUID(task.UUID); findErr == nil && refreshed != nil {
+			// The task is already persisted. Return its latest state (failed for
+			// deterministic launch errors, or DISPATCHING when the cloud outcome
+			// is unknown) instead of leaving the caller with a misleading queued
+			// task and a generic 500 response.
+			if refreshed.Status == model.TaskStatusQueued {
+				refreshed.Status = model.TaskStatusFailed
+				refreshed.Error = strings.TrimSpace(startErr.Error())
+				now := time.Now()
+				refreshed.FinishedAt = &now
+				refreshed.UpdatedAt = now
+				_ = s.repo.Update(refreshed)
+				s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, refreshed, model.TaskStatusQueued, startErr.Error())
+			}
+			return refreshed, nil
 		}
 	}
 
@@ -848,22 +872,36 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 			return nil, fmt.Errorf("persist execution attempt: %w", err)
 		}
 	}
-	if err := s.admitTask(ctx, model.OverlayAdmissionActionStart, actor, task); err != nil {
-		return nil, err
-	}
-
 	var dispatch *model.CVMDispatchResponse
+	var cvmRequest model.CVMDispatchRequest
 	if task.Executor == model.ExecutorCVM {
-		request, err := s.buildCVMDispatchRequest(ctx, actor, task)
+		cvmRequest, err = s.buildCVMDispatchRequest(ctx, actor, task)
 		if err != nil {
-			s.markCVMStartFailed(task)
+			s.markCVMStartFailedWithError(task, err.Error())
 			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
 			return nil, err
 		}
-		dispatch, err = s.overlay.DispatchCVMTask(ctx, request)
+	}
+	if err := s.admitTask(ctx, model.OverlayAdmissionActionStart, actor, task); err != nil {
+		if task.Executor == model.ExecutorCVM {
+			s.markCVMStartFailedWithError(task, err.Error())
+			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
+		}
+		return nil, err
+	}
+
+	if task.Executor == model.ExecutorCVM {
+		var err error
+		dispatch, err = s.overlay.DispatchCVMTask(ctx, cvmRequest)
 		if err != nil {
-			// The request may have reached Squid or Tencent Cloud. Preserve the
-			// attempt and its reservation so a repeated Start is idempotent.
+			if serviceOverlayDispatchOutcomeKnown(err) {
+				s.markCVMStartFailedWithError(task, err.Error())
+				s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
+			} else {
+				// A transport error has an unknown outcome. Preserve DISPATCHING
+				// and this attempt so a retry can reconcile idempotently.
+				s.markCVMDispatchUnknown(task, err.Error())
+			}
 			return nil, err
 		}
 	}
@@ -974,21 +1012,34 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 			return nil, fmt.Errorf("persist execution attempt: %w", err)
 		}
 	}
-	if err := s.admitTask(ctx, model.OverlayAdmissionActionRetry, actor, task); err != nil {
-		return nil, err
-	}
-
 	var dispatch *model.CVMDispatchResponse
+	var cvmRequest model.CVMDispatchRequest
 	if task.Executor == model.ExecutorCVM {
-		request, err := s.buildCVMDispatchRequest(ctx, actor, task)
+		cvmRequest, err = s.buildCVMDispatchRequest(ctx, actor, task)
 		if err != nil {
-			s.markCVMStartFailed(task)
+			s.markCVMStartFailedWithError(task, err.Error())
 			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
 			return nil, err
 		}
-		dispatch, err = s.overlay.DispatchCVMTask(ctx, request)
+	}
+	if err := s.admitTask(ctx, model.OverlayAdmissionActionRetry, actor, task); err != nil {
+		if task.Executor == model.ExecutorCVM {
+			s.markCVMStartFailedWithError(task, err.Error())
+			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
+		}
+		return nil, err
+	}
+
+	if task.Executor == model.ExecutorCVM {
+		var err error
+		dispatch, err = s.overlay.DispatchCVMTask(ctx, cvmRequest)
 		if err != nil {
-			// Preserve this attempt when the dispatch outcome is unknown.
+			if serviceOverlayDispatchOutcomeKnown(err) {
+				s.markCVMStartFailedWithError(task, err.Error())
+				s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
+			} else {
+				s.markCVMDispatchUnknown(task, err.Error())
+			}
 			return nil, err
 		}
 	}
@@ -2066,9 +2117,20 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 		return model.CVMDispatchRequest{}, err
 	}
 	remote := make([]*model.DataAsset, 0, len(assets))
+	if strings.TrimSpace(task.ExternalOrgID) == "" {
+		return model.CVMDispatchRequest{}, fmt.Errorf("CVM task organization is required")
+	}
+	objectPrefix := path.Join("organizations", task.ExternalOrgID) + "/"
 	for _, asset := range assets {
 		if asset.Provider != model.UploadProviderS3 {
 			return model.CVMDispatchRequest{}, fmt.Errorf("CVM input asset %s is not stored in COS/S3", asset.UUID)
+		}
+		if strings.TrimSpace(asset.ExternalOrgID) != strings.TrimSpace(task.ExternalOrgID) {
+			return model.CVMDispatchRequest{}, fmt.Errorf("CVM input asset %s belongs to another tenant", asset.UUID)
+		}
+		storageKey := strings.TrimSpace(asset.StorageKey)
+		if storageKey == "" || strings.Contains(storageKey, "\\") || path.Clean(storageKey) != storageKey || !strings.HasPrefix(storageKey, objectPrefix) {
+			return model.CVMDispatchRequest{}, fmt.Errorf("CVM input asset %s has an invalid tenant object key", asset.UUID)
 		}
 		remote = append(remote, asset)
 	}
@@ -2130,7 +2192,9 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 		Task:      model.NewOverlayTaskSnapshot(task),
 		AttemptID: task.ExecutionAttemptID,
 		Execution: model.CVMExecutionSpec{
-			Template: task.Template, ReferenceGenome: referenceGenome, Inputs: encoded, Downloads: downloads, InlineFiles: inlineFiles,
+			Template: task.Template, ReferenceGenome: referenceGenome,
+			WorkflowContractVersion: workflow.ContractVersion,
+			Inputs:                  encoded, Downloads: downloads, InlineFiles: inlineFiles,
 		},
 		RequestedAt: time.Now(),
 	}, nil
@@ -2281,6 +2345,10 @@ func (s *TaskService) prepareCVMExecutionAttempt(task *model.Task, forceNew bool
 	}
 	task.CVMArchiveStagedAt = nil
 	task.CVMArchiveTerminationNotifiedAt = nil
+	// A retry starts a fresh lifecycle even when it reuses an in-flight
+	// DISPATCHING attempt after an uncertain transport result.
+	task.StartedAt = nil
+	task.FinishedAt = nil
 	task.VMStatus = "DISPATCHING"
 	task.UpdatedAt = time.Now()
 	if err := s.repo.Update(task); err != nil {
@@ -2296,6 +2364,36 @@ func (s *TaskService) markCVMStartFailed(task *model.Task) {
 	task.VMStatus = "LAUNCH_FAILED"
 	task.UpdatedAt = time.Now()
 	_ = s.repo.Update(task)
+}
+
+func (s *TaskService) markCVMStartFailedWithError(task *model.Task, message string) {
+	if task == nil || task.Executor != model.ExecutorCVM {
+		return
+	}
+	task.Status = model.TaskStatusFailed
+	task.Error = strings.TrimSpace(message)
+	task.VMStatus = "LAUNCH_FAILED"
+	now := time.Now()
+	task.FinishedAt = &now
+	task.UpdatedAt = now
+	_ = s.repo.Update(task)
+}
+
+func (s *TaskService) markCVMDispatchUnknown(task *model.Task, message string) {
+	if task == nil || task.Executor != model.ExecutorCVM {
+		return
+	}
+	// Keep VMStatus=DISPATCHING and the attempt UUID intact. The request may
+	// have reached Squid/Tencent even though Octopus did not receive a response;
+	// retrying must therefore reuse this attempt and ClientToken.
+	task.Status = model.TaskStatusFailed
+	task.Error = strings.TrimSpace(message)
+	task.UpdatedAt = time.Now()
+	_ = s.repo.Update(task)
+}
+
+func serviceOverlayDispatchOutcomeKnown(err error) bool {
+	return !OverlayDispatchOutcomeUnknown(err)
 }
 
 func cvmAttemptStateTerminal(state string) bool {

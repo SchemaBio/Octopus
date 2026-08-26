@@ -124,11 +124,12 @@ type CVMInlineFile struct {
 }
 
 type CVMExecutionSpec struct {
-	Template        string             `json:"template"`
-	ReferenceGenome string             `json:"reference_genome"`
-	Inputs          json.RawMessage    `json:"inputs"`
-	Downloads       []CVMInputDownload `json:"downloads,omitempty"`
-	InlineFiles     []CVMInlineFile    `json:"inline_files,omitempty"`
+	Template                string             `json:"template"`
+	ReferenceGenome         string             `json:"reference_genome"`
+	WorkflowContractVersion string             `json:"workflow_contract_version"`
+	Inputs                  json.RawMessage    `json:"inputs"`
+	Downloads               []CVMInputDownload `json:"downloads,omitempty"`
+	InlineFiles             []CVMInlineFile    `json:"inline_files,omitempty"`
 }
 
 type CVMDispatchRequest struct {

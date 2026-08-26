@@ -2,6 +2,8 @@ package handler
 
 import (
 	"crypto/subtle"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -91,7 +93,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 
 	task, err := h.svc.CreateTask(c.Request.Context(), &req, taskActorFromContext(c))
 	if err != nil {
-		ErrorInternal(c, err.Error())
+		ErrorTaskOperation(c, err)
 		return
 	}
 
@@ -362,7 +364,7 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 
 	task, err := h.svc.StartTask(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
-		ErrorBadRequest(c, err.Error())
+		ErrorTaskOperation(c, err)
 		return
 	}
 
@@ -394,7 +396,7 @@ func (h *TaskHandler) RetryTask(c *gin.Context) {
 
 	task, err := h.svc.RetryTask(c.Request.Context(), id, taskActorFromContext(c))
 	if err != nil {
-		ErrorBadRequest(c, err.Error())
+		ErrorTaskOperation(c, err)
 		return
 	}
 
@@ -462,4 +464,82 @@ func (h *TaskHandler) GetTaskProgress(c *gin.Context) {
 	}
 
 	Success(c, progress)
+}
+
+// ErrorTaskOperation maps trusted overlay and task-input failures to the
+// public API contract. In particular, clients can distinguish invalid inputs
+// (422), insufficient credits (402), concurrency limits (409), unavailable
+// CVM capacity (503), and an explicit cloud launch failure (502).
+func ErrorTaskOperation(c *gin.Context, err error) {
+	if err == nil {
+		ErrorInternal(c, "task operation failed")
+		return
+	}
+	status := taskOperationStatus(err)
+	Error(c, status, taskOperationMessage(err))
+}
+
+func taskOperationStatus(err error) int {
+	var denied *service.OverlayDeniedError
+	if errors.As(err, &denied) {
+		reason := strings.ToLower(denied.Reason)
+		if strings.Contains(reason, "concurrent") || strings.Contains(reason, "limit") {
+			return http.StatusConflict
+		}
+		if strings.Contains(reason, "credit") || strings.Contains(reason, "balance") {
+			return http.StatusPaymentRequired
+		}
+		return http.StatusUnprocessableEntity
+	}
+	var overlayHTTP *service.OverlayHTTPError
+	if errors.As(err, &overlayHTTP) {
+		switch overlayHTTP.Status {
+		case http.StatusPaymentRequired, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusBadGateway, http.StatusServiceUnavailable:
+			return overlayHTTP.Status
+		case http.StatusBadRequest:
+			return http.StatusUnprocessableEntity
+		default:
+			if overlayHTTP.Status >= 500 {
+				return http.StatusBadGateway
+			}
+			return overlayHTTP.Status
+		}
+	}
+	if service.OverlayDispatchOutcomeUnknown(err) {
+		return http.StatusBadGateway
+	}
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "cvm dispatch is disabled") || strings.Contains(lower, "cvm dispatch requires an enabled overlay") || strings.Contains(lower, "cvm is unavailable") {
+		return http.StatusServiceUnavailable
+	}
+	if strings.Contains(lower, "cvm dispatch") || strings.Contains(lower, "overlay task admission failed") {
+		return http.StatusBadGateway
+	}
+	if strings.Contains(lower, "failed to save") || strings.Contains(lower, "persist ") || strings.Contains(lower, "database") {
+		return http.StatusInternalServerError
+	}
+	return http.StatusUnprocessableEntity
+}
+
+func taskOperationMessage(err error) string {
+	var overlayHTTP *service.OverlayHTTPError
+	if errors.As(err, &overlayHTTP) {
+		body := strings.TrimSpace(overlayHTTP.Body)
+		if body != "" {
+			var payload struct {
+				Error  string `json:"error"`
+				Reason string `json:"reason"`
+			}
+			if json.Unmarshal([]byte(body), &payload) == nil {
+				if strings.TrimSpace(payload.Error) != "" {
+					return strings.TrimSpace(payload.Error)
+				}
+				if strings.TrimSpace(payload.Reason) != "" {
+					return strings.TrimSpace(payload.Reason)
+				}
+			}
+			return body
+		}
+	}
+	return strings.TrimSpace(err.Error())
 }
