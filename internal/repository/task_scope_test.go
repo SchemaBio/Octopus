@@ -14,15 +14,34 @@ func TestTaskRepositoryStandaloneListExcludesOrganizationTasks(t *testing.T) {
 	repo := NewTaskRepository()
 	repo.Repository.db = db
 
-	mock.ExpectQuery(`SELECT count\(\*\) FROM "tasks" WHERE tasks\.external_org_id = '' AND tasks\.created_by = \$1`).
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "tasks" WHERE \(tasks\.external_org_id = '' AND tasks\.created_by = \$1\) AND "tasks"\."deleted_at" IS NULL`).
 		WithArgs(uint(42)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectQuery(`SELECT \* FROM "tasks" WHERE tasks\.external_org_id = '' AND tasks\.created_by = \$1 ORDER BY created_at DESC LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "tasks" WHERE \(tasks\.external_org_id = '' AND tasks\.created_by = \$1\) AND "tasks"\."deleted_at" IS NULL ORDER BY created_at DESC LIMIT \$2`).
 		WithArgs(uint(42), 10).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	if _, _, err := repo.PaginateByQuery(&model.TaskListQuery{CreatedBy: 42}); err != nil {
 		t.Fatalf("PaginateByQuery: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("SQL expectations: %v", err)
+	}
+}
+
+func TestTaskRepositoryDeleteByIDUsesSoftDelete(t *testing.T) {
+	db, mock := newUploadRepositoryTestDB(t)
+	repo := NewTaskRepository()
+	repo.Repository.db = db
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "tasks" SET "deleted_at"=\$1 WHERE id = \$2 AND "tasks"\."deleted_at" IS NULL`).
+		WithArgs(sqlmock.AnyArg(), "task-row-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	if err := repo.DeleteByID("task-row-1"); err != nil {
+		t.Fatalf("DeleteByID: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("SQL expectations: %v", err)

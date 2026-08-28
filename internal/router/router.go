@@ -150,7 +150,7 @@ func New(cfg *config.Config) *gin.Engine {
 			tasks.GET("/:id", taskHandler.GetTask)
 			tasks.PUT("/:id", taskHandler.UpdateTask)
 			tasks.GET("/:id/progress", taskHandler.GetTaskProgress)
-			tasks.DELETE("/:id", taskHandler.CancelTask)
+			tasks.DELETE("/:id", taskHandler.DeleteTask)
 			tasks.GET("/:id/logs", taskHandler.GetTaskLogs)
 			tasks.GET("/:id/sample", taskHandler.GetTaskSample)
 			tasks.POST("/:id/start", taskHandler.StartTask)

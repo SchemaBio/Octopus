@@ -1521,42 +1521,49 @@ func (s *TaskService) ListTasksAudit(ctx context.Context, query *model.TaskListQ
 	}, nil
 }
 
-// CancelTask cancels a running task
-func (s *TaskService) CancelTask(ctx context.Context, id string, actor model.OverlayActor) error {
+// DeleteTask removes a task from normal queries. Queued and waiting tasks are
+// cancelled first so the control plane can release any reserved resources.
+// Running tasks must be stopped explicitly before deletion.
+func (s *TaskService) DeleteTask(ctx context.Context, id string, actor model.OverlayActor) error {
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return fmt.Errorf("task not found: %s", id)
 	}
 
-	if task.Status != model.TaskStatusRunning && task.Status != model.TaskStatusQueued && task.Status != model.TaskStatusWaitingData {
-		return fmt.Errorf("task is not running or queued")
+	if task.Status == model.TaskStatusRunning {
+		return fmt.Errorf("task is running; stop it before deleting")
 	}
-	if cvmTaskNeedsCancel(task) {
-		if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: "task cancelled by user"}); err != nil {
+
+	if task.Status == model.TaskStatusQueued || task.Status == model.TaskStatusWaitingData {
+		if cvmTaskNeedsCancel(task) {
+			if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: "task deleted by user"}); err != nil {
+				return err
+			}
+		}
+
+		s.mu.Lock()
+		if cmd, ok := s.running[id]; ok {
+			_ = cmd.Process.Kill()
+			delete(s.running, id)
+		}
+		s.mu.Unlock()
+
+		previousStatus := task.Status
+		task.Status = model.TaskStatusCancelled
+		if task.Executor == model.ExecutorCVM {
+			task.VMStatus = "TERMINATED"
+		}
+		now := time.Now()
+		task.FinishedAt = &now
+		task.UpdatedAt = now
+
+		if err := s.repo.Update(task); err != nil {
 			return err
 		}
+		s.emitTaskEvent(model.OverlayTaskEventCancelled, actor, task, previousStatus, "task deleted by user")
 	}
 
-	s.mu.Lock()
-	if cmd, ok := s.running[id]; ok {
-		_ = cmd.Process.Kill()
-		delete(s.running, id)
-	}
-	s.mu.Unlock()
-
-	task.Status = model.TaskStatusCancelled
-	if task.Executor == model.ExecutorCVM {
-		task.VMStatus = "TERMINATED"
-	}
-	now := time.Now()
-	task.FinishedAt = &now
-	task.UpdatedAt = now
-
-	if err := s.repo.Update(task); err != nil {
-		return err
-	}
-	s.emitTaskEvent(model.OverlayTaskEventCancelled, actor, task, "", "")
-	return nil
+	return s.repo.DeleteByID(task.ID)
 }
 
 // UpdateTask updates task fields

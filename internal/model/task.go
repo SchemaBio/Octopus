@@ -2,6 +2,8 @@ package model
 
 import (
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // TaskStatus represents the status of a task
@@ -39,36 +41,37 @@ const (
 
 // Task represents a workflow task
 type Task struct {
-	ID               string       `json:"id" gorm:"primaryKey"`
-	UUID             string       `json:"uuid" gorm:"uniqueIndex"` // Workflow UUID (standard format for Sepiida)
-	Name             string       `json:"name"`
-	SampleID         string       `json:"sample_id" gorm:"size:36;index"` // Sample UUID
-	PedigreeID       string       `json:"pedigree_id,omitempty" gorm:"size:36;index"`
-	InternalID       string       `json:"internal_id" gorm:"size:100"`        // Sample internal_id for display
-	UploadJobID      string       `json:"upload_job_id" gorm:"size:36;index"` // UploadJob UUID
-	Pipeline         string       `json:"pipeline" gorm:"size:200"`           // Pipeline name
-	PipelineVersion  string       `json:"pipeline_version" gorm:"size:50"`
-	Template         string       `json:"template"`            // WDL template name (internal)
-	Executor         ExecutorType `json:"executor"`            // Execution environment (internal)
-	InputJSON        string       `json:"-" gorm:"type:jsonb"` // Input parameters JSON (internal)
-	ConfigFile       string       `json:"-"`                   // Config file path (internal)
-	OutputDir        string       `json:"-"`                   // Output directory (internal)
-	Status           TaskStatus   `json:"status" gorm:"size:30;index"`
-	Progress         int          `json:"progress" gorm:"type:smallint"` // 0-100
-	PID              int          `json:"-"`                             // Process ID (internal)
-	Remark           string       `json:"remark,omitempty" gorm:"type:text"`
-	SampleIDRef      uint         `json:"-" gorm:"index"`          // FK to samples.id (internal)
-	ProjectID        uint         `json:"-" gorm:"index"`          // FK to projects.id (internal)
-	ExternalOrgID    string       `json:"-" gorm:"size:100;index"` // optional external tenant reference for overlay events
-	TenantID         string       `json:"-" gorm:"size:160;index"` // canonical server-derived tenant scope
-	EstimatedMinutes int          `json:"-" gorm:"default:0"`      // optional runtime estimate for overlay policy
-	CreatedBy        uint         `json:"created_by" gorm:"index"`
-	StartedAt        *time.Time   `json:"started_at,omitempty" gorm:"type:timestamptz"`
-	FinishedAt       *time.Time   `json:"finished_at,omitempty" gorm:"type:timestamptz"`
-	CreatedAt        time.Time    `json:"created_at" gorm:"autoCreateTime;type:timestamptz"`
-	UpdatedAt        time.Time    `json:"updated_at" gorm:"autoUpdateTime;type:timestamptz"`
-	Error            string       `json:"error,omitempty"`
-	LogPath          string       `json:"-"` // Log file path (internal)
+	ID               string         `json:"id" gorm:"primaryKey"`
+	UUID             string         `json:"uuid" gorm:"uniqueIndex"` // Workflow UUID (standard format for Sepiida)
+	Name             string         `json:"name"`
+	SampleID         string         `json:"sample_id" gorm:"size:36;index"` // Sample UUID
+	PedigreeID       string         `json:"pedigree_id,omitempty" gorm:"size:36;index"`
+	InternalID       string         `json:"internal_id" gorm:"size:100"`        // Sample internal_id for display
+	UploadJobID      string         `json:"upload_job_id" gorm:"size:36;index"` // UploadJob UUID
+	Pipeline         string         `json:"pipeline" gorm:"size:200"`           // Pipeline name
+	PipelineVersion  string         `json:"pipeline_version" gorm:"size:50"`
+	Template         string         `json:"template"`            // WDL template name (internal)
+	Executor         ExecutorType   `json:"executor"`            // Execution environment (internal)
+	InputJSON        string         `json:"-" gorm:"type:jsonb"` // Input parameters JSON (internal)
+	ConfigFile       string         `json:"-"`                   // Config file path (internal)
+	OutputDir        string         `json:"-"`                   // Output directory (internal)
+	Status           TaskStatus     `json:"status" gorm:"size:30;index"`
+	Progress         int            `json:"progress" gorm:"type:smallint"` // 0-100
+	PID              int            `json:"-"`                             // Process ID (internal)
+	Remark           string         `json:"remark,omitempty" gorm:"type:text"`
+	SampleIDRef      uint           `json:"-" gorm:"index"`          // FK to samples.id (internal)
+	ProjectID        uint           `json:"-" gorm:"index"`          // FK to projects.id (internal)
+	ExternalOrgID    string         `json:"-" gorm:"size:100;index"` // optional external tenant reference for overlay events
+	TenantID         string         `json:"-" gorm:"size:160;index"` // canonical server-derived tenant scope
+	EstimatedMinutes int            `json:"-" gorm:"default:0"`      // optional runtime estimate for overlay policy
+	CreatedBy        uint           `json:"created_by" gorm:"index"`
+	StartedAt        *time.Time     `json:"started_at,omitempty" gorm:"type:timestamptz"`
+	FinishedAt       *time.Time     `json:"finished_at,omitempty" gorm:"type:timestamptz"`
+	CreatedAt        time.Time      `json:"created_at" gorm:"autoCreateTime;type:timestamptz"`
+	UpdatedAt        time.Time      `json:"updated_at" gorm:"autoUpdateTime;type:timestamptz"`
+	DeletedAt        gorm.DeletedAt `json:"-" gorm:"index"`
+	Error            string         `json:"error,omitempty"`
+	LogPath          string         `json:"-"` // Log file path (internal)
 
 	// VMStatus is the lifecycle state of the provisioned VM for this task. It
 	// supersedes the legacy cvm_instances.status concept (that table is not owned

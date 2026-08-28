@@ -419,14 +419,14 @@ func (h *TaskHandler) RetryResultImport(c *gin.Context) {
 	Success(c, progress)
 }
 
-// CancelTask cancels a running or queued task
-func (h *TaskHandler) CancelTask(c *gin.Context) {
+// DeleteTask soft-deletes a non-running task. Queued tasks are cancelled first.
+func (h *TaskHandler) DeleteTask(c *gin.Context) {
 	id := c.Param("id")
 	if _, ok := requireTaskAccess(c, h.taskRepo, id); !ok {
 		return
 	}
 
-	if err := h.svc.CancelTask(c.Request.Context(), id, taskActorFromContext(c)); err != nil {
+	if err := h.svc.DeleteTask(c.Request.Context(), id, taskActorFromContext(c)); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
