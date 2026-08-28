@@ -55,11 +55,18 @@ func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	if query.PageSize == 0 {
 		query.PageSize = 10
 	}
-	if !applyCreatedByListScope(c, &query.CreatedBy, &query.IncludeAll) {
+	userID, _, role, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
-	if orgID, ok := middleware.GetCurrentOrg(c); ok && orgID != "" && !query.IncludeAll {
+	if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg && orgID != "" {
 		query.ExternalOrgID = orgID
+		query.CreatedBy = userID
+	} else if role == string(model.SystemRoleSuperAdmin) {
+		query.IncludeAll = true
+	} else {
+		query.CreatedBy = userID
 	}
 
 	resp, err := h.svc.ListPipelines(c.Request.Context(), &query)

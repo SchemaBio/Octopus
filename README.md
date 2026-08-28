@@ -297,6 +297,7 @@ go run ./cmd/seed -reset # 清空 seed 后重插
 | OVERLAY_SHARED_SECRET | | Octopus 调用 Overlay webhook 的共享密钥，启用时必填 |
 | OVERLAY_SHARED_SECRET_FILE | | 从文件读取 Overlay 共享密钥 |
 | OVERLAY_TIMEOUT | 5s | Overlay HTTP 调用超时时间 |
+| OVERLAY_DISPATCH_TIMEOUT | 30s | CVM 创建/幂等查询调用超时时间；应覆盖云厂商实例申请延迟 |
 | OVERLAY_FAIL_OPEN | false | 准入 webhook 失败时是否放行；社区/生产建议保持 false |
 | OVERLAY_TASK_ADMISSION_PATH | /api/v1/overlay/tasks/admit | 任务准入 webhook 路径 |
 | OVERLAY_TASK_EVENT_PATH | /api/v1/overlay/tasks/events | 任务事件 webhook 路径 |

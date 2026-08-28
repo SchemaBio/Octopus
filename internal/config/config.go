@@ -84,6 +84,7 @@ type OverlayConfig struct {
 	BaseURL           string
 	SharedSecret      string
 	Timeout           time.Duration
+	DispatchTimeout   time.Duration
 	FailOpen          bool
 	TaskAdmissionPath string
 	TaskEventPath     string
@@ -216,6 +217,7 @@ func Load() *Config {
 			BaseURL:           getEnv("OVERLAY_BASE_URL", ""),
 			SharedSecret:      getEnvOrFile("OVERLAY_SHARED_SECRET", ""),
 			Timeout:           parseDuration(getEnv("OVERLAY_TIMEOUT", "5s")),
+			DispatchTimeout:   parseDuration(getEnv("OVERLAY_DISPATCH_TIMEOUT", "30s")),
 			FailOpen:          getEnv("OVERLAY_FAIL_OPEN", "false") == "true",
 			TaskAdmissionPath: getEnv("OVERLAY_TASK_ADMISSION_PATH", "/api/v1/overlay/tasks/admit"),
 			TaskEventPath:     getEnv("OVERLAY_TASK_EVENT_PATH", "/api/v1/overlay/tasks/events"),

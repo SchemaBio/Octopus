@@ -66,10 +66,10 @@ func (h *SampleHandler) ListSamples(c *gin.Context) {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
-	if role == string(model.SystemRoleSuperAdmin) {
-		query.IncludeAll = true
-	} else if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg {
+	if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg && orgID != "" {
 		query.OrgID = orgID
+	} else if role == string(model.SystemRoleSuperAdmin) {
+		query.IncludeAll = true
 	} else {
 		query.CreatedBy = userID
 	}

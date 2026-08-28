@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/SchemaBio/Octopus/internal/model"
 )
@@ -71,6 +72,28 @@ func TestUploadJobAccessAllowed(t *testing.T) {
 	}
 }
 
+func TestCVMDispatchUnknownRemainsQueuedForReconciliation(t *testing.T) {
+	now := time.Date(2026, 8, 28, 15, 0, 0, 0, time.UTC)
+	task := &model.Task{Status: model.TaskStatusFailed, VMStatus: "DISPATCHING"}
+	setCVMDispatchUnknownState(task, "context deadline exceeded", now)
+
+	if task.Status != model.TaskStatusQueued || task.VMStatus != "DISPATCHING" {
+		t.Fatalf("unknown dispatch must remain queued/DISPATCHING, got %s/%s", task.Status, task.VMStatus)
+	}
+	if task.Error == "" || !task.UpdatedAt.Equal(now) {
+		t.Fatal("unknown dispatch should retain a diagnostic and update timestamp")
+	}
+}
+
+func TestOnlyCVMDeletionUsesOverlaySettlement(t *testing.T) {
+	if !taskCancellationNeedsOverlay(&model.Task{Executor: model.ExecutorCVM}) {
+		t.Fatal("CVM task deletion must use overlay settlement")
+	}
+	if taskCancellationNeedsOverlay(&model.Task{Executor: model.ExecutorLocal}) {
+		t.Fatal("local task deletion must not enter SaaS CVM settlement")
+	}
+}
+
 func TestUploadJobUseAllowed(t *testing.T) {
 	job := &model.UploadJob{ExternalOrgID: "org-1", UserID: 10}
 	if !uploadJobUseAllowed(job, model.OverlayActor{OrgID: "org-1", UserID: 20}) {
@@ -81,5 +104,18 @@ func TestUploadJobUseAllowed(t *testing.T) {
 	}
 	if uploadJobUseAllowed(job, model.OverlayActor{UserID: 10}) {
 		t.Fatal("an organization upload must not be usable without its organization context")
+	}
+}
+
+func TestTaskDataAssetUseAllowedScopesSuperAdminToCurrentOrganization(t *testing.T) {
+	asset := &model.DataAsset{ExternalOrgID: "org-1", CreatedBy: 10}
+	if !taskDataAssetUseAllowed(asset, model.OverlayActor{OrgID: "org-1", Role: string(model.SystemRoleSuperAdmin)}) {
+		t.Fatal("platform admin should use assets from the current organization")
+	}
+	if taskDataAssetUseAllowed(asset, model.OverlayActor{OrgID: "org-2", Role: string(model.SystemRoleSuperAdmin)}) {
+		t.Fatal("platform admin must not use another tenant's asset while operating in an organization context")
+	}
+	if !taskDataAssetUseAllowed(asset, model.OverlayActor{Role: string(model.SystemRoleSuperAdmin)}) {
+		t.Fatal("unscoped super admin maintenance access should remain available")
 	}
 }

@@ -570,8 +570,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	read2Inputs := make([]string, 0)
 	for _, inputAsset := range req.InputAssets {
 		asset, err := s.assetRepo.FindByID(inputAsset.AssetID)
-		if err != nil || asset.Status != model.FileStatusCompleted ||
-			(actor.Role != string(model.SystemRoleSuperAdmin) && ((actor.OrgID != "" && asset.ExternalOrgID != actor.OrgID) || (actor.OrgID == "" && (asset.ExternalOrgID != "" || asset.CreatedBy != actor.UserID)))) {
+		if err != nil || asset.Status != model.FileStatusCompleted || !taskDataAssetUseAllowed(asset, actor) {
 			return nil, fmt.Errorf("data asset not found")
 		}
 		directAssets = append(directAssets, model.TaskDataAsset{AssetID: asset.ID, InputRole: inputAsset.InputRole, InputIndex: inputAsset.Index})
@@ -647,7 +646,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	if selectedPipeline != nil {
 		if selectedPipeline.BEDAssetID != nil {
 			bed, err := s.assetRepo.FindByID(*selectedPipeline.BEDAssetID)
-			if err != nil || bed.Status != model.FileStatusCompleted || bed.ReadType != model.ReadTypeBed {
+			if err != nil || bed.Status != model.FileStatusCompleted || bed.ReadType != model.ReadTypeBed || !taskDataAssetUseAllowed(bed, actor) {
 				return nil, fmt.Errorf("pipeline BED data asset is not available")
 			}
 			if _, exists := inputs["bed_file"]; !exists {
@@ -897,12 +896,15 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 			if serviceOverlayDispatchOutcomeKnown(err) {
 				s.markCVMStartFailedWithError(task, err.Error())
 				s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
-			} else {
-				// A transport error has an unknown outcome. Preserve DISPATCHING
-				// and this attempt so a retry can reconcile idempotently.
-				s.markCVMDispatchUnknown(task, err.Error())
+				return nil, err
 			}
-			return nil, err
+			// A transport error has an unknown outcome. Preserve DISPATCHING
+			// and this attempt so the asynchronous CVM callback can reconcile it.
+			// Treat the accepted control-plane state as a successful start request;
+			// returning an error here invites a user retry while Tencent may already
+			// be creating the instance.
+			s.markCVMDispatchUnknown(task, err.Error())
+			return task, nil
 		}
 	}
 
@@ -1037,10 +1039,10 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 			if serviceOverlayDispatchOutcomeKnown(err) {
 				s.markCVMStartFailedWithError(task, err.Error())
 				s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
-			} else {
-				s.markCVMDispatchUnknown(task, err.Error())
+				return nil, err
 			}
-			return nil, err
+			s.markCVMDispatchUnknown(task, err.Error())
+			return task, nil
 		}
 	}
 
@@ -1521,26 +1523,17 @@ func (s *TaskService) ListTasksAudit(ctx context.Context, query *model.TaskListQ
 	}, nil
 }
 
-// DeleteTask removes a task from normal queries. Queued and waiting tasks are
-// cancelled first so the control plane can release any reserved resources.
-// Running tasks must be stopped explicitly before deletion.
+// DeleteTask removes a task from normal queries. Active tasks first transition
+// to cancelled and synchronously deliver that event to the control plane. The
+// control plane settles actual runtime credits before marking the CVM for
+// termination, so the task is hidden only after settlement is acknowledged.
 func (s *TaskService) DeleteTask(ctx context.Context, id string, actor model.OverlayActor) error {
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return fmt.Errorf("task not found: %s", id)
 	}
 
-	if task.Status == model.TaskStatusRunning {
-		return fmt.Errorf("task is running; stop it before deleting")
-	}
-
-	if task.Status == model.TaskStatusQueued || task.Status == model.TaskStatusWaitingData {
-		if cvmTaskNeedsCancel(task) {
-			if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: "task deleted by user"}); err != nil {
-				return err
-			}
-		}
-
+	if task.Status == model.TaskStatusRunning || task.Status == model.TaskStatusQueued || task.Status == model.TaskStatusWaitingData || task.Status == model.TaskStatusCancelled {
 		s.mu.Lock()
 		if cmd, ok := s.running[id]; ok {
 			_ = cmd.Process.Kill()
@@ -1550,20 +1543,44 @@ func (s *TaskService) DeleteTask(ctx context.Context, id string, actor model.Ove
 
 		previousStatus := task.Status
 		task.Status = model.TaskStatusCancelled
-		if task.Executor == model.ExecutorCVM {
-			task.VMStatus = "TERMINATED"
-		}
 		now := time.Now()
-		task.FinishedAt = &now
+		if task.FinishedAt == nil {
+			task.FinishedAt = &now
+		}
 		task.UpdatedAt = now
 
 		if err := s.repo.Update(task); err != nil {
 			return err
 		}
-		s.emitTaskEvent(model.OverlayTaskEventCancelled, actor, task, previousStatus, "task deleted by user")
+		if taskCancellationNeedsOverlay(task) {
+			if err := s.emitTaskEventWithError(model.OverlayTaskEventCancelled, actor, task, previousStatus, "task deleted by user"); err != nil {
+				return fmt.Errorf("task cancellation settlement failed: %w", err)
+			}
+		}
+	} else if cvmTaskNeedsCancel(task) {
+		if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: "terminal task deleted by user"}); err != nil {
+			return err
+		}
 	}
 
 	return s.repo.DeleteByID(task.ID)
+}
+
+func taskDataAssetUseAllowed(asset *model.DataAsset, actor model.OverlayActor) bool {
+	if asset == nil {
+		return false
+	}
+	if actor.OrgID != "" {
+		return asset.ExternalOrgID == actor.OrgID
+	}
+	if actor.Role == string(model.SystemRoleSuperAdmin) {
+		return true
+	}
+	return asset.ExternalOrgID == "" && asset.CreatedBy == actor.UserID
+}
+
+func taskCancellationNeedsOverlay(task *model.Task) bool {
+	return task != nil && task.Executor == model.ExecutorCVM
 }
 
 // UpdateTask updates task fields
@@ -2393,10 +2410,18 @@ func (s *TaskService) markCVMDispatchUnknown(task *model.Task, message string) {
 	// Keep VMStatus=DISPATCHING and the attempt UUID intact. The request may
 	// have reached Squid/Tencent even though Octopus did not receive a response;
 	// retrying must therefore reuse this attempt and ClientToken.
-	task.Status = model.TaskStatusFailed
-	task.Error = strings.TrimSpace(message)
-	task.UpdatedAt = time.Now()
+	setCVMDispatchUnknownState(task, message, time.Now())
 	_ = s.repo.Update(task)
+}
+
+func setCVMDispatchUnknownState(task *model.Task, message string, now time.Time) {
+	task.Status = model.TaskStatusQueued
+	task.VMStatus = "DISPATCHING"
+	task.Error = "CVM dispatch is awaiting confirmation"
+	if detail := strings.TrimSpace(message); detail != "" {
+		task.Error += ": " + detail
+	}
+	task.UpdatedAt = now
 }
 
 func serviceOverlayDispatchOutcomeKnown(err error) bool {

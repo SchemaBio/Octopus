@@ -19,10 +19,33 @@ func testOverlayClient(serverURL string, failOpen bool) *OverlayClient {
 		BaseURL:           serverURL,
 		SharedSecret:      "overlay-secret",
 		Timeout:           time.Second,
+		DispatchTimeout:   time.Second,
 		FailOpen:          failOpen,
 		TaskAdmissionPath: "/admit",
 		TaskEventPath:     "/events",
+		TaskDispatchPath:  "/dispatch",
 	})
+}
+
+func TestOverlayClientDispatchUsesDedicatedCloudTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(40 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(model.CVMDispatchResponse{
+			Accepted: true, AttemptID: "attempt-1", InstanceID: "ins-12345678", InstanceState: "PENDING",
+		})
+	}))
+	defer server.Close()
+
+	client := testOverlayClient(server.URL, false)
+	client.client.Timeout = 10 * time.Millisecond
+	client.dispatchClient.Timeout = time.Second
+	resp, err := client.DispatchCVMTask(context.Background(), model.CVMDispatchRequest{AttemptID: "attempt-1"})
+	if err != nil {
+		t.Fatalf("dispatch should use its longer cloud timeout: %v", err)
+	}
+	if resp.InstanceID != "ins-12345678" {
+		t.Fatalf("unexpected dispatch response: %+v", resp)
+	}
 }
 
 func TestOverlayClientAdmitTaskAllowsRequest(t *testing.T) {

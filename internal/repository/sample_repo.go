@@ -51,12 +51,10 @@ func (r *SampleRepository) FindScopedByIdentifier(identifier string, actor model
 
 func (r *SampleRepository) findScoped(condition string, actor model.OverlayActor, args ...interface{}) (*model.Sample, error) {
 	db := r.db.Where(condition, args...)
-	if actor.Role != string(model.SystemRoleSuperAdmin) {
-		if actor.OrgID != "" {
-			db = db.Where("external_org_id = ?", actor.OrgID)
-		} else {
-			db = db.Where("external_org_id = '' AND created_by = ?", actor.UserID)
-		}
+	if actor.OrgID != "" {
+		db = db.Where("external_org_id = ?", actor.OrgID)
+	} else if actor.Role != string(model.SystemRoleSuperAdmin) {
+		db = db.Where("external_org_id = '' AND created_by = ?", actor.UserID)
 	}
 	var sample model.Sample
 	if err := db.First(&sample).Error; err != nil {

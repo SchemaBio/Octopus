@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/model"
@@ -58,19 +59,23 @@ func (e *OverlayTransportError) Error() string {
 func (e *OverlayTransportError) Unwrap() error { return e.Err }
 
 type OverlayClient struct {
-	cfg    config.OverlayConfig
-	client *http.Client
+	cfg            config.OverlayConfig
+	client         *http.Client
+	dispatchClient *http.Client
 }
 
 func NewOverlayClient(cfg config.OverlayConfig) *OverlayClient {
 	if !cfg.Enabled || strings.TrimSpace(cfg.BaseURL) == "" {
 		return nil
 	}
+	dispatchTimeout := cfg.DispatchTimeout
+	if dispatchTimeout <= 0 {
+		dispatchTimeout = 30 * time.Second
+	}
 	return &OverlayClient{
-		cfg: cfg,
-		client: &http.Client{
-			Timeout: cfg.Timeout,
-		},
+		cfg:            cfg,
+		client:         &http.Client{Timeout: cfg.Timeout},
+		dispatchClient: &http.Client{Timeout: dispatchTimeout},
 	}
 }
 
@@ -126,7 +131,7 @@ func (c *OverlayClient) DispatchCVMTask(ctx context.Context, req model.CVMDispat
 		return nil, fmt.Errorf("CVM dispatch requires an enabled overlay")
 	}
 	var response model.CVMDispatchResponse
-	status, body, err := c.postJSON(ctx, c.cfg.TaskDispatchPath, req, &response)
+	status, body, err := c.postJSONWithClient(ctx, c.dispatchClient, c.cfg.TaskDispatchPath, req, &response)
 	if err != nil {
 		return nil, &OverlayTransportError{Err: fmt.Errorf("CVM dispatch failed: %w", err)}
 	}
@@ -195,6 +200,10 @@ func (c *OverlayClient) RefundCredits(ctx context.Context, req model.OverlayCred
 }
 
 func (c *OverlayClient) postJSON(ctx context.Context, path string, payload interface{}, out interface{}) (int, []byte, error) {
+	return c.postJSONWithClient(ctx, c.client, path, payload, out)
+}
+
+func (c *OverlayClient) postJSONWithClient(ctx context.Context, client *http.Client, path string, payload interface{}, out interface{}) (int, []byte, error) {
 	endpoint, err := joinOverlayURL(c.cfg.BaseURL, path)
 	if err != nil {
 		return 0, nil, err
@@ -214,7 +223,7 @@ func (c *OverlayClient) postJSON(ctx context.Context, path string, payload inter
 		req.Header.Set("Authorization", "Bearer "+c.cfg.SharedSecret)
 	}
 
-	resp, err := c.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, nil, err
 	}

@@ -46,11 +46,11 @@ func (r *PipelineRepository) FindScopedByUUID(id string, actor model.OverlayActo
 }
 
 func scopePipeline(db *gorm.DB, actor model.OverlayActor) *gorm.DB {
-	if actor.Role == string(model.SystemRoleSuperAdmin) {
-		return db
-	}
 	if actor.OrgID != "" {
 		return db.Where("external_org_id = ? OR (external_org_id = '' AND created_by = ?)", actor.OrgID, actor.UserID)
+	}
+	if actor.Role == string(model.SystemRoleSuperAdmin) {
+		return db
 	}
 	return db.Where("external_org_id = '' AND created_by = ?", actor.UserID)
 }
