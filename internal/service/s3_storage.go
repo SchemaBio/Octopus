@@ -13,6 +13,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 type s3Storage struct {
@@ -26,6 +27,12 @@ type s3ObjectInfo struct {
 	Key          string
 	Size         int64
 	LastModified time.Time
+}
+
+type multipartPart struct {
+	Number int
+	ETag   string
+	Size   int64
 }
 
 func newS3Storage(ctx context.Context, cfg config.StorageConfig) (*s3Storage, error) {
@@ -69,6 +76,56 @@ func (s *s3Storage) presignUpload(ctx context.Context, key string) (string, erro
 	return request.URL, nil
 }
 
+func (s *s3Storage) createMultipart(ctx context.Context, key, contentType string) (string, error) {
+	output, err := s.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+		Bucket: aws.String(s.bucket), Key: aws.String(key), ContentType: aws.String(contentType),
+	})
+	if err != nil || output.UploadId == nil || strings.TrimSpace(*output.UploadId) == "" {
+		if err != nil {
+			return "", fmt.Errorf("create S3 multipart upload: %w", err)
+		}
+		return "", fmt.Errorf("create S3 multipart upload returned no upload id")
+	}
+	return *output.UploadId, nil
+}
+
+func (s *s3Storage) presignUploadPart(ctx context.Context, key, uploadID string, partNumber int) (string, error) {
+	request, err := s.presign.PresignUploadPart(ctx, &s3.UploadPartInput{
+		Bucket: aws.String(s.bucket), Key: aws.String(key), UploadId: aws.String(uploadID), PartNumber: aws.Int32(int32(partNumber)),
+	}, func(o *s3.PresignOptions) { o.Expires = s.expiry })
+	if err != nil {
+		return "", fmt.Errorf("presign S3 upload part: %w", err)
+	}
+	return request.URL, nil
+}
+
+func (s *s3Storage) completeMultipart(ctx context.Context, key, uploadID string, parts []multipartPart) error {
+	completed := make([]s3types.CompletedPart, 0, len(parts))
+	for _, part := range parts {
+		etag := part.ETag
+		number := int32(part.Number)
+		completed = append(completed, s3types.CompletedPart{ETag: aws.String(etag), PartNumber: numberPtr(number)})
+	}
+	_, err := s.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+		Bucket: aws.String(s.bucket), Key: aws.String(key), UploadId: aws.String(uploadID),
+		MultipartUpload: &s3types.CompletedMultipartUpload{Parts: completed},
+	})
+	if err != nil {
+		return fmt.Errorf("complete S3 multipart upload: %w", err)
+	}
+	return nil
+}
+
+func (s *s3Storage) abortMultipart(ctx context.Context, key, uploadID string) error {
+	_, err := s.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{Bucket: aws.String(s.bucket), Key: aws.String(key), UploadId: aws.String(uploadID)})
+	if err != nil {
+		return fmt.Errorf("abort S3 multipart upload: %w", err)
+	}
+	return nil
+}
+
+func numberPtr(value int32) *int32 { return &value }
+
 func (s *s3Storage) put(ctx context.Context, key, contentType string, body []byte) error {
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
@@ -98,10 +155,17 @@ func (s *s3Storage) putReader(ctx context.Context, key, contentType string, body
 }
 
 func (s *s3Storage) presignDownload(ctx context.Context, key, filename string) (string, error) {
+	return s.presignDownloadWithExpiry(ctx, key, filename, s.expiry)
+}
+
+func (s *s3Storage) presignDownloadWithExpiry(ctx context.Context, key, filename string, expiry time.Duration) (string, error) {
+	if expiry <= 0 {
+		expiry = s.expiry
+	}
 	disposition := fmt.Sprintf("attachment; filename=%q", filename)
 	request, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(key), ResponseContentDisposition: aws.String(disposition),
-	}, func(o *s3.PresignOptions) { o.Expires = s.expiry })
+	}, func(o *s3.PresignOptions) { o.Expires = expiry })
 	if err != nil {
 		return "", fmt.Errorf("presign S3 download: %w", err)
 	}

@@ -153,6 +153,70 @@ type UploadFileCompleteRequest struct {
 	FileSize int64 `json:"file_size"`
 }
 
+const (
+	MultipartThresholdBytes int64 = 64 * 1024 * 1024
+	MultipartPartSizeBytes  int64 = 32 * 1024 * 1024
+)
+
+// UploadMultipartSession tracks one resumable object-store multipart upload.
+// UploadID and StorageKey are server-only values and are never serialized.
+type UploadMultipartSession struct {
+	ID          uint       `json:"-" gorm:"primaryKey"`
+	UUID        string     `json:"id" gorm:"uniqueIndex;size:36;not null"`
+	FileUUID    string     `json:"file_id" gorm:"size:36;index;not null"`
+	JobUUID     string     `json:"job_id" gorm:"size:36;index;not null"`
+	StorageKey  string     `json:"-" gorm:"size:1000;not null"`
+	UploadID    string     `json:"-" gorm:"size:500;not null"`
+	PartSize    int64      `json:"part_size" gorm:"not null"`
+	FileSize    int64      `json:"file_size" gorm:"not null"`
+	Status      string     `json:"status" gorm:"size:20;not null;default:active;index"`
+	CreatedAt   time.Time  `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt   time.Time  `json:"updated_at" gorm:"type:timestamptz"`
+	CompletedAt *time.Time `json:"completed_at,omitempty" gorm:"type:timestamptz"`
+}
+
+func (UploadMultipartSession) TableName() string { return "upload_multipart_sessions" }
+
+type UploadMultipartPart struct {
+	ID          uint      `json:"-" gorm:"primaryKey"`
+	SessionUUID string    `json:"session_id" gorm:"size:36;uniqueIndex:upload_multipart_part;not null"`
+	PartNumber  int       `json:"part_number" gorm:"uniqueIndex:upload_multipart_part;not null"`
+	ETag        string    `json:"etag" gorm:"size:500;not null"`
+	Size        int64     `json:"size" gorm:"not null"`
+	CreatedAt   time.Time `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"type:timestamptz"`
+}
+
+func (UploadMultipartPart) TableName() string { return "upload_multipart_parts" }
+
+type MultipartInitResponse struct {
+	SessionID      string `json:"session_id"`
+	FileID         string `json:"file_id"`
+	PartSize       int64  `json:"part_size"`
+	TotalParts     int    `json:"total_parts"`
+	CompletedParts []int  `json:"completed_parts"`
+}
+
+type MultipartPresignRequest struct {
+	PartNumbers []int `json:"part_numbers" binding:"required,min=1,max=100"`
+}
+
+type MultipartPresignItem struct {
+	PartNumber int    `json:"part_number"`
+	URL        string `json:"url"`
+}
+
+type MultipartPresignResponse struct {
+	SessionID string                 `json:"session_id"`
+	Parts     []MultipartPresignItem `json:"parts"`
+}
+
+type MultipartPartRequest struct {
+	PartNumber int    `json:"part_number" binding:"required,min=1"`
+	ETag       string `json:"etag" binding:"required"`
+	Size       int64  `json:"size" binding:"required,min=1"`
+}
+
 func UploadJobToResponse(job *UploadJob, files []UploadFileResponse) UploadJobResponse {
 	return UploadJobResponse{
 		ID:                         job.UUID,

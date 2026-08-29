@@ -261,6 +261,98 @@ func (h *UploadHandler) CompleteS3(c *gin.Context) {
 	Success(c, model.UploadFileToResponse(file))
 }
 
+func (h *UploadHandler) StartS3(c *gin.Context) {
+	_, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	file, err := h.svc.StartUploadFile(c.Request.Context(), taskActorFromContext(c), c.Param("file_uuid"))
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, model.UploadFileToResponse(file))
+}
+
+func (h *UploadHandler) InitMultipart(c *gin.Context) {
+	_, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	response, err := h.svc.InitMultipart(c.Request.Context(), taskActorFromContext(c), c.Param("file_uuid"))
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, response)
+}
+
+func (h *UploadHandler) PresignMultipartParts(c *gin.Context) {
+	_, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	var req model.MultipartPresignRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	response, err := h.svc.PresignMultipartParts(c.Request.Context(), taskActorFromContext(c), c.Param("file_uuid"), c.Param("session_uuid"), req.PartNumbers)
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, response)
+}
+
+func (h *UploadHandler) RecordMultipartPart(c *gin.Context) {
+	_, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	var req model.MultipartPartRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	if err := h.svc.RecordMultipartPart(c.Request.Context(), taskActorFromContext(c), c.Param("file_uuid"), c.Param("session_uuid"), &req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *UploadHandler) CompleteMultipart(c *gin.Context) {
+	_, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	file, err := h.svc.CompleteMultipart(c.Request.Context(), taskActorFromContext(c), c.Param("file_uuid"), c.Param("session_uuid"))
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, model.UploadFileToResponse(file))
+}
+
+func (h *UploadHandler) AbortMultipart(c *gin.Context) {
+	_, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := h.svc.AbortMultipart(c.Request.Context(), taskActorFromContext(c), c.Param("file_uuid"), c.Param("session_uuid")); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *UploadHandler) RetryS3(c *gin.Context) {
 	_, _, _, ok := middleware.GetCurrentUser(c)
 	if !ok {

@@ -66,6 +66,47 @@ func (h *TaskHandler) CVMStateEvent(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// CVMInputRefresh serves the trusted Squid control plane. It returns a fresh
+// execution specification (including short-lived object-store URLs) for the
+// same task attempt and never exposes storage keys to browser clients.
+func (h *TaskHandler) CVMInputRefresh(c *gin.Context) {
+	if h.cfg == nil || !h.cfg.ExternalAuth.Enabled || h.cfg.ExternalAuth.SharedSecret == "" {
+		ErrorUnauthorized(c, "CVM callback authentication is disabled")
+		return
+	}
+	authorization := strings.TrimSpace(c.GetHeader("Authorization"))
+	parts := strings.SplitN(authorization, " ", 2)
+	token := ""
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		token = strings.TrimSpace(parts[1])
+	}
+	if subtle.ConstantTimeCompare([]byte(token), []byte(h.cfg.ExternalAuth.SharedSecret)) != 1 {
+		ErrorUnauthorized(c, "Invalid CVM callback credentials")
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+	var request model.CVMInputRefreshRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	execution, err := h.svc.RefreshCVMExecution(c.Request.Context(), request.TaskUUID, request.AttemptID)
+	if err != nil {
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "not found") {
+			ErrorNotFound(c, err.Error())
+			return
+		}
+		if strings.Contains(lower, "attempt_id") || strings.Contains(lower, "valid uuid") {
+			ErrorConflict(c, err.Error())
+			return
+		}
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, model.CVMInputRefreshResponse{TaskUUID: request.TaskUUID, AttemptID: request.AttemptID, Execution: execution})
+}
+
 func taskActorFromContext(c *gin.Context) model.OverlayActor {
 	userID, email, role, _ := middleware.GetCurrentUser(c)
 	orgID, _ := middleware.GetCurrentOrg(c)

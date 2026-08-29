@@ -145,11 +145,52 @@ func (s *DataAssetService) deleteAsset(ctx context.Context, asset *model.DataAss
 	if asset.Status == model.FileStatusDeleted {
 		return nil
 	}
+	if err := s.abortMultipartSessions(ctx, asset); err != nil {
+		_ = restoreAssetDeletion(db.WithContext(ctx), asset, state)
+		return err
+	}
 	if err := s.deleteStoredObject(ctx, asset); err != nil {
 		_ = restoreAssetDeletion(db.WithContext(ctx), asset, state)
 		return err
 	}
 	return finalizeAssetDeletion(db.WithContext(ctx), asset)
+}
+
+func (s *DataAssetService) abortMultipartSessions(ctx context.Context, asset *model.DataAsset) error {
+	if asset == nil || asset.UploadFileID == nil || asset.Provider != model.UploadProviderS3 {
+		return nil
+	}
+	db := database.GetDB()
+	if db == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+	var file model.UploadFile
+	if err := db.WithContext(ctx).First(&file, *asset.UploadFileID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	var sessions []model.UploadMultipartSession
+	if err := db.WithContext(ctx).Where("file_uuid = ? AND status = ?", file.UUID, "active").Find(&sessions).Error; err != nil {
+		return err
+	}
+	if len(sessions) == 0 {
+		return nil
+	}
+	storage, err := newS3Storage(ctx, s.cfg.Storage)
+	if err != nil {
+		return err
+	}
+	for i := range sessions {
+		if err := storage.abortMultipart(ctx, sessions[i].StorageKey, sessions[i].UploadID); err != nil {
+			return err
+		}
+		if err := db.WithContext(ctx).Model(&sessions[i]).Update("status", "aborted").Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func markAssetDeleting(db *gorm.DB, asset *model.DataAsset) (assetDeletionState, error) {

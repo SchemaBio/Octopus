@@ -138,6 +138,18 @@ func (c *OverlayClient) DispatchCVMTask(ctx context.Context, req model.CVMDispat
 	if status < 200 || status >= 300 {
 		return nil, &OverlayHTTPError{Status: status, Body: strings.TrimSpace(string(body))}
 	}
+	// Squid may accept a dispatch while spot capacity is unavailable.  The
+	// attempt remains durable in Squid and will be retried there; Octopus keeps
+	// the task queued until a later state event supplies the instance ID.
+	if response.Accepted && response.InstanceID == "" {
+		state := strings.ToUpper(strings.TrimSpace(response.InstanceState))
+		if state == "WAITING_CAPACITY" || state == "DISPATCHING" {
+			if req.AttemptID != "" && response.AttemptID != "" && response.AttemptID != req.AttemptID {
+				return nil, fmt.Errorf("CVM dispatch returned a mismatched attempt_id")
+			}
+			return &response, nil
+		}
+	}
 	if !response.Accepted || response.InstanceID == "" {
 		if response.Reason == "" {
 			response.Reason = "CVM dispatch was not accepted"

@@ -77,9 +77,12 @@ type Task struct {
 	// supersedes the legacy cvm_instances.status concept (that table is not owned
 	// by any service). Stored as a plain string enum so values can evolve
 	// without enum-type migrations; populated by the task runner / overlay events.
-	VMStatus           string `json:"vm_status,omitempty" gorm:"size:30;index"`
-	CVMInstanceID      string `json:"-" gorm:"size:64;index"`
-	ExecutionAttemptID string `json:"execution_attempt_id,omitempty" gorm:"size:36;index"`
+	VMStatus                   string     `json:"vm_status,omitempty" gorm:"size:30;index"`
+	CVMInstanceID              string     `json:"-" gorm:"size:64;index"`
+	ExecutionAttemptID         string     `json:"execution_attempt_id,omitempty" gorm:"size:36;index"`
+	CVMDispatchNextRetryAt     *time.Time `json:"dispatch_next_retry_at,omitempty" gorm:"type:timestamptz;index"`
+	CVMDispatchRetryDeadlineAt *time.Time `json:"dispatch_retry_deadline_at,omitempty" gorm:"type:timestamptz;index"`
+	CVMDispatchRetryCount      int        `json:"dispatch_retry_count,omitempty" gorm:"default:0"`
 
 	ResultImportStatus      ResultImportStatus `json:"-" gorm:"size:30;default:'pending'"`
 	ResultImportError       string             `json:"-" gorm:"type:text"`
@@ -187,6 +190,10 @@ type TaskListQuery struct {
 	Status        TaskStatus `form:"status"`
 	SampleID      string     `form:"sampleId"`
 	Search        string     `form:"search"`        // text across name/internal_id/error
+	// OrgID is an explicit cross-organization filter for platform-admin audit
+	// consumers. The handler still applies the caller scope before the
+	// repository uses this value, so tenant users cannot widen their access.
+	OrgID         string     `form:"org_id"`
 	CreatedSince  *time.Time `form:"created_since"` // tasks created >= since (RFC3339); nil = no filter
 	UpdatedSince  *time.Time `form:"updated_since"` // tasks updated >= since (RFC3339); nil = no filter
 	Page          int        `form:"page" binding:"omitempty,min=1"`
@@ -199,31 +206,39 @@ type TaskListQuery struct {
 
 // TaskResponse matches frontend AnalysisTask type
 type TaskResponse struct {
-	ID              string     `json:"id"`
-	SampleID        string     `json:"sampleId"`
-	InternalID      string     `json:"internalId"`
-	Pipeline        string     `json:"pipeline"`
-	PipelineVersion string     `json:"pipelineVersion"`
-	Status          TaskStatus `json:"status"`
-	Progress        int        `json:"progress"`
-	CreatedAt       string     `json:"created_at"`
-	CreatedBy       string     `json:"createdBy"`
-	CompletedAt     string     `json:"completedAt,omitempty"`
-	Remark          string     `json:"remark,omitempty"`
+	ID                      string     `json:"id"`
+	SampleID                string     `json:"sampleId"`
+	InternalID              string     `json:"internalId"`
+	Pipeline                string     `json:"pipeline"`
+	PipelineVersion         string     `json:"pipelineVersion"`
+	Status                  TaskStatus `json:"status"`
+	VMStatus                string     `json:"vm_status,omitempty"`
+	DispatchNextRetryAt     string     `json:"dispatch_next_retry_at,omitempty"`
+	DispatchRetryDeadlineAt string     `json:"dispatch_retry_deadline_at,omitempty"`
+	DispatchRetryCount      int        `json:"dispatch_retry_count,omitempty"`
+	Progress                int        `json:"progress"`
+	CreatedAt               string     `json:"created_at"`
+	CreatedBy               string     `json:"createdBy"`
+	CompletedAt             string     `json:"completedAt,omitempty"`
+	Remark                  string     `json:"remark,omitempty"`
 }
 
 // TaskDetailResponse matches frontend AnalysisTaskDetail type
 type TaskDetailResponse struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	SampleID        string     `json:"sampleId"`
-	InternalID      string     `json:"internalId"`
-	Pipeline        string     `json:"pipeline"`
-	PipelineVersion string     `json:"pipelineVersion"`
-	Status          TaskStatus `json:"status"`
-	CreatedAt       string     `json:"created_at"`
-	CreatedBy       string     `json:"createdBy"`
-	CompletedAt     string     `json:"completedAt,omitempty"`
+	ID                      string     `json:"id"`
+	Name                    string     `json:"name"`
+	SampleID                string     `json:"sampleId"`
+	InternalID              string     `json:"internalId"`
+	Pipeline                string     `json:"pipeline"`
+	PipelineVersion         string     `json:"pipelineVersion"`
+	Status                  TaskStatus `json:"status"`
+	VMStatus                string     `json:"vm_status,omitempty"`
+	DispatchNextRetryAt     string     `json:"dispatch_next_retry_at,omitempty"`
+	DispatchRetryDeadlineAt string     `json:"dispatch_retry_deadline_at,omitempty"`
+	DispatchRetryCount      int        `json:"dispatch_retry_count,omitempty"`
+	CreatedAt               string     `json:"created_at"`
+	CreatedBy               string     `json:"createdBy"`
+	CompletedAt             string     `json:"completedAt,omitempty"`
 }
 
 // TaskListResponse is the response for listing tasks
@@ -325,6 +340,10 @@ type TaskProgressResponse struct {
 	Status                  TaskStatus         `json:"status"`
 	Progress                int                `json:"progress"`
 	ExecutionAttemptID      string             `json:"execution_attempt_id,omitempty"`
+	VMStatus                string             `json:"vm_status,omitempty"`
+	DispatchNextRetryAt     *time.Time         `json:"dispatch_next_retry_at,omitempty"`
+	DispatchRetryDeadlineAt *time.Time         `json:"dispatch_retry_deadline_at,omitempty"`
+	DispatchRetryCount      int                `json:"dispatch_retry_count,omitempty"`
 	CreatedAt               time.Time          `json:"created_at"`
 	ResultImportStatus      ResultImportStatus `json:"result_import_status,omitempty"`
 	ResultImportError       string             `json:"result_import_error,omitempty"`
@@ -350,16 +369,24 @@ type Template struct {
 // ToResponse converts Task to TaskResponse
 func (t *Task) ToResponse() TaskResponse {
 	resp := TaskResponse{
-		ID:              t.UUID,
-		SampleID:        t.SampleID,
-		InternalID:      t.InternalID,
-		Pipeline:        t.Pipeline,
-		PipelineVersion: t.PipelineVersion,
-		Status:          t.Status,
-		Progress:        t.Progress,
-		CreatedAt:       t.CreatedAt.Format(time.RFC3339),
-		CreatedBy:       formatID(t.CreatedBy),
-		Remark:          t.Remark,
+		ID:                 t.UUID,
+		SampleID:           t.SampleID,
+		InternalID:         t.InternalID,
+		Pipeline:           t.Pipeline,
+		PipelineVersion:    t.PipelineVersion,
+		Status:             t.Status,
+		VMStatus:           t.VMStatus,
+		DispatchRetryCount: t.CVMDispatchRetryCount,
+		Progress:           t.Progress,
+		CreatedAt:          t.CreatedAt.Format(time.RFC3339),
+		CreatedBy:          formatID(t.CreatedBy),
+		Remark:             t.Remark,
+	}
+	if t.CVMDispatchNextRetryAt != nil {
+		resp.DispatchNextRetryAt = t.CVMDispatchNextRetryAt.Format(time.RFC3339)
+	}
+	if t.CVMDispatchRetryDeadlineAt != nil {
+		resp.DispatchRetryDeadlineAt = t.CVMDispatchRetryDeadlineAt.Format(time.RFC3339)
 	}
 	if t.FinishedAt != nil {
 		resp.CompletedAt = t.FinishedAt.Format(time.RFC3339)
@@ -370,15 +397,23 @@ func (t *Task) ToResponse() TaskResponse {
 // ToDetailResponse converts Task to TaskDetailResponse
 func (t *Task) ToDetailResponse() TaskDetailResponse {
 	resp := TaskDetailResponse{
-		ID:              t.UUID,
-		Name:            t.Name,
-		SampleID:        t.SampleID,
-		InternalID:      t.InternalID,
-		Pipeline:        t.Pipeline,
-		PipelineVersion: t.PipelineVersion,
-		Status:          t.Status,
-		CreatedAt:       t.CreatedAt.Format(time.RFC3339),
-		CreatedBy:       formatID(t.CreatedBy),
+		ID:                 t.UUID,
+		Name:               t.Name,
+		SampleID:           t.SampleID,
+		InternalID:         t.InternalID,
+		Pipeline:           t.Pipeline,
+		PipelineVersion:    t.PipelineVersion,
+		Status:             t.Status,
+		VMStatus:           t.VMStatus,
+		DispatchRetryCount: t.CVMDispatchRetryCount,
+		CreatedAt:          t.CreatedAt.Format(time.RFC3339),
+		CreatedBy:          formatID(t.CreatedBy),
+	}
+	if t.CVMDispatchNextRetryAt != nil {
+		resp.DispatchNextRetryAt = t.CVMDispatchNextRetryAt.Format(time.RFC3339)
+	}
+	if t.CVMDispatchRetryDeadlineAt != nil {
+		resp.DispatchRetryDeadlineAt = t.CVMDispatchRetryDeadlineAt.Format(time.RFC3339)
 	}
 	if t.FinishedAt != nil {
 		resp.CompletedAt = t.FinishedAt.Format(time.RFC3339)

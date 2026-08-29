@@ -29,6 +29,30 @@ func TestTaskRepositoryStandaloneListExcludesOrganizationTasks(t *testing.T) {
 	}
 }
 
+func TestTaskRepositoryPlatformAdminCanFilterByOrganization(t *testing.T) {
+	db, mock := newUploadRepositoryTestDB(t)
+	repo := NewTaskRepository()
+	repo.Repository.db = db
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "tasks" WHERE external_org_id = \$1 AND "tasks"\."deleted_at" IS NULL`).
+		WithArgs("org-1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT \* FROM "tasks" WHERE external_org_id = \$1 AND "tasks"\."deleted_at" IS NULL ORDER BY created_at DESC LIMIT \$2`).
+		WithArgs("org-1", 10).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("task-row-1"))
+
+	rows, total, err := repo.PaginateByQuery(&model.TaskListQuery{IncludeAll: true, OrgID: "org-1"})
+	if err != nil {
+		t.Fatalf("PaginateByQuery: %v", err)
+	}
+	if total != 1 || len(rows) != 1 {
+		t.Fatalf("PaginateByQuery = (%d rows, total %d), want (1, 1)", len(rows), total)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("SQL expectations: %v", err)
+	}
+}
+
 func TestTaskRepositoryDeleteByIDUsesSoftDelete(t *testing.T) {
 	db, mock := newUploadRepositoryTestDB(t)
 	repo := NewTaskRepository()

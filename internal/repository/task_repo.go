@@ -135,6 +135,9 @@ func (r *TaskRepository) PaginateByQuery(query *model.TaskListQuery) ([]model.Ta
 		like := "%" + query.Search + "%"
 		db = db.Where("name ILIKE ? OR internal_id ILIKE ? OR error ILIKE ?", like, like, like)
 	}
+	if query.OrgID != "" {
+		db = db.Where("external_org_id = ?", query.OrgID)
+	}
 	if query.CreatedSince != nil {
 		db = db.Where("created_at >= ?", *query.CreatedSince)
 	}

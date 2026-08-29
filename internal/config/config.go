@@ -102,24 +102,27 @@ type LLMConfig struct {
 }
 
 type StorageConfig struct {
-	Provider         string // local or s3
-	LocalDir         string // local upload root directory
-	MaxSizeMB        int    // maximum upload file size in MB, 0 means unlimited
-	RetentionDays    int    // 0 keeps data indefinitely; SaaS deployments use 7
-	PresignExpiry    time.Duration
-	S3Endpoint       string
-	S3PublicEndpoint string
-	S3Region         string
-	S3Bucket         string
-	S3AccessKey      string
-	S3SecretKey      string
-	S3SessionToken   string
-	S3UsePathStyle   bool
-	ScanLocalDir     string
-	S3ScanPrefix     string
-	ScanOrgID        string
-	ScanUserID       int
-	ScanInterval     time.Duration
+	Provider      string // local or s3
+	LocalDir      string // local upload root directory
+	MaxSizeMB     int    // maximum upload file size in MB, 0 means unlimited
+	RetentionDays int    // 0 keeps data indefinitely; SaaS deployments use 7
+	PresignExpiry time.Duration
+	// CVM inputs may wait for spot capacity; keep their download URL valid for
+	// the retry window plus instance bootstrap time.
+	CVMInputPresignExpiry time.Duration
+	S3Endpoint            string
+	S3PublicEndpoint      string
+	S3Region              string
+	S3Bucket              string
+	S3AccessKey           string
+	S3SecretKey           string
+	S3SessionToken        string
+	S3UsePathStyle        bool
+	ScanLocalDir          string
+	S3ScanPrefix          string
+	ScanOrgID             string
+	ScanUserID            int
+	ScanInterval          time.Duration
 }
 
 type ReportConfig struct {
@@ -233,24 +236,25 @@ func Load() *Config {
 			ProxyMaxBodyBytes: int64(parseIntEnv("LLM_PROXY_MAX_BODY_MB", 2)) << 20,
 		},
 		Storage: StorageConfig{
-			Provider:         normalizeStorageProvider(storageProvider),
-			LocalDir:         getEnv("STORAGE_LOCAL_DIR", "/mnt/data/uploads"),
-			MaxSizeMB:        parseIntEnv("UPLOAD_MAX_SIZE_MB", 0),
-			RetentionDays:    parseIntEnv("DATA_RETENTION_DAYS", 0),
-			PresignExpiry:    parseDuration(getEnv("STORAGE_PRESIGN_EXPIRE", "15m")),
-			S3Endpoint:       s3Endpoint,
-			S3PublicEndpoint: s3PublicEndpoint,
-			S3Region:         s3Region,
-			S3Bucket:         s3Bucket,
-			S3AccessKey:      s3AccessKey,
-			S3SecretKey:      s3SecretKey,
-			S3SessionToken:   getEnvOrFile("S3_SESSION_TOKEN", ""),
-			S3UsePathStyle:   getEnv("S3_USE_PATH_STYLE", "false") == "true",
-			ScanLocalDir:     strings.TrimSpace(getEnv("DATA_SCAN_LOCAL_DIR", "")),
-			S3ScanPrefix:     strings.Trim(strings.TrimSpace(getEnv("S3_SCAN_PREFIX", "")), "/"),
-			ScanOrgID:        strings.TrimSpace(getEnv("DATA_SCAN_ORG_ID", "")),
-			ScanUserID:       parseIntEnv("DATA_SCAN_USER_ID", 1),
-			ScanInterval:     parseDuration(getEnv("DATA_SCAN_INTERVAL", "1m")),
+			Provider:              normalizeStorageProvider(storageProvider),
+			LocalDir:              getEnv("STORAGE_LOCAL_DIR", "/mnt/data/uploads"),
+			MaxSizeMB:             parseIntEnv("UPLOAD_MAX_SIZE_MB", 0),
+			RetentionDays:         parseIntEnv("DATA_RETENTION_DAYS", 0),
+			PresignExpiry:         parseDuration(getEnv("STORAGE_PRESIGN_EXPIRE", "15m")),
+			CVMInputPresignExpiry: parseDuration(getEnv("CVM_INPUT_PRESIGN_EXPIRE", "1h")),
+			S3Endpoint:            s3Endpoint,
+			S3PublicEndpoint:      s3PublicEndpoint,
+			S3Region:              s3Region,
+			S3Bucket:              s3Bucket,
+			S3AccessKey:           s3AccessKey,
+			S3SecretKey:           s3SecretKey,
+			S3SessionToken:        getEnvOrFile("S3_SESSION_TOKEN", ""),
+			S3UsePathStyle:        getEnv("S3_USE_PATH_STYLE", "false") == "true",
+			ScanLocalDir:          strings.TrimSpace(getEnv("DATA_SCAN_LOCAL_DIR", "")),
+			S3ScanPrefix:          strings.Trim(strings.TrimSpace(getEnv("S3_SCAN_PREFIX", "")), "/"),
+			ScanOrgID:             strings.TrimSpace(getEnv("DATA_SCAN_ORG_ID", "")),
+			ScanUserID:            parseIntEnv("DATA_SCAN_USER_ID", 1),
+			ScanInterval:          parseDuration(getEnv("DATA_SCAN_INTERVAL", "1m")),
 		},
 		Report: ReportConfig{
 			PackageMaxSizeMB: parseIntEnv("REPORT_PACKAGE_MAX_SIZE_MB", 20*1024),

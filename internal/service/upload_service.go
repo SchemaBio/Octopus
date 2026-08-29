@@ -369,7 +369,7 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, actor model.OverlayAc
 	if job.Provider != model.UploadProviderLocal {
 		return nil, fmt.Errorf("upload job does not use local storage")
 	}
-	if existingFile.Status != model.FileStatusPending && existingFile.Status != model.FileStatusFailed {
+	if existingFile.Status != model.FileStatusPending && existingFile.Status != model.FileStatusFailed && existingFile.Status != model.FileStatusUploading {
 		return nil, fmt.Errorf("upload file is not writable")
 	}
 	if err := validateUploadFilename(existingFile.FileName); err != nil {
@@ -505,6 +505,534 @@ func (s *UploadService) CompleteS3File(ctx context.Context, actor model.OverlayA
 	return file, nil
 }
 
+// StartUploadFile marks a file as actively uploading. It is deliberately a
+// separate call from job creation so a user can create a draft upload without
+// making the data center show a false "uploading" state. Both S3/COS and the
+// local streaming path use this lifecycle marker.
+func (s *UploadService) StartUploadFile(ctx context.Context, actor model.OverlayActor, fileUUID string) (*model.UploadFile, error) {
+	file, err := s.fileRepo.FindByUUID(fileUUID)
+	if err != nil {
+		return nil, fmt.Errorf("upload file not found")
+	}
+	job, err := s.jobRepo.FindByUUID(file.JobUUID)
+	if err != nil || !uploadJobAccessAllowed(job, actor) {
+		return nil, fmt.Errorf("upload file not found")
+	}
+	if job.Status == model.UploadJobStatusDeleting || job.Status == model.UploadJobStatusDeleted {
+		return nil, fmt.Errorf("upload file was deleted")
+	}
+	if file.Status == model.FileStatusCompleted {
+		return nil, fmt.Errorf("upload file is already completed")
+	}
+	if file.Status == model.FileStatusDeleted || file.Status == model.FileStatusDeleting {
+		return nil, fmt.Errorf("upload file was deleted")
+	}
+	db := database.GetDB()
+	if db == nil {
+		return nil, fmt.Errorf("database is not initialized")
+	}
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var lockedFile model.UploadFile
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, file.ID).Error; err != nil {
+			return fmt.Errorf("upload file not found")
+		}
+		var lockedJob model.UploadJob
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedJob, job.ID).Error; err != nil || !uploadJobAccessAllowed(&lockedJob, actor) {
+			return fmt.Errorf("upload file not found")
+		}
+		if lockedFile.Status == model.FileStatusCompleted {
+			return fmt.Errorf("upload file is already completed")
+		}
+		if lockedFile.Status == model.FileStatusDeleted || lockedFile.Status == model.FileStatusDeleting ||
+			lockedJob.Status == model.UploadJobStatusDeleting || lockedJob.Status == model.UploadJobStatusDeleted {
+			return fmt.Errorf("upload file was deleted")
+		}
+		lockedFile.Status = model.FileStatusUploading
+		if err := tx.Save(&lockedFile).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.DataAsset{}).Where("upload_file_id = ?", lockedFile.ID).Update("status", model.FileStatusUploading).Error; err != nil {
+			return err
+		}
+		lockedJob.Status = model.UploadJobStatusUploading
+		if err := tx.Save(&lockedJob).Error; err != nil {
+			return err
+		}
+		*file = lockedFile
+		*job = lockedJob
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+// StartS3File is kept for service-level callers that need to assert an
+// object-store upload specifically. The HTTP lifecycle endpoint intentionally
+// uses StartUploadFile so self-deployed local storage gets the same status
+// semantics without enabling multipart.
+func (s *UploadService) StartS3File(ctx context.Context, actor model.OverlayActor, fileUUID string) (*model.UploadFile, error) {
+	file, err := s.fileRepo.FindByUUID(fileUUID)
+	if err != nil {
+		return nil, fmt.Errorf("upload file not found")
+	}
+	job, err := s.jobRepo.FindByUUID(file.JobUUID)
+	if err != nil || !uploadJobAccessAllowed(job, actor) || job.Provider != model.UploadProviderS3 {
+		return nil, fmt.Errorf("upload file not found")
+	}
+	return s.StartUploadFile(ctx, actor, fileUUID)
+}
+
+func multipartTotalParts(fileSize, partSize int64) int {
+	if fileSize <= 0 || partSize <= 0 {
+		return 0
+	}
+	return int((fileSize + partSize - 1) / partSize)
+}
+
+// validateMultipartPartMetadata centralizes the part-number and exact-size
+// checks used before recording an ETag. Keeping this independent of the
+// database makes the multipart contract easy to exercise in unit tests and
+// prevents a client from marking a short/non-final part as complete.
+func validateMultipartPartMetadata(partNumber int, etag string, size, fileSize, partSize int64) error {
+	total := multipartTotalParts(fileSize, partSize)
+	if partNumber < 1 || partNumber > total || strings.TrimSpace(etag) == "" || size <= 0 || size > partSize {
+		return fmt.Errorf("invalid multipart part")
+	}
+	if partNumber == total {
+		remaining := fileSize - int64(total-1)*partSize
+		if size != remaining {
+			return fmt.Errorf("last multipart part size mismatch: expected %d, got %d", remaining, size)
+		}
+	} else if size != partSize {
+		return fmt.Errorf("multipart part size mismatch: expected %d, got %d", partSize, size)
+	}
+	return nil
+}
+
+func validateRecordedMultipartPart(existing *model.UploadMultipartPart, etag string, size int64, partNumber int) error {
+	if existing != nil && existing.ETag == strings.TrimSpace(etag) && existing.Size == size {
+		return nil
+	}
+	return fmt.Errorf("multipart part %d was already recorded with different ETag or size", partNumber)
+}
+
+func collectMultipartParts(rows []model.UploadMultipartPart, total int, fileSize, partSize int64) ([]multipartPart, error) {
+	if len(rows) != total {
+		return nil, fmt.Errorf("multipart upload is incomplete: received %d of %d parts", len(rows), total)
+	}
+	parts := make([]multipartPart, 0, len(rows))
+	for index, row := range rows {
+		if row.PartNumber != index+1 {
+			return nil, fmt.Errorf("multipart part %d is missing", index+1)
+		}
+		if err := validateMultipartPartMetadata(row.PartNumber, row.ETag, row.Size, fileSize, partSize); err != nil {
+			return nil, err
+		}
+		parts = append(parts, multipartPart{Number: row.PartNumber, ETag: row.ETag, Size: row.Size})
+	}
+	return parts, nil
+}
+
+func (s *UploadService) multipartScope(ctx context.Context, actor model.OverlayActor, fileUUID string) (*model.UploadFile, *model.UploadJob, error) {
+	file, err := s.fileRepo.FindByUUID(fileUUID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("upload file not found")
+	}
+	job, err := s.jobRepo.FindByUUID(file.JobUUID)
+	if err != nil || !uploadJobAccessAllowed(job, actor) || job.Provider != model.UploadProviderS3 {
+		return nil, nil, fmt.Errorf("upload file not found")
+	}
+	if err := validateMultipartStorageKey(file, job); err != nil {
+		return nil, nil, err
+	}
+	return file, job, nil
+}
+
+// validateMultipartWritable is intentionally separate from multipartScope:
+// CompleteMultipart must remain able to return an idempotent response for a
+// session that has already completed, while signing or recording another part
+// must be rejected once the file/job is completed or being deleted.
+func validateMultipartWritable(file *model.UploadFile, job *model.UploadJob) error {
+	if file == nil || job == nil {
+		return fmt.Errorf("upload file not found")
+	}
+	if file.Status == model.FileStatusCompleted {
+		return fmt.Errorf("upload file is already completed")
+	}
+	if file.Status == model.FileStatusDeleting || file.Status == model.FileStatusDeleted ||
+		job.Status == model.UploadJobStatusDeleting || job.Status == model.UploadJobStatusDeleted {
+		return fmt.Errorf("upload file was deleted")
+	}
+	return nil
+}
+
+// validateMultipartStorageKey keeps every multipart operation inside the
+// server-generated tenant layout.  The browser only receives file/session
+// UUIDs, but this check also protects against stale or manually-corrupted
+// metadata before a presigned URL is created.
+func validateMultipartStorageKey(file *model.UploadFile, job *model.UploadJob) error {
+	if file == nil || job == nil {
+		return fmt.Errorf("upload file not found")
+	}
+	key := strings.TrimSpace(file.StorageKey)
+	if key == "" || strings.Contains(key, `\`) || path.IsAbs(key) || path.Clean(key) != key {
+		return fmt.Errorf("upload file has an invalid storage key")
+	}
+	if job.ExternalOrgID != "" {
+		prefix, err := tenantStoragePrefix(job.ExternalOrgID)
+		if err != nil {
+			return fmt.Errorf("upload file has an invalid tenant")
+		}
+		if !strings.HasPrefix(key, prefix+"/") {
+			return fmt.Errorf("upload file is outside the tenant storage prefix")
+		}
+	} else if !strings.HasPrefix(key, "uploads/") {
+		return fmt.Errorf("upload file is outside the upload storage prefix")
+	}
+	return nil
+}
+
+// InitMultipart creates or resumes a COS/S3 multipart session. The object
+// store upload is created before the database row; on a persistence failure we
+// abort the remote session to avoid leaked parts.
+func (s *UploadService) InitMultipart(ctx context.Context, actor model.OverlayActor, fileUUID string) (*model.MultipartInitResponse, error) {
+	file, job, err := s.multipartScope(ctx, actor, fileUUID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateMultipartWritable(file, job); err != nil {
+		return nil, err
+	}
+	if file.FileSize < model.MultipartThresholdBytes {
+		return nil, fmt.Errorf("multipart upload is only required for files at least 64 MiB")
+	}
+	partSize := model.MultipartPartSizeBytes
+	db := database.GetDB()
+	if db == nil {
+		return nil, fmt.Errorf("database is not initialized")
+	}
+	var session model.UploadMultipartSession
+	if err := db.WithContext(ctx).Where("file_uuid = ? AND status = ?", file.UUID, "active").First(&session).Error; err == nil {
+		if session.FileSize != file.FileSize || session.PartSize != partSize || session.StorageKey != file.StorageKey {
+			return nil, fmt.Errorf("multipart session metadata does not match upload file")
+		}
+		// A previous request can have created the remote session and then
+		// returned before its status transaction completed.  Re-entering through
+		// InitMultipart must restore the durable uploading state instead of
+		// leaving the data center stuck at pending.
+		if _, err := s.StartUploadFile(ctx, actor, file.UUID); err != nil {
+			return nil, err
+		}
+		return s.multipartInitResponse(ctx, &session), nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	storage, err := newS3Storage(ctx, s.cfg.Storage)
+	if err != nil {
+		return nil, err
+	}
+	uploadID, err := storage.createMultipart(ctx, file.StorageKey, "application/octet-stream")
+	if err != nil {
+		return nil, err
+	}
+	session = model.UploadMultipartSession{UUID: uuid.New().String(), FileUUID: file.UUID, JobUUID: job.UUID, StorageKey: file.StorageKey, UploadID: uploadID, PartSize: partSize, FileSize: file.FileSize, Status: "active"}
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&session).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.UploadFile{}).Where("id = ?", file.ID).Update("status", model.FileStatusUploading).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.DataAsset{}).Where("upload_file_id = ?", file.ID).Update("status", model.FileStatusUploading).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.UploadJob{}).Where("id = ?", job.ID).Update("status", model.UploadJobStatusUploading).Error
+	}); err != nil {
+		_ = storage.abortMultipart(ctx, file.StorageKey, uploadID)
+		// Another request may have won the active-session race. Return that
+		// durable session instead of surfacing a duplicate-key error or asking
+		// the browser to start a second upload.
+		var existing model.UploadMultipartSession
+		if lookupErr := db.WithContext(ctx).Where("file_uuid = ? AND status = ?", file.UUID, "active").First(&existing).Error; lookupErr == nil {
+			if _, startErr := s.StartUploadFile(ctx, actor, file.UUID); startErr != nil {
+				return nil, startErr
+			}
+			return s.multipartInitResponse(ctx, &existing), nil
+		}
+		return nil, fmt.Errorf("persist multipart session: %w", err)
+	}
+	return s.multipartInitResponse(ctx, &session), nil
+}
+
+func (s *UploadService) multipartInitResponse(ctx context.Context, session *model.UploadMultipartSession) *model.MultipartInitResponse {
+	response := &model.MultipartInitResponse{SessionID: session.UUID, FileID: session.FileUUID, PartSize: session.PartSize, TotalParts: multipartTotalParts(session.FileSize, session.PartSize), CompletedParts: []int{}}
+	if db := database.GetDB(); db != nil {
+		var parts []model.UploadMultipartPart
+		if db.WithContext(ctx).Where("session_uuid = ?", session.UUID).Order("part_number ASC").Find(&parts).Error == nil {
+			for _, part := range parts {
+				response.CompletedParts = append(response.CompletedParts, part.PartNumber)
+			}
+		}
+	}
+	return response
+}
+
+func (s *UploadService) PresignMultipartParts(ctx context.Context, actor model.OverlayActor, fileUUID, sessionUUID string, partNumbers []int) (*model.MultipartPresignResponse, error) {
+	file, job, err := s.multipartScope(ctx, actor, fileUUID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateMultipartWritable(file, job); err != nil {
+		return nil, err
+	}
+	db := database.GetDB()
+	if db == nil {
+		return nil, fmt.Errorf("database is not initialized")
+	}
+	var session model.UploadMultipartSession
+	if err := db.WithContext(ctx).Where("uuid = ? AND file_uuid = ? AND job_uuid = ? AND status = ?", sessionUUID, file.UUID, job.UUID, "active").First(&session).Error; err != nil {
+		return nil, fmt.Errorf("multipart session not found")
+	}
+	if session.FileSize != file.FileSize || session.StorageKey != file.StorageKey {
+		return nil, fmt.Errorf("multipart session metadata does not match upload file")
+	}
+	total := multipartTotalParts(session.FileSize, session.PartSize)
+	seen := make(map[int]struct{}, len(partNumbers))
+	storage, err := newS3Storage(ctx, s.cfg.Storage)
+	if err != nil {
+		return nil, err
+	}
+	result := &model.MultipartPresignResponse{SessionID: session.UUID, Parts: make([]model.MultipartPresignItem, 0, len(partNumbers))}
+	for _, number := range partNumbers {
+		if number < 1 || number > total {
+			return nil, fmt.Errorf("multipart part number %d is out of range", number)
+		}
+		if _, ok := seen[number]; ok {
+			continue
+		}
+		seen[number] = struct{}{}
+		url, err := storage.presignUploadPart(ctx, file.StorageKey, session.UploadID, number)
+		if err != nil {
+			return nil, err
+		}
+		result.Parts = append(result.Parts, model.MultipartPresignItem{PartNumber: number, URL: url})
+	}
+	return result, nil
+}
+
+func (s *UploadService) RecordMultipartPart(ctx context.Context, actor model.OverlayActor, fileUUID, sessionUUID string, req *model.MultipartPartRequest) error {
+	if req == nil {
+		return fmt.Errorf("invalid multipart part")
+	}
+	file, job, err := s.multipartScope(ctx, actor, fileUUID)
+	if err != nil {
+		return err
+	}
+	if err := validateMultipartWritable(file, job); err != nil {
+		return err
+	}
+	db := database.GetDB()
+	if db == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+	var session model.UploadMultipartSession
+	if err := db.WithContext(ctx).Where("uuid = ? AND file_uuid = ? AND job_uuid = ? AND status = ?", sessionUUID, file.UUID, job.UUID, "active").First(&session).Error; err != nil {
+		return fmt.Errorf("multipart session not found")
+	}
+	if session.FileSize != file.FileSize || session.StorageKey != file.StorageKey {
+		return fmt.Errorf("multipart session metadata does not match upload file")
+	}
+	if err := validateMultipartPartMetadata(req.PartNumber, req.ETag, req.Size, session.FileSize, session.PartSize); err != nil {
+		return err
+	}
+	etag := strings.TrimSpace(req.ETag)
+	var existing model.UploadMultipartPart
+	lookupErr := db.WithContext(ctx).Where("session_uuid = ? AND part_number = ?", session.UUID, req.PartNumber).First(&existing).Error
+	if lookupErr == nil {
+		return validateRecordedMultipartPart(&existing, etag, req.Size, req.PartNumber)
+	}
+	if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+		return lookupErr
+	}
+	part := &model.UploadMultipartPart{SessionUUID: session.UUID, PartNumber: req.PartNumber, ETag: etag, Size: req.Size}
+	if err := db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(part).Error; err != nil {
+		return err
+	}
+	// Another request may have won the insert between the lookup above and our
+	// create. Re-read the durable value and accept only an identical duplicate;
+	// a different ETag/size must never silently replace an uploaded part.
+	if err := db.WithContext(ctx).Where("session_uuid = ? AND part_number = ?", session.UUID, req.PartNumber).First(&existing).Error; err != nil {
+		return err
+	}
+	return validateRecordedMultipartPart(&existing, etag, req.Size, req.PartNumber)
+}
+
+func (s *UploadService) CompleteMultipart(ctx context.Context, actor model.OverlayActor, fileUUID, sessionUUID string) (*model.UploadFile, error) {
+	file, job, err := s.multipartScope(ctx, actor, fileUUID)
+	if err != nil {
+		return nil, err
+	}
+	db := database.GetDB()
+	if db == nil {
+		return nil, fmt.Errorf("database is not initialized")
+	}
+	var session model.UploadMultipartSession
+	if err := db.WithContext(ctx).Where("uuid = ? AND file_uuid = ? AND job_uuid = ?", sessionUUID, file.UUID, job.UUID).First(&session).Error; err != nil {
+		return nil, fmt.Errorf("multipart session not found")
+	}
+	if session.FileSize != file.FileSize || session.StorageKey != file.StorageKey {
+		return nil, fmt.Errorf("multipart session metadata does not match upload file")
+	}
+	if session.Status != "active" {
+		if session.Status == "completed" && file.Status == model.FileStatusCompleted {
+			// A client may retry the final request after a response timeout. The
+			// object and database are already committed, so completion is
+			// idempotent and should simply return the durable file state.
+			return file, nil
+		}
+		return nil, fmt.Errorf("multipart session is not active")
+	}
+	if err := validateMultipartWritable(file, job); err != nil {
+		return nil, err
+	}
+	total := multipartTotalParts(session.FileSize, session.PartSize)
+	var rows []model.UploadMultipartPart
+	if err := db.WithContext(ctx).Where("session_uuid = ?", session.UUID).Order("part_number ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	parts, err := collectMultipartParts(rows, total, session.FileSize, session.PartSize)
+	if err != nil {
+		return nil, err
+	}
+	storage, err := newS3Storage(ctx, s.cfg.Storage)
+	if err != nil {
+		return nil, err
+	}
+	// If a previous request completed the remote multipart upload but failed
+	// before committing the database transaction, HEAD lets us recover without
+	// issuing CompleteMultipartUpload a second time (which would return
+	// NoSuchUpload on COS/S3). Otherwise complete it now, and verify the final
+	// object size before changing any metadata.
+	size, statErr := storage.stat(ctx, session.StorageKey)
+	if statErr != nil || size != session.FileSize {
+		if completeErr := storage.completeMultipart(ctx, session.StorageKey, session.UploadID, parts); completeErr != nil {
+			size, statErr = storage.stat(ctx, session.StorageKey)
+			if statErr != nil || size != session.FileSize {
+				return nil, completeErr
+			}
+		} else {
+			size, statErr = storage.stat(ctx, session.StorageKey)
+			if statErr != nil {
+				return nil, statErr
+			}
+		}
+	}
+	if size != session.FileSize {
+		return nil, fmt.Errorf("multipart object size mismatch: expected %d, got %d", session.FileSize, size)
+	}
+	now := time.Now().UTC()
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var lockedJob model.UploadJob
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedJob, job.ID).Error; err != nil {
+			return err
+		}
+		var lockedFile model.UploadFile
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, file.ID).Error; err != nil {
+			return err
+		}
+		if lockedFile.Status == model.FileStatusDeleted || lockedFile.Status == model.FileStatusDeleting ||
+			lockedJob.Status == model.UploadJobStatusDeleting || lockedJob.Status == model.UploadJobStatusDeleted {
+			return fmt.Errorf("upload file was deleted")
+		}
+		if lockedFile.Status == model.FileStatusCompleted {
+			// A concurrent completion may have committed the metadata after this
+			// request finished the remote multipart upload. Treat the second call as
+			// an idempotent success instead of asking the browser to restart.
+			if lockedFile.FileSize != size {
+				return fmt.Errorf("uploaded object size mismatch: expected %d, got %d", lockedFile.FileSize, size)
+			}
+			if err := tx.Model(&session).Updates(map[string]interface{}{"status": "completed", "completed_at": now}).Error; err != nil {
+				return err
+			}
+			*file = lockedFile
+			*job = lockedJob
+			return nil
+		}
+		if err := tx.Model(&lockedFile).Updates(map[string]interface{}{"status": model.FileStatusCompleted, "file_size": size, "storage_key": session.StorageKey}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.DataAsset{}).Where("upload_file_id = ?", lockedFile.ID).Updates(map[string]interface{}{"status": model.FileStatusCompleted, "file_size": size, "storage_key": session.StorageKey}).Error; err != nil {
+			return err
+		}
+		var incomplete int64
+		if err := tx.Model(&model.UploadFile{}).Where("job_id = ? AND status <> ?", lockedJob.ID, model.FileStatusCompleted).Count(&incomplete).Error; err != nil {
+			return err
+		}
+		if incomplete == 0 {
+			lockedJob.Status = model.UploadJobStatusCompleted
+		} else {
+			lockedJob.Status = model.UploadJobStatusUploading
+		}
+		if err := tx.Save(&lockedJob).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&session).Updates(map[string]interface{}{"status": "completed", "completed_at": now}).Error; err != nil {
+			return err
+		}
+		*file = lockedFile
+		*job = lockedJob
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+func (s *UploadService) AbortMultipart(ctx context.Context, actor model.OverlayActor, fileUUID, sessionUUID string) error {
+	file, job, err := s.multipartScope(ctx, actor, fileUUID)
+	if err != nil {
+		return err
+	}
+	db := database.GetDB()
+	if db == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+	var session model.UploadMultipartSession
+	if err := db.WithContext(ctx).Where("uuid = ? AND file_uuid = ? AND job_uuid = ?", sessionUUID, file.UUID, job.UUID).First(&session).Error; err != nil {
+		return fmt.Errorf("multipart session not found")
+	}
+	if session.FileSize != file.FileSize || session.StorageKey != file.StorageKey {
+		return fmt.Errorf("multipart session metadata does not match upload file")
+	}
+	if session.Status == "aborted" {
+		return nil
+	}
+	if session.Status != "active" {
+		return fmt.Errorf("multipart session is not active")
+	}
+	storage, err := newS3Storage(ctx, s.cfg.Storage)
+	if err != nil {
+		return err
+	}
+	if err := storage.abortMultipart(ctx, session.StorageKey, session.UploadID); err != nil {
+		return err
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&session).Update("status", "aborted").Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.UploadFile{}).Where("id = ?", file.ID).Update("status", model.FileStatusFailed).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.DataAsset{}).Where("upload_file_id = ?", file.ID).Update("status", model.FileStatusFailed).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.UploadJob{}).Where("id = ?", job.ID).Update("status", model.UploadJobStatusFailed).Error
+	})
+}
+
 // RetryS3File reissues a presigned URL for an interrupted file without
 // creating a second data-asset record.
 func (s *UploadService) RetryS3File(ctx context.Context, actor model.OverlayActor, fileUUID string) (*model.UploadFile, string, error) {
@@ -516,7 +1044,10 @@ func (s *UploadService) RetryS3File(ctx context.Context, actor model.OverlayActo
 	if err != nil || !uploadJobAccessAllowed(job, actor) || job.Provider != model.UploadProviderS3 {
 		return nil, "", fmt.Errorf("upload file not found")
 	}
-	if file.Status != model.FileStatusPending && file.Status != model.FileStatusFailed {
+	if job.Status == model.UploadJobStatusDeleting || job.Status == model.UploadJobStatusDeleted {
+		return nil, "", fmt.Errorf("upload file was deleted")
+	}
+	if file.Status != model.FileStatusPending && file.Status != model.FileStatusFailed && file.Status != model.FileStatusUploading {
 		return nil, "", fmt.Errorf("upload file is not retryable")
 	}
 	storage, err := newS3Storage(ctx, s.cfg.Storage)
@@ -682,6 +1213,24 @@ func (s *UploadService) DeleteJob(ctx context.Context, actor model.OverlayActor,
 	files, err := s.fileRepo.FindByJobID(job.ID)
 	if err != nil {
 		return err
+	}
+	if job.Provider == model.UploadProviderS3 {
+		storage, storageErr := newS3Storage(ctx, s.cfg.Storage)
+		if storageErr != nil {
+			return fmt.Errorf("failed to initialize object storage for multipart cleanup: %w", storageErr)
+		}
+		var sessions []model.UploadMultipartSession
+		if queryErr := db.WithContext(ctx).Where("job_uuid = ? AND status = ?", job.UUID, "active").Find(&sessions).Error; queryErr != nil {
+			return fmt.Errorf("failed to load active multipart sessions: %w", queryErr)
+		}
+		for i := range sessions {
+			if abortErr := storage.abortMultipart(ctx, sessions[i].StorageKey, sessions[i].UploadID); abortErr != nil {
+				return fmt.Errorf("failed to abort multipart session %s: %w", sessions[i].UUID, abortErr)
+			}
+			if updateErr := db.WithContext(ctx).Model(&sessions[i]).Update("status", "aborted").Error; updateErr != nil {
+				return fmt.Errorf("failed to persist aborted multipart session %s: %w", sessions[i].UUID, updateErr)
+			}
+		}
 	}
 
 	assetSvc := NewDataAssetService(s.cfg)

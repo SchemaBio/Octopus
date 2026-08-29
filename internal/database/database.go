@@ -74,6 +74,8 @@ func AutoMigrate() error {
 		// Upload models
 		&model.UploadJob{},
 		&model.UploadFile{},
+		&model.UploadMultipartSession{},
+		&model.UploadMultipartPart{},
 		&model.DataAsset{},
 		&model.SampleDataLink{},
 		&model.TaskDataAsset{},
@@ -86,6 +88,9 @@ func AutoMigrate() error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)
+	}
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS upload_multipart_active_file_idx ON upload_multipart_sessions (file_uuid) WHERE status = 'active'").Error; err != nil {
+		return fmt.Errorf("failed to create multipart session index: %w", err)
 	}
 	if err := migrateSampleOrganizationIndexes(); err != nil {
 		return err
@@ -110,11 +115,32 @@ func migrateAuditScope() error {
 	if DB == nil {
 		return fmt.Errorf("database not initialized")
 	}
-	if err := DB.Exec(`CREATE EXTENSION IF NOT EXISTS pgcrypto`).Error; err != nil {
-		return fmt.Errorf("failed to enable SHA-256 support: %w", err)
+	// A clean release schema has no legacy reviewed rows and therefore does not
+	// need the pgcrypto helper used solely by the legacy backfill below.  The
+	// extension may already exist in an older schema in the same database; an
+	// application role for this release must not be granted access to that old
+	// business schema just to create an unused helper.
+	legacyReviewed := false
+	for _, table := range []string{
+		"result_snv_indels", "result_cnv_segments", "result_cnv_exons", "result_strs",
+		"result_mei_variants", "result_mt_variants", "result_upd_regions", "result_roh_regions",
+	} {
+		var exists bool
+		if err := DB.Raw(fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE reviewed = TRUE)`, table)).Scan(&exists).Error; err != nil {
+			return fmt.Errorf("failed to inspect legacy review rows in %s: %w", table, err)
+		}
+		if exists {
+			legacyReviewed = true
+			break
+		}
 	}
-	if err := DB.Exec(`CREATE OR REPLACE FUNCTION audit_sha256(value text) RETURNS text AS $$ SELECT encode(digest(value, 'sha256'), 'hex') $$ LANGUAGE sql IMMUTABLE`).Error; err != nil {
-		return fmt.Errorf("failed to create audit fingerprint helper: %w", err)
+	if legacyReviewed {
+		if err := DB.Exec(`CREATE EXTENSION IF NOT EXISTS pgcrypto`).Error; err != nil {
+			return fmt.Errorf("failed to enable SHA-256 support: %w", err)
+		}
+		if err := DB.Exec(`CREATE OR REPLACE FUNCTION audit_sha256(value text) RETURNS text AS $$ SELECT encode(digest(value, 'sha256'), 'hex') $$ LANGUAGE sql IMMUTABLE`).Error; err != nil {
+			return fmt.Errorf("failed to create audit fingerprint helper: %w", err)
+		}
 	}
 	if err := DB.Exec(`UPDATE tasks SET tenant_id = CASE WHEN NULLIF(external_org_id, '') IS NOT NULL THEN 'org:' || external_org_id WHEN created_by <> 0 THEN 'user:' || created_by::text ELSE NULL END WHERE tenant_id IS NULL OR tenant_id = '' OR tenant_id = 'user:0'`).Error; err != nil {
 		return fmt.Errorf("failed to backfill task tenant IDs: %w", err)
@@ -248,9 +274,11 @@ func migrateAuditScope() error {
 		 COALESCE(t.input_json->>'reference_genome',''), t.name, t.pipeline, t.pipeline_version, t.sample_id, t.internal_id, r.reviewed_at, r.reviewed_at IS NOT NULL, NOW(), to_jsonb(r)
 		 FROM result_roh_regions r JOIN tasks t ON t.uuid=r.task_id WHERE r.reviewed=true ON CONFLICT (id) DO NOTHING`,
 	}
-	for _, statement := range legacyStatements {
-		if err := DB.Exec(statement).Error; err != nil {
-			return fmt.Errorf("failed to bootstrap review events: %w", err)
+	if legacyReviewed {
+		for _, statement := range legacyStatements {
+			if err := DB.Exec(statement).Error; err != nil {
+				return fmt.Errorf("failed to bootstrap review events: %w", err)
+			}
 		}
 	}
 	if err := DB.Exec(`CREATE OR REPLACE FUNCTION prevent_variant_review_event_mutation() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'variant review events are append-only'; END; $$ LANGUAGE plpgsql`).Error; err != nil {

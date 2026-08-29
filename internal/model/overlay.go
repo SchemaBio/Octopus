@@ -140,12 +140,29 @@ type CVMDispatchRequest struct {
 	RequestedAt time.Time           `json:"requested_at"`
 }
 
+// CVMInputRefreshRequest/Response are internal control-plane messages used
+// by Squid before a queued spot retry. They are authenticated by the same
+// service secret as CVM lifecycle callbacks and never reach the browser.
+type CVMInputRefreshRequest struct {
+	TaskUUID  string `json:"task_uuid"`
+	AttemptID string `json:"attempt_id"`
+}
+
+type CVMInputRefreshResponse struct {
+	TaskUUID  string           `json:"task_uuid"`
+	AttemptID string           `json:"attempt_id"`
+	Execution CVMExecutionSpec `json:"execution"`
+}
+
 type CVMDispatchResponse struct {
-	Accepted      bool   `json:"accepted"`
-	AttemptID     string `json:"attempt_id"`
-	InstanceID    string `json:"instance_id,omitempty"`
-	InstanceState string `json:"instance_state,omitempty"`
-	Reason        string `json:"reason,omitempty"`
+	Accepted        bool       `json:"accepted"`
+	AttemptID       string     `json:"attempt_id"`
+	InstanceID      string     `json:"instance_id,omitempty"`
+	InstanceState   string     `json:"instance_state,omitempty"`
+	Reason          string     `json:"reason,omitempty"`
+	RetryAt         *time.Time `json:"retry_at,omitempty"`
+	RetryDeadlineAt *time.Time `json:"retry_deadline_at,omitempty"`
+	RetryCount      int        `json:"retry_count,omitempty"`
 }
 
 type CVMCancelRequest struct {
@@ -162,7 +179,15 @@ type CVMStateEvent struct {
 	InstanceState string     `json:"instance_state"`
 	TaskStatus    TaskStatus `json:"task_status,omitempty"`
 	Message       string     `json:"message,omitempty"`
-	OccurredAt    time.Time  `json:"occurred_at"`
+	// Squid includes the durable attempt timestamps so a cancellation that
+	// reconciles an instance after an unknown dispatch can be billed by actual
+	// runtime even if Octopus never observed a separate running event.
+	StartedAt       *time.Time `json:"started_at,omitempty"`
+	FinishedAt      *time.Time `json:"finished_at,omitempty"`
+	RetryAt         *time.Time `json:"retry_at,omitempty"`
+	RetryDeadlineAt *time.Time `json:"retry_deadline_at,omitempty"`
+	RetryCount      int        `json:"retry_count,omitempty"`
+	OccurredAt      time.Time  `json:"occurred_at"`
 }
 
 type OverlayCreditChargeRequest struct {

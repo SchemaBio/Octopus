@@ -907,6 +907,27 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 			return task, nil
 		}
 	}
+	if dispatch != nil && dispatch.InstanceID == "" {
+		// Squid accepted the attempt but is waiting for spot capacity (or is
+		// reconciling an uncertain cloud response). Keep the task queued and let
+		// the asynchronous state event transition it to running.
+		task.Status = model.TaskStatusQueued
+		task.Progress = 0
+		task.VMStatus = strings.ToUpper(strings.TrimSpace(dispatch.InstanceState))
+		if task.VMStatus == "" {
+			task.VMStatus = "DISPATCHING"
+		}
+		task.CVMDispatchNextRetryAt = dispatch.RetryAt
+		task.CVMDispatchRetryDeadlineAt = dispatch.RetryDeadlineAt
+		task.CVMDispatchRetryCount = dispatch.RetryCount
+		task.Error = "CVM dispatch is awaiting confirmation"
+		task.UpdatedAt = time.Now()
+		if err := s.repo.Update(task); err != nil {
+			return nil, err
+		}
+		s.emitTaskEvent(model.OverlayTaskEventQueued, actor, task, previousStatus, task.Error)
+		return task, nil
+	}
 
 	task.Status = model.TaskStatusRunning
 	task.Progress = 0
@@ -917,6 +938,9 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 	if dispatch != nil {
 		task.CVMInstanceID = dispatch.InstanceID
 		task.VMStatus = dispatch.InstanceState
+		task.CVMDispatchNextRetryAt = dispatch.RetryAt
+		task.CVMDispatchRetryDeadlineAt = dispatch.RetryDeadlineAt
+		task.CVMDispatchRetryCount = dispatch.RetryCount
 	}
 
 	if err := s.repo.Update(task); err != nil {
@@ -1045,6 +1069,24 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 			return task, nil
 		}
 	}
+	if dispatch != nil && dispatch.InstanceID == "" {
+		task.Status = model.TaskStatusQueued
+		task.Progress = 0
+		task.VMStatus = strings.ToUpper(strings.TrimSpace(dispatch.InstanceState))
+		if task.VMStatus == "" {
+			task.VMStatus = "DISPATCHING"
+		}
+		task.CVMDispatchNextRetryAt = dispatch.RetryAt
+		task.CVMDispatchRetryDeadlineAt = dispatch.RetryDeadlineAt
+		task.CVMDispatchRetryCount = dispatch.RetryCount
+		task.Error = "CVM dispatch is awaiting confirmation"
+		task.UpdatedAt = time.Now()
+		if err := s.repo.Update(task); err != nil {
+			return nil, err
+		}
+		s.emitTaskEvent(model.OverlayTaskEventQueued, actor, task, previousStatus, task.Error)
+		return task, nil
+	}
 
 	task.Status = model.TaskStatusRunning
 	task.Progress = 0
@@ -1055,6 +1097,9 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 	if dispatch != nil {
 		task.CVMInstanceID = dispatch.InstanceID
 		task.VMStatus = dispatch.InstanceState
+		task.CVMDispatchNextRetryAt = dispatch.RetryAt
+		task.CVMDispatchRetryDeadlineAt = dispatch.RetryDeadlineAt
+		task.CVMDispatchRetryCount = dispatch.RetryCount
 	}
 
 	if err := s.repo.Update(task); err != nil {
@@ -1457,6 +1502,10 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 		Status:                  task.Status,
 		Progress:                task.Progress,
 		ExecutionAttemptID:      task.ExecutionAttemptID,
+		VMStatus:                task.VMStatus,
+		DispatchNextRetryAt:     task.CVMDispatchNextRetryAt,
+		DispatchRetryDeadlineAt: task.CVMDispatchRetryDeadlineAt,
+		DispatchRetryCount:      task.CVMDispatchRetryCount,
 		CreatedAt:               task.CreatedAt,
 		ResultImportStatus:      task.ResultImportStatus,
 		ResultImportError:       task.ResultImportError,
@@ -1479,6 +1528,10 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 			resp.ResultImportedAt = task.ResultImportedAt
 			resp.ResultImportFingerprint = task.ResultImportFingerprint
 			resp.ResultImportAttempts = task.ResultImportAttempts
+			resp.VMStatus = task.VMStatus
+			resp.DispatchNextRetryAt = task.CVMDispatchNextRetryAt
+			resp.DispatchRetryDeadlineAt = task.CVMDispatchRetryDeadlineAt
+			resp.DispatchRetryCount = task.CVMDispatchRetryCount
 		}
 	}
 
@@ -2172,11 +2225,17 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 	if err != nil {
 		return model.CVMDispatchRequest{}, err
 	}
+	cvmInputExpiry := s.cfg.Storage.CVMInputPresignExpiry
+	if cvmInputExpiry <= 0 {
+		// Keep the retry-window guarantee even for programmatically constructed
+		// configs that bypass config.Load (tests and embedded deployments).
+		cvmInputExpiry = time.Hour
+	}
 	downloads := make([]model.CVMInputDownload, 0, len(remote))
 	for _, asset := range remote {
 		name := safeCVMInputName(asset.FileName)
 		target := path.Join("/mnt/data/inputs", asset.UUID+"-"+name)
-		url, err := storage.presignDownload(ctx, asset.StorageKey, name)
+		url, err := storage.presignDownloadWithExpiry(ctx, asset.StorageKey, name, cvmInputExpiry)
 		if err != nil {
 			return model.CVMDispatchRequest{}, fmt.Errorf("presign CVM input %s: %w", asset.UUID, err)
 		}
@@ -2369,6 +2428,9 @@ func (s *TaskService) prepareCVMExecutionAttempt(task *model.Task, forceNew bool
 	}
 	task.CVMArchiveStagedAt = nil
 	task.CVMArchiveTerminationNotifiedAt = nil
+	task.CVMDispatchNextRetryAt = nil
+	task.CVMDispatchRetryDeadlineAt = nil
+	task.CVMDispatchRetryCount = 0
 	// A retry starts a fresh lifecycle even when it reuses an in-flight
 	// DISPATCHING attempt after an uncertain transport result.
 	task.StartedAt = nil
@@ -2471,6 +2533,45 @@ func safeCVMInputName(name string) string {
 	return clean.String()
 }
 
+// RefreshCVMExecution rebuilds the server-controlled CVM execution
+// specification for an existing attempt. It is called by Squid immediately
+// before a capacity retry so every COS/S3 download URL has a fresh expiry.
+// The attempt UUID is checked against the current task to prevent a stale or
+// cross-task callback from receiving another task's inputs.
+func (s *TaskService) RefreshCVMExecution(ctx context.Context, taskUUID, attemptID string) (model.CVMExecutionSpec, error) {
+	if strings.TrimSpace(taskUUID) == "" || strings.TrimSpace(attemptID) == "" {
+		return model.CVMExecutionSpec{}, fmt.Errorf("task_uuid and attempt_id are required")
+	}
+	if _, err := uuid.Parse(taskUUID); err != nil {
+		return model.CVMExecutionSpec{}, fmt.Errorf("task_uuid must be a valid UUID")
+	}
+	if _, err := uuid.Parse(attemptID); err != nil {
+		return model.CVMExecutionSpec{}, fmt.Errorf("attempt_id must be a valid UUID")
+	}
+	task, err := s.repo.FindByUUID(taskUUID)
+	if err != nil || task == nil {
+		return model.CVMExecutionSpec{}, fmt.Errorf("task not found: %s", taskUUID)
+	}
+	if task.Executor != model.ExecutorCVM {
+		return model.CVMExecutionSpec{}, fmt.Errorf("task is not a CVM task")
+	}
+	if task.ExecutionAttemptID != attemptID {
+		return model.CVMExecutionSpec{}, fmt.Errorf("attempt_id does not match the current task execution attempt")
+	}
+	// A terminal task no longer has a valid reason to download inputs. Refusing
+	// refresh also lets Squid finish cancellation/refund for an in-flight
+	// uncertain request without issuing a new cloud request.
+	switch task.Status {
+	case model.TaskStatusCompleted, model.TaskStatusCancelled:
+		return model.CVMExecutionSpec{}, fmt.Errorf("task is already terminal")
+	}
+	request, err := s.buildCVMDispatchRequest(ctx, model.OverlayActor{UserID: task.CreatedBy, OrgID: task.ExternalOrgID}, task)
+	if err != nil {
+		return model.CVMExecutionSpec{}, err
+	}
+	return request.Execution, nil
+}
+
 func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	if strings.TrimSpace(event.TaskUUID) == "" || strings.TrimSpace(event.AttemptID) == "" || strings.TrimSpace(event.InstanceState) == "" {
 		return fmt.Errorf("task_uuid, attempt_id and instance_state are required")
@@ -2489,10 +2590,73 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 		return fmt.Errorf("CVM instance does not match task")
 	}
 	previousStatus := task.Status
+	// Squid may deliver a cancellation callback after the user-facing delete
+	// request already transitioned the task locally.  Keep the state update
+	// idempotent, but do not treat the same status as a reason to skip the
+	// overlay event: the first delivery may have failed while Tencent's
+	// request outcome was still unknown, and Squid needs this callback to finish
+	// the deferred refund/runtime settlement.
+	forceCancellationEvent := event.TaskStatus == model.TaskStatusCancelled && task.Status != model.TaskStatusCompleted
 	if event.InstanceID != "" {
 		task.CVMInstanceID = event.InstanceID
 	}
+	// Preserve the timestamps held by Squid's durable attempt. A cancellation
+	// can reconcile an instance after Octopus saw only a queued/DISPATCHING
+	// response; without these values the overlay would mistake an already
+	// created VM for a never-started task and refund the full pre-deduction.
+	if event.StartedAt != nil && task.StartedAt == nil {
+		task.StartedAt = event.StartedAt
+	}
+	if event.FinishedAt != nil {
+		task.FinishedAt = event.FinishedAt
+	}
+	// Keep compatibility with older Squid workers that do not send timestamp
+	// fields yet. An instance-bearing cancellation still consumed at least the
+	// current billing minute, so use the callback time instead of the estimated
+	// task duration as a last-resort start marker.
+	if event.TaskStatus == model.TaskStatusCancelled && event.InstanceID != "" && task.StartedAt == nil {
+		started := event.OccurredAt
+		if started.IsZero() {
+			started = time.Now()
+		}
+		task.StartedAt = &started
+	}
 	task.VMStatus = strings.ToUpper(event.InstanceState)
+	if event.RetryAt != nil {
+		task.CVMDispatchNextRetryAt = event.RetryAt
+	}
+	if event.RetryDeadlineAt != nil {
+		task.CVMDispatchRetryDeadlineAt = event.RetryDeadlineAt
+	}
+	if event.RetryCount > task.CVMDispatchRetryCount {
+		task.CVMDispatchRetryCount = event.RetryCount
+	}
+	if event.TaskStatus == model.TaskStatusQueued && strings.TrimSpace(event.Message) != "" {
+		task.Error = strings.TrimSpace(event.Message)
+	}
+	if event.TaskStatus == model.TaskStatusRunning {
+		task.CVMDispatchNextRetryAt = nil
+		task.CVMDispatchRetryDeadlineAt = nil
+		task.Error = ""
+	}
+	if event.TaskStatus == model.TaskStatusRunning && task.Status == model.TaskStatusQueued {
+		task.Status = model.TaskStatusRunning
+		task.Error = ""
+		task.Progress = 0
+		if task.StartedAt == nil {
+			now := time.Now()
+			task.StartedAt = &now
+		}
+	}
+	if forceCancellationEvent && task.Status != model.TaskStatusCompleted {
+		if task.Status != model.TaskStatusCancelled {
+			task.Status = model.TaskStatusCancelled
+		}
+		if task.FinishedAt == nil {
+			now := time.Now()
+			task.FinishedAt = &now
+		}
+	}
 	if event.TaskStatus == model.TaskStatusFailed && task.Status != model.TaskStatusCompleted && task.Status != model.TaskStatusCancelled {
 		task.Status = model.TaskStatusFailed
 		task.Error = strings.TrimSpace(event.Message)
@@ -2506,7 +2670,13 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	if err := s.repo.Update(task); err != nil {
 		return err
 	}
-	s.emitStatusEvent(task, previousStatus)
+	if forceCancellationEvent {
+		if err := s.emitTaskEventWithError(model.OverlayTaskEventCancelled, model.OverlayActor{}, task, previousStatus, event.Message); err != nil {
+			return err
+		}
+	} else {
+		s.emitStatusEvent(task, previousStatus)
+	}
 	return nil
 }
 
