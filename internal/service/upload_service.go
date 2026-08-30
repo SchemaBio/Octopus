@@ -739,16 +739,30 @@ func (s *UploadService) InitMultipart(ctx context.Context, actor model.OverlayAc
 	}
 	session = model.UploadMultipartSession{UUID: uuid.New().String(), FileUUID: file.UUID, JobUUID: job.UUID, StorageKey: file.StorageKey, UploadID: uploadID, PartSize: partSize, FileSize: file.FileSize, Status: "active"}
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var lockedJob model.UploadJob
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedJob, job.ID).Error; err != nil {
+			return err
+		}
+		if lockedJob.Status == model.UploadJobStatusDeleting || lockedJob.Status == model.UploadJobStatusDeleted {
+			return fmt.Errorf("upload file was deleted")
+		}
+		var lockedFile model.UploadFile
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, file.ID).Error; err != nil {
+			return err
+		}
+		if lockedFile.Status == model.FileStatusCompleted || lockedFile.Status == model.FileStatusDeleting || lockedFile.Status == model.FileStatusDeleted {
+			return fmt.Errorf("upload file was deleted")
+		}
 		if err := tx.Create(&session).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&model.UploadFile{}).Where("id = ?", file.ID).Update("status", model.FileStatusUploading).Error; err != nil {
+		if err := tx.Model(&lockedFile).Update("status", model.FileStatusUploading).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&model.DataAsset{}).Where("upload_file_id = ?", file.ID).Update("status", model.FileStatusUploading).Error; err != nil {
 			return err
 		}
-		return tx.Model(&model.UploadJob{}).Where("id = ?", job.ID).Update("status", model.UploadJobStatusUploading).Error
+		return tx.Model(&lockedJob).Update("status", model.UploadJobStatusUploading).Error
 	}); err != nil {
 		_ = storage.abortMultipart(ctx, file.StorageKey, uploadID)
 		// Another request may have won the active-session race. Return that
@@ -966,18 +980,11 @@ func (s *UploadService) CompleteMultipart(ctx context.Context, actor model.Overl
 		if err := tx.Model(&model.DataAsset{}).Where("upload_file_id = ?", lockedFile.ID).Updates(map[string]interface{}{"status": model.FileStatusCompleted, "file_size": size, "storage_key": session.StorageKey}).Error; err != nil {
 			return err
 		}
-		var incomplete int64
-		if err := tx.Model(&model.UploadFile{}).Where("job_id = ? AND status <> ?", lockedJob.ID, model.FileStatusCompleted).Count(&incomplete).Error; err != nil {
+		status, err := reconcileUploadJobStatus(tx, lockedJob.ID)
+		if err != nil {
 			return err
 		}
-		if incomplete == 0 {
-			lockedJob.Status = model.UploadJobStatusCompleted
-		} else {
-			lockedJob.Status = model.UploadJobStatusUploading
-		}
-		if err := tx.Save(&lockedJob).Error; err != nil {
-			return err
-		}
+		lockedJob.Status = status
 		if err := tx.Model(&session).Updates(map[string]interface{}{"status": "completed", "completed_at": now}).Error; err != nil {
 			return err
 		}
@@ -1020,16 +1027,45 @@ func (s *UploadService) AbortMultipart(ctx context.Context, actor model.OverlayA
 		return err
 	}
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&session).Update("status", "aborted").Error; err != nil {
+		// Completion and cancellation can finish their object-store operation in
+		// either order. Lock the durable rows before changing metadata so a late
+		// abort cannot downgrade a file that has already been committed.
+		var lockedJob model.UploadJob
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedJob, job.ID).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&model.UploadFile{}).Where("id = ?", file.ID).Update("status", model.FileStatusFailed).Error; err != nil {
+		var lockedFile model.UploadFile
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, file.ID).Error; err != nil {
+			return err
+		}
+		if lockedJob.Status == model.UploadJobStatusDeleting || lockedJob.Status == model.UploadJobStatusDeleted ||
+			lockedFile.Status == model.FileStatusDeleting || lockedFile.Status == model.FileStatusDeleted {
+			return fmt.Errorf("upload file was deleted")
+		}
+		if lockedFile.Status == model.FileStatusCompleted {
+			return fmt.Errorf("upload file is already completed")
+		}
+		var lockedSession model.UploadMultipartSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedSession, session.ID).Error; err != nil {
+			return err
+		}
+		if lockedSession.Status == "aborted" {
+			return nil
+		}
+		if lockedSession.Status != "active" {
+			return fmt.Errorf("multipart session is not active")
+		}
+		if err := tx.Model(&lockedSession).Update("status", "aborted").Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&lockedFile).Update("status", model.FileStatusFailed).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&model.DataAsset{}).Where("upload_file_id = ?", file.ID).Update("status", model.FileStatusFailed).Error; err != nil {
 			return err
 		}
-		return tx.Model(&model.UploadJob{}).Where("id = ?", job.ID).Update("status", model.UploadJobStatusFailed).Error
+		_, err = reconcileUploadJobStatus(tx, lockedJob.ID)
+		return err
 	})
 }
 
@@ -1070,6 +1106,7 @@ func completeUploadMetadata(db *gorm.DB, file *model.UploadFile, job *model.Uplo
 		return false, fmt.Errorf("database is not initialized")
 	}
 	allComplete := false
+	reconciledStatus := model.UploadJobStatusFailed
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var lockedJob model.UploadJob
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedJob, job.ID).Error; err != nil {
@@ -1079,7 +1116,8 @@ func completeUploadMetadata(db *gorm.DB, file *model.UploadFile, job *model.Uplo
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, file.ID).Error; err != nil || lockedFile.JobID != lockedJob.ID {
 			return fmt.Errorf("upload file not found")
 		}
-		if lockedFile.Status == model.FileStatusDeleted {
+		if lockedJob.Status == model.UploadJobStatusDeleting || lockedJob.Status == model.UploadJobStatusDeleted ||
+			lockedFile.Status == model.FileStatusDeleting || lockedFile.Status == model.FileStatusDeleted {
 			return fmt.Errorf("upload file was deleted")
 		}
 		lockedFile.StorageKey = storageKey
@@ -1098,19 +1136,13 @@ func completeUploadMetadata(db *gorm.DB, file *model.UploadFile, job *model.Uplo
 		if err := tx.Save(&asset).Error; err != nil {
 			return fmt.Errorf("failed to update data asset: %w", err)
 		}
-		var incomplete int64
-		if err := tx.Model(&model.UploadFile{}).Where("job_id = ? AND status <> ?", lockedJob.ID, model.FileStatusCompleted).Count(&incomplete).Error; err != nil {
+		status, err := reconcileUploadJobStatus(tx, lockedJob.ID)
+		if err != nil {
 			return fmt.Errorf("failed to reconcile upload job: %w", err)
 		}
-		allComplete = incomplete == 0
-		if allComplete {
-			lockedJob.Status = model.UploadJobStatusCompleted
-		} else {
-			lockedJob.Status = model.UploadJobStatusUploading
-		}
-		if err := tx.Save(&lockedJob).Error; err != nil {
-			return fmt.Errorf("failed to update upload job: %w", err)
-		}
+		allComplete = status == model.UploadJobStatusCompleted
+		reconciledStatus = status
+		lockedJob.Status = status
 		return nil
 	})
 	if err != nil {
@@ -1119,11 +1151,7 @@ func completeUploadMetadata(db *gorm.DB, file *model.UploadFile, job *model.Uplo
 	file.StorageKey = storageKey
 	file.FileSize = size
 	file.Status = model.FileStatusCompleted
-	if allComplete {
-		job.Status = model.UploadJobStatusCompleted
-	} else {
-		job.Status = model.UploadJobStatusUploading
-	}
+	job.Status = reconciledStatus
 	return allComplete, nil
 }
 

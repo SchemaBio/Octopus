@@ -138,6 +138,15 @@ func (s *DataAssetService) deleteAsset(ctx context.Context, asset *model.DataAss
 	if db == nil {
 		return fmt.Errorf("database is not initialized")
 	}
+	var uploadJobID uint
+	if asset.UploadFileID != nil {
+		var file model.UploadFile
+		if err := db.WithContext(ctx).Select("job_id").First(&file, *asset.UploadFileID).Error; err == nil {
+			uploadJobID = file.JobID
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("load upload job for data asset: %w", err)
+		}
+	}
 	state, err := markAssetDeleting(db.WithContext(ctx), asset)
 	if err != nil {
 		return err
@@ -153,7 +162,15 @@ func (s *DataAssetService) deleteAsset(ctx context.Context, asset *model.DataAss
 		_ = restoreAssetDeletion(db.WithContext(ctx), asset, state)
 		return err
 	}
-	return finalizeAssetDeletion(db.WithContext(ctx), asset)
+	if err := finalizeAssetDeletion(db.WithContext(ctx), asset); err != nil {
+		return err
+	}
+	if uploadJobID != 0 {
+		if err := reconcileUploadJobStatusInDB(uploadJobID); err != nil {
+			return fmt.Errorf("reconcile upload job after data asset deletion: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *DataAssetService) abortMultipartSessions(ctx context.Context, asset *model.DataAsset) error {
