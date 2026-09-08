@@ -44,6 +44,7 @@ func AutoMigrate() error {
 	DB.Exec("UPDATE users SET token_version = 1 WHERE token_version IS NULL OR token_version = 0")
 
 	err := DB.AutoMigrate(
+		&model.CVMSubmission{}, &model.CVMCancellation{}, &model.ExecutionOutbox{},
 		// Core models
 		&model.User{},
 		&model.Task{},
@@ -314,12 +315,63 @@ func preserveBEDDataAssets() error {
 
 func migrateTaskExecutionColumns() error {
 	statements := []string{
+		// These columns were introduced after the original task schema. GORM's
+		// AutoMigrate adds them for new databases, but existing rows can still
+		// contain NULL when the column was added without a database default. The
+		// application scans the version and reason fields into Go value types, so
+		// make the zero values explicit before any worker starts using them.
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS version bigint DEFAULT 0",
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS last_cvm_event_version bigint DEFAULT 0",
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS execution_phase varchar(32) DEFAULT ''",
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS execution_reason_code varchar(120) DEFAULT ''",
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS phase_updated_at timestamptz",
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cvm_archive_staged_at timestamptz",
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cvm_archive_termination_notified_at timestamptz",
 	}
 	for _, statement := range statements {
 		if err := DB.Exec(statement).Error; err != nil {
 			return fmt.Errorf("failed to migrate task execution columns: %w", err)
+		}
+	}
+	if err := DB.Exec("UPDATE tasks SET version = 0 WHERE version IS NULL").Error; err != nil {
+		return fmt.Errorf("failed to backfill task versions: %w", err)
+	}
+	if err := DB.Exec("UPDATE tasks SET last_cvm_event_version = 0 WHERE last_cvm_event_version IS NULL").Error; err != nil {
+		return fmt.Errorf("failed to backfill CVM event versions: %w", err)
+	}
+	if err := DB.Exec("UPDATE tasks SET execution_phase = '' WHERE execution_phase IS NULL").Error; err != nil {
+		return fmt.Errorf("failed to backfill execution phases: %w", err)
+	}
+	if err := DB.Exec("UPDATE tasks SET execution_reason_code = '' WHERE execution_reason_code IS NULL").Error; err != nil {
+		return fmt.Errorf("failed to backfill execution reason codes: %w", err)
+	}
+	// Preserve a useful phase for in-flight CVM attempts created before the
+	// phase column existed. Terminal records are fenced from late callbacks;
+	// running records remain visible as running; queued attempts are sent back
+	// through the durable dispatcher on the next start/recovery pass.
+	if err := DB.Exec(`UPDATE tasks
+		SET execution_phase = CASE
+			WHEN executor = 'cvm_spot' AND status IN ('completed', 'failed', 'cancelled', 'pending_interpretation') THEN 'terminal'
+			WHEN executor = 'cvm_spot' AND status = 'running' THEN 'running'
+			WHEN executor = 'cvm_spot' AND COALESCE(execution_attempt_id, '') <> ''
+				THEN CASE WHEN UPPER(COALESCE(vm_status, '')) IN ('DISPATCHING', 'WAITING_QUOTA', 'WAITING_CAPACITY') THEN 'dispatching' ELSE 'bootstrapping' END
+			ELSE 'idle'
+		END
+		WHERE execution_phase = ''`).Error; err != nil {
+		return fmt.Errorf("failed to backfill task execution phases: %w", err)
+	}
+	for _, statement := range []string{
+		"ALTER TABLE tasks ALTER COLUMN version SET DEFAULT 0",
+		"ALTER TABLE tasks ALTER COLUMN version SET NOT NULL",
+		"ALTER TABLE tasks ALTER COLUMN last_cvm_event_version SET DEFAULT 0",
+		"ALTER TABLE tasks ALTER COLUMN last_cvm_event_version SET NOT NULL",
+		"ALTER TABLE tasks ALTER COLUMN execution_phase SET DEFAULT ''",
+		"ALTER TABLE tasks ALTER COLUMN execution_phase SET NOT NULL",
+		"ALTER TABLE tasks ALTER COLUMN execution_reason_code SET DEFAULT ''",
+		"ALTER TABLE tasks ALTER COLUMN execution_reason_code SET NOT NULL",
+	} {
+		if err := DB.Exec(statement).Error; err != nil {
+			return fmt.Errorf("failed to constrain task execution columns: %w", err)
 		}
 	}
 	return nil

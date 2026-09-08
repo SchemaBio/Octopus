@@ -171,6 +171,10 @@ func (s *TaskService) emitTaskEventWithError(event string, actor model.OverlayAc
 		OccurredAt:     time.Now(),
 		Message:        message,
 	}
+	if task.Executor == model.ExecutorCVM && task.ExecutionAttemptID != "" && task.Version > 0 {
+		req.EventID = model.ExecutionEventID(task.ExecutionAttemptID, task.Version, event)
+		req.Version = task.Version
+	}
 	return s.overlay.EmitTaskEvent(context.Background(), req)
 }
 
@@ -221,7 +225,8 @@ func (s *TaskService) StartSepiidaSync(ctx context.Context, interval time.Durati
 // syncRunningTaskStatuses queries Sepiida for all "running" tasks in Octopus DB
 // and updates their status based on Sepiida's authoritative workflow state.
 func (s *TaskService) syncRunningTaskStatuses() {
-	tasks, err := s.repo.FindByStatus(model.TaskStatusRunning)
+	var tasks []model.Task
+	err := database.GetDB().Where("status = ? OR (executor = ? AND status = ? AND execution_phase IN ?)", model.TaskStatusRunning, model.ExecutorCVM, model.TaskStatusQueued, []string{"bootstrapping", "running", "archiving"}).Find(&tasks).Error
 	if err != nil {
 		return
 	}
@@ -243,8 +248,14 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	if s.sepiida == nil || task.UUID == "" {
 		return
 	}
+	// A user cancellation (or a completed cleanup) owns the attempt lifecycle.
+	// Sepiida may still report the last workflow state for a short time, but it
+	// must not resurrect a terminating CVM execution or stage a second archive.
+	if task.Executor == model.ExecutorCVM && (task.ExecutionPhase == "terminating" || task.ExecutionPhase == "terminal") {
+		return
+	}
 
-	workflow, _, err := s.sepiida.GetWorkflowWithTasks(sepiidaWorkflowUUID(task))
+	workflow, _, err := s.sepiida.GetWorkflowWithTasks(task.UUID, sepiidaWorkflowAgentID(task))
 	if err != nil || workflow == nil {
 		return
 	}
@@ -254,10 +265,25 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	archiveMetadata := workflow.NormalizedArchiveMetadata()
 	if task.Executor == model.ExecutorCVM && workflow.Status == model.SepiidaStatusSuccess {
 		if !archiveMetadata.Archived {
+			// Sepiida can report workflow success before the archive callback is
+			// accepted by Sepiida. Keep the business status stable until the
+			// archive is verified, but expose the actual lifecycle phase so a
+			// dropped callback does not leave the UI showing "calculating".
+			changedPhase := task.ExecutionPhase != "archiving"
+			if changedPhase {
+				task.ExecutionPhase = "archiving"
+				now := time.Now().UTC()
+				task.PhaseUpdatedAt = &now
+			}
 			if task.Progress < 99 {
 				task.Progress = 99
+				changedPhase = true
+			}
+			if changedPhase {
 				task.UpdatedAt = time.Now()
-				_ = s.repo.Update(task)
+				if err := s.repo.Update(task); err != nil {
+					fmt.Printf("WARNING: persist CVM archive phase for task %s: %v\\n", task.UUID, err)
+				}
 			}
 			return
 		}
@@ -271,8 +297,17 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	changed := false
 	switch workflow.Status {
 	case model.SepiidaStatusRunning:
-		if task.Status != model.TaskStatusRunning {
+		phaseChanged := task.ExecutionPhase != "running"
+		if task.Status != model.TaskStatusRunning || phaseChanged || task.StartedAt == nil {
 			task.Status = model.TaskStatusRunning
+			task.ExecutionPhase = "running"
+			if phaseChanged || task.StartedAt == nil {
+				now := time.Now().UTC()
+				task.PhaseUpdatedAt = &now
+				if task.StartedAt == nil {
+					task.StartedAt = &now
+				}
+			}
 			changed = true
 		}
 	case model.SepiidaStatusSuccess:
@@ -293,11 +328,23 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 			task.FinishedAt = &now
 			changed = true
 		}
+		if task.Executor == model.ExecutorCVM && task.ExecutionPhase != "terminal" && task.ExecutionPhase != "terminating" {
+			task.ExecutionPhase = "terminating"
+			now := time.Now().UTC()
+			task.PhaseUpdatedAt = &now
+			changed = true
+		}
 	case model.SepiidaStatusCancelled:
 		if task.Status != model.TaskStatusCancelled {
 			task.Status = model.TaskStatusCancelled
 			now := time.Now()
 			task.FinishedAt = &now
+			changed = true
+		}
+		if task.Executor == model.ExecutorCVM && task.ExecutionPhase != "terminal" && task.ExecutionPhase != "terminating" {
+			task.ExecutionPhase = "terminating"
+			now := time.Now().UTC()
+			task.PhaseUpdatedAt = &now
 			changed = true
 		}
 	}
@@ -334,6 +381,8 @@ func (s *TaskService) stageCVMArchive(task *model.Task, metadata model.SepiidaAr
 	}
 	now := time.Now()
 	task.CVMArchiveStagedAt = &now
+	task.ExecutionPhase = "archiving"
+	task.PhaseUpdatedAt = &now
 	task.UpdatedAt = now
 	return s.repo.Update(task)
 }
@@ -362,13 +411,16 @@ func cvmArchiveTerminationPending(task *model.Task) bool {
 }
 
 func sepiidaWorkflowUUID(task *model.Task) string {
-	if task != nil && task.Executor == model.ExecutorCVM && task.ExecutionAttemptID != "" {
-		return task.ExecutionAttemptID
-	}
 	if task == nil {
 		return ""
 	}
 	return task.UUID
+}
+func sepiidaWorkflowAgentID(task *model.Task) string {
+	if task != nil && task.Executor == model.ExecutorCVM {
+		return task.ExecutionAttemptID
+	}
+	return ""
 }
 
 // getExecutorPath returns the miniwdl executable path based on executor type
@@ -838,6 +890,10 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 		return nil, fmt.Errorf("task not found: %s", id)
 	}
 
+	if task.Executor == model.ExecutorCVM {
+		return s.enqueueCVM(ctx, id, actor)
+	}
+
 	if task.Status != model.TaskStatusQueued &&
 		task.Status != model.TaskStatusFailed &&
 		task.Status != model.TaskStatusWaitingData {
@@ -929,11 +985,22 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 		return task, nil
 	}
 
-	task.Status = model.TaskStatusRunning
 	task.Progress = 0
 	task.Error = ""
 	now := time.Now()
-	task.StartedAt = &now
+	if task.Executor == model.ExecutorCVM {
+		// A cloud instance being provisioned is not the same as a workflow
+		// running. Sepiida/Squid will confirm the business-running phase after
+		// node initialization and MiniWDL startup, which is also when billing
+		// runtime timestamps should begin.
+		task.Status = model.TaskStatusQueued
+		task.ExecutionPhase = "bootstrapping"
+		task.PhaseUpdatedAt = &now
+		task.StartedAt = nil
+	} else {
+		task.Status = model.TaskStatusRunning
+		task.StartedAt = &now
+	}
 	task.UpdatedAt = now
 	if dispatch != nil {
 		task.CVMInstanceID = dispatch.InstanceID
@@ -952,7 +1019,11 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 		return nil, err
 	}
 
-	s.emitTaskEvent(model.OverlayTaskEventRunning, actor, task, previousStatus, "")
+	if task.Executor == model.ExecutorCVM {
+		s.emitTaskEvent(model.OverlayTaskEventQueued, actor, task, previousStatus, "CVM node is initializing")
+	} else {
+		s.emitTaskEvent(model.OverlayTaskEventRunning, actor, task, previousStatus, "")
+	}
 	if task.Executor != model.ExecutorCVM {
 		go s.launchTask(task)
 	}
@@ -967,15 +1038,18 @@ func (s *TaskService) StopTask(ctx context.Context, id string, actor model.Overl
 		return nil, fmt.Errorf("task not found: %s", id)
 	}
 
+	if task.Executor == model.ExecutorCVM {
+		request := model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: cvmTerminationReason(task, model.OverlayTaskEventCancelled)}
+		cancelled, cancelErr := s.cancelCVM(ctx, id, request)
+		if cancelErr != nil {
+			return nil, cancelErr
+		}
+		return cancelled, nil
+	}
+
 	if task.Status != model.TaskStatusRunning {
 		return nil, fmt.Errorf("task is not running")
 	}
-	if task.Executor == model.ExecutorCVM {
-		if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: "task stopped by user"}); err != nil {
-			return nil, err
-		}
-	}
-
 	s.mu.Lock()
 	if cmd, ok := s.running[id]; ok {
 		_ = cmd.Process.Kill()
@@ -1004,6 +1078,10 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
+	}
+
+	if task.Executor == model.ExecutorCVM {
+		return s.enqueueCVM(ctx, id, actor)
 	}
 
 	if task.Status != model.TaskStatusFailed &&
@@ -1088,11 +1166,18 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 		return task, nil
 	}
 
-	task.Status = model.TaskStatusRunning
 	task.Progress = 0
 	task.Error = ""
 	now := time.Now()
-	task.StartedAt = &now
+	if task.Executor == model.ExecutorCVM {
+		task.Status = model.TaskStatusQueued
+		task.ExecutionPhase = "bootstrapping"
+		task.PhaseUpdatedAt = &now
+		task.StartedAt = nil
+	} else {
+		task.Status = model.TaskStatusRunning
+		task.StartedAt = &now
+	}
 	task.UpdatedAt = now
 	if dispatch != nil {
 		task.CVMInstanceID = dispatch.InstanceID
@@ -1111,7 +1196,11 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 		return nil, err
 	}
 
-	s.emitTaskEvent(model.OverlayTaskEventRunning, actor, task, previousStatus, "")
+	if task.Executor == model.ExecutorCVM {
+		s.emitTaskEvent(model.OverlayTaskEventQueued, actor, task, previousStatus, "CVM node is initializing")
+	} else {
+		s.emitTaskEvent(model.OverlayTaskEventRunning, actor, task, previousStatus, "")
+	}
 	if task.Executor != model.ExecutorCVM {
 		go s.launchTask(task)
 	}
@@ -1495,6 +1584,7 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 	}
 
 	resp := &model.TaskProgressResponse{
+		ExecutionPhase: task.ExecutionPhase, ExecutionReasonCode: task.ExecutionReasonCode, AttemptID: task.ExecutionAttemptID, PhaseUpdatedAt: task.PhaseUpdatedAt,
 		ID:                      task.UUID,
 		UUID:                    task.UUID,
 		Name:                    task.Name,
@@ -1516,7 +1606,7 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 
 	// Query Sepiida for real-time progress
 	if s.sepiida != nil && task.UUID != "" {
-		workflow, tasks, err := s.sepiida.GetWorkflowWithTasks(sepiidaWorkflowUUID(task))
+		workflow, tasks, err := s.sepiida.GetWorkflowWithTasks(task.UUID, sepiidaWorkflowAgentID(task))
 		if err == nil && workflow != nil {
 			resp.Sepiida = workflow
 			resp.Tasks = tasks
@@ -1528,6 +1618,10 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 			resp.ResultImportedAt = task.ResultImportedAt
 			resp.ResultImportFingerprint = task.ResultImportFingerprint
 			resp.ResultImportAttempts = task.ResultImportAttempts
+			resp.ExecutionPhase = task.ExecutionPhase
+			resp.ExecutionReasonCode = task.ExecutionReasonCode
+			resp.AttemptID = task.ExecutionAttemptID
+			resp.PhaseUpdatedAt = task.PhaseUpdatedAt
 			resp.VMStatus = task.VMStatus
 			resp.DispatchNextRetryAt = task.CVMDispatchNextRetryAt
 			resp.DispatchRetryDeadlineAt = task.CVMDispatchRetryDeadlineAt
@@ -1586,6 +1680,14 @@ func (s *TaskService) DeleteTask(ctx context.Context, id string, actor model.Ove
 		return fmt.Errorf("task not found: %s", id)
 	}
 
+	if task.Executor == model.ExecutorCVM && task.ExecutionAttemptID != "" && task.ExecutionPhase != "terminal" {
+		request := model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: cvmTerminationReason(task, model.OverlayTaskEventCancelled)}
+		_, err := s.cancelCVM(ctx, id, request)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
 	if task.Status == model.TaskStatusRunning || task.Status == model.TaskStatusQueued || task.Status == model.TaskStatusWaitingData || task.Status == model.TaskStatusCancelled {
 		s.mu.Lock()
 		if cmd, ok := s.running[id]; ok {
@@ -1605,14 +1707,10 @@ func (s *TaskService) DeleteTask(ctx context.Context, id string, actor model.Ove
 		if err := s.repo.Update(task); err != nil {
 			return err
 		}
-		if taskCancellationNeedsOverlay(task) {
+		if taskCancellationNeedsOverlay(task) && strings.TrimSpace(task.ExecutionAttemptID) != "" {
 			if err := s.emitTaskEventWithError(model.OverlayTaskEventCancelled, actor, task, previousStatus, "task deleted by user"); err != nil {
 				return fmt.Errorf("task cancellation settlement failed: %w", err)
 			}
-		}
-	} else if cvmTaskNeedsCancel(task) {
-		if err := s.overlay.CancelCVMTask(ctx, model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: "terminal task deleted by user"}); err != nil {
-			return err
 		}
 	}
 
@@ -1645,6 +1743,9 @@ func (s *TaskService) UpdateTask(ctx context.Context, id string, req *model.Task
 
 	if task.Status == model.TaskStatusRunning {
 		return nil, fmt.Errorf("cannot edit a running task")
+	}
+	if task.Executor == model.ExecutorCVM && task.ExecutionPhase != "" && task.ExecutionPhase != "idle" && task.ExecutionPhase != "terminal" {
+		return nil, fmt.Errorf("cannot edit a CVM task while execution is %s", task.ExecutionPhase)
 	}
 
 	if req.InternalID != "" {
@@ -2492,7 +2593,10 @@ func serviceOverlayDispatchOutcomeKnown(err error) bool {
 
 func cvmAttemptStateTerminal(state string) bool {
 	switch strings.ToUpper(strings.TrimSpace(state)) {
-	case "TERMINATED", "SHUTDOWN", "FAILED", "RECLAIMED", "STOPPED", "LAUNCH_FAILED":
+	// A stopped or failed cloud state is still an existing resource until
+	// Squid confirms asynchronous destruction.  Only these states release
+	// the execution slot and permit a new attempt.
+	case "TERMINATED", "RECLAIMED", "LAUNCH_FAILED":
 		return true
 	default:
 		return false
@@ -2562,8 +2666,11 @@ func (s *TaskService) RefreshCVMExecution(ctx context.Context, taskUUID, attempt
 	// refresh also lets Squid finish cancellation/refund for an in-flight
 	// uncertain request without issuing a new cloud request.
 	switch task.Status {
-	case model.TaskStatusCompleted, model.TaskStatusCancelled:
+	case model.TaskStatusCompleted, model.TaskStatusCancelled, model.TaskStatusFailed:
 		return model.CVMExecutionSpec{}, fmt.Errorf("task is already terminal")
+	}
+	if task.ExecutionPhase == "terminating" || task.ExecutionPhase == "terminal" {
+		return model.CVMExecutionSpec{}, fmt.Errorf("task execution is already terminal")
 	}
 	request, err := s.buildCVMDispatchRequest(ctx, model.OverlayActor{UserID: task.CreatedBy, OrgID: task.ExternalOrgID}, task)
 	if err != nil {
@@ -2589,6 +2696,33 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	if task.CVMInstanceID != "" && event.InstanceID != "" && task.CVMInstanceID != event.InstanceID {
 		return fmt.Errorf("CVM instance does not match task")
 	}
+	if event.Version > 0 && event.Version < task.LastCVMEventVersion {
+		// A lower-version callback is an out-of-order delivery from Squid. It
+		// must never regress the task or emit a terminal billing event after a
+		// newer callback has already won.
+		return nil
+	}
+	if event.Version > 0 && event.Version == task.LastCVMEventVersion {
+		// Squid retries the same durable callback when Octopus persisted the
+		// task transition but the follow-up settlement/refund event was not
+		// acknowledged. The task version is already advanced in that case, so
+		// replay the terminal overlay event without applying the callback a
+		// second time. Returning early for the same version would leave an
+		// attempt permanently pre-deducted after a transient overlay outage.
+		if eventID := terminalOverlayEventForCVMState(event.TaskStatus, task.Status); eventID != "" {
+			return s.emitTaskEventWithError(eventID, model.OverlayActor{}, task, task.Status, event.Message)
+		}
+		return nil
+	}
+	if event.Version > 0 {
+		task.LastCVMEventVersion = event.Version
+	}
+	if event.ExecutionPhase != "" && (task.ExecutionPhase != "terminating" || event.ExecutionPhase == "terminal") {
+		task.ExecutionPhase = event.ExecutionPhase
+		now := time.Now().UTC()
+		task.PhaseUpdatedAt = &now
+	}
+	task.ExecutionReasonCode = event.ReasonCode
 	previousStatus := task.Status
 	// Squid may deliver a cancellation callback after the user-facing delete
 	// request already transitioned the task locally.  Keep the state update
@@ -2596,7 +2730,11 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	// overlay event: the first delivery may have failed while Tencent's
 	// request outcome was still unknown, and Squid needs this callback to finish
 	// the deferred refund/runtime settlement.
-	forceCancellationEvent := event.TaskStatus == model.TaskStatusCancelled && task.Status != model.TaskStatusCompleted
+	// A late cancellation callback must never regress a workflow that Octopus
+	// has already recorded as failed. It may repeat an existing cancelled state
+	// because the first cancellation event can have been rejected while Squid
+	// was still reconciling the cloud request, so keep that retry path enabled.
+	forceCancellationEvent := event.TaskStatus == model.TaskStatusCancelled && task.Status != model.TaskStatusCompleted && task.Status != model.TaskStatusFailed
 	if event.InstanceID != "" {
 		task.CVMInstanceID = event.InstanceID
 	}
@@ -2604,22 +2742,11 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	// can reconcile an instance after Octopus saw only a queued/DISPATCHING
 	// response; without these values the overlay would mistake an already
 	// created VM for a never-started task and refund the full pre-deduction.
-	if event.StartedAt != nil && task.StartedAt == nil {
+	if event.StartedAt != nil && task.StartedAt == nil && cvmEventCarriesBusinessStart(event) {
 		task.StartedAt = event.StartedAt
 	}
 	if event.FinishedAt != nil {
 		task.FinishedAt = event.FinishedAt
-	}
-	// Keep compatibility with older Squid workers that do not send timestamp
-	// fields yet. An instance-bearing cancellation still consumed at least the
-	// current billing minute, so use the callback time instead of the estimated
-	// task duration as a last-resort start marker.
-	if event.TaskStatus == model.TaskStatusCancelled && event.InstanceID != "" && task.StartedAt == nil {
-		started := event.OccurredAt
-		if started.IsZero() {
-			started = time.Now()
-		}
-		task.StartedAt = &started
 	}
 	task.VMStatus = strings.ToUpper(event.InstanceState)
 	if event.RetryAt != nil {
@@ -2639,7 +2766,7 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 		task.CVMDispatchRetryDeadlineAt = nil
 		task.Error = ""
 	}
-	if event.TaskStatus == model.TaskStatusRunning && task.Status == model.TaskStatusQueued {
+	if event.TaskStatus == model.TaskStatusRunning && task.Status == model.TaskStatusQueued && task.ExecutionPhase != "terminating" {
 		task.Status = model.TaskStatusRunning
 		task.Error = ""
 		task.Progress = 0
@@ -2680,8 +2807,50 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	return nil
 }
 
+// terminalOverlayEventForCVMState identifies the idempotent business event
+// which must be redelivered when a Squid callback is retried with an already
+// observed version. It deliberately refuses to regress a task that has already
+// reached a stronger terminal state.
+func terminalOverlayEventForCVMState(eventStatus, currentStatus model.TaskStatus) string {
+	switch eventStatus {
+	case model.TaskStatusCancelled:
+		if currentStatus == model.TaskStatusCompleted || currentStatus == model.TaskStatusFailed {
+			return ""
+		}
+		return model.OverlayTaskEventCancelled
+	case model.TaskStatusFailed:
+		if currentStatus == model.TaskStatusCompleted || currentStatus == model.TaskStatusCancelled {
+			return ""
+		}
+		return model.OverlayTaskEventFailed
+	case model.TaskStatusCompleted:
+		if currentStatus == model.TaskStatusCompleted {
+			return model.OverlayTaskEventCompleted
+		}
+	}
+	return ""
+}
+
 func cvmStateEventMatchesCurrentAttempt(task *model.Task, event model.CVMStateEvent) bool {
 	return task != nil && task.ExecutionAttemptID != "" && task.ExecutionAttemptID == event.AttemptID
+}
+
+func cvmEventCarriesBusinessStart(event model.CVMStateEvent) bool {
+	if event.TaskStatus == model.TaskStatusRunning {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(event.ExecutionPhase)) {
+	case "running", "archiving":
+		return true
+	case "dispatching", "waiting_quota", "waiting_capacity", "bootstrapping", "terminating":
+		return false
+	default:
+		// Terminal callbacks from current Squid workers carry the durable
+		// runtime timestamp while older workers may omit the phase. Preserve a
+		// non-empty timestamp in that compatibility case, but never infer one
+		// from a queued/dispatching callback.
+		return event.TaskStatus == model.TaskStatusCompleted || event.TaskStatus == model.TaskStatusFailed || event.TaskStatus == model.TaskStatusCancelled
+	}
 }
 
 func cvmTaskNeedsCancel(task *model.Task) bool {

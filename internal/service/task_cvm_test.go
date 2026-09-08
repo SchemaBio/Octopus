@@ -112,10 +112,16 @@ func TestStructuredResultFileSelection(t *testing.T) {
 
 func TestSepiidaWorkflowUUIDUsesCurrentCVMExecutionAttempt(t *testing.T) {
 	task := &model.Task{UUID: "9e906aba-75f0-4b68-a355-5138b0f07c42", Executor: model.ExecutorCVM, ExecutionAttemptID: "2897aa33-054d-4a00-88c6-40701d0cf491"}
-	if got := sepiidaWorkflowUUID(task); got != task.ExecutionAttemptID {
-		t.Fatalf("expected current execution attempt, got %q", got)
+	if got := sepiidaWorkflowUUID(task); got != task.UUID {
+		t.Fatalf("expected stable task UUID, got %q", got)
+	}
+	if sepiidaWorkflowAgentID(task) != task.ExecutionAttemptID {
+		t.Fatal("CVM query must include the current attempt")
 	}
 	task.Executor = model.ExecutorLocal
+	if sepiidaWorkflowAgentID(task) != "" {
+		t.Fatal("community query must not filter agent")
+	}
 	if got := sepiidaWorkflowUUID(task); got != task.UUID {
 		t.Fatalf("community executor must keep task UUID, got %q", got)
 	}
@@ -127,8 +133,10 @@ func TestCVMAttemptTerminalStates(t *testing.T) {
 			t.Fatalf("expected terminal state %q", state)
 		}
 	}
-	if cvmAttemptStateTerminal("RUNNING") {
-		t.Fatal("RUNNING must not be terminal")
+	for _, state := range []string{"RUNNING", "STOPPED", "SHUTDOWN", "FAILED", "TERMINATING"} {
+		if cvmAttemptStateTerminal(state) {
+			t.Fatalf("%s must remain active until resource release is confirmed", state)
+		}
 	}
 }
 
@@ -143,6 +151,20 @@ func TestCVMStateEventOnlyMatchesCurrentAttempt(t *testing.T) {
 		t.Fatal("stale execution attempt must be ignored")
 	}
 }
+
+func TestCVMEventBusinessStartClassification(t *testing.T) {
+	if cvmEventCarriesBusinessStart(model.CVMStateEvent{TaskStatus: model.TaskStatusQueued, ExecutionPhase: "bootstrapping", StartedAt: ptrTimeForCVMTest(time.Now())}) {
+		t.Fatal("bootstrap timestamp must not start business billing")
+	}
+	if !cvmEventCarriesBusinessStart(model.CVMStateEvent{TaskStatus: model.TaskStatusRunning, ExecutionPhase: "running", StartedAt: ptrTimeForCVMTest(time.Now())}) {
+		t.Fatal("running callback must carry business start")
+	}
+	if cvmEventCarriesBusinessStart(model.CVMStateEvent{TaskStatus: model.TaskStatusCancelled, ExecutionPhase: "terminating", StartedAt: ptrTimeForCVMTest(time.Now())}) {
+		t.Fatal("termination timestamp without a running phase must not start billing")
+	}
+}
+
+func ptrTimeForCVMTest(value time.Time) *time.Time { return &value }
 
 func TestCVMTaskNeedsCancelWithoutKnownInstance(t *testing.T) {
 	task := &model.Task{Executor: model.ExecutorCVM, ExecutionAttemptID: "2897aa33-054d-4a00-88c6-40701d0cf491"}
@@ -241,5 +263,27 @@ func TestValidatedCOSArchivePrefixRejectsStaleAttempt(t *testing.T) {
 	metadata.ArchivePrefix = "8db870b7-a65f-48ea-9d9c-8e5f799ae213"
 	if _, err := validatedCOSArchivePrefix(task, metadata, storageCfg); err == nil || !strings.Contains(err.Error(), "current execution attempt") {
 		t.Fatalf("expected stale attempt to be rejected, got %v", err)
+	}
+}
+
+func TestTerminalOverlayEventForDuplicateCVMCallback(t *testing.T) {
+	tests := []struct {
+		name          string
+		eventStatus   model.TaskStatus
+		currentStatus model.TaskStatus
+		want          string
+	}{
+		{name: "cancelled retry", eventStatus: model.TaskStatusCancelled, currentStatus: model.TaskStatusCancelled, want: model.OverlayTaskEventCancelled},
+		{name: "failed retry", eventStatus: model.TaskStatusFailed, currentStatus: model.TaskStatusFailed, want: model.OverlayTaskEventFailed},
+		{name: "completed retry", eventStatus: model.TaskStatusCompleted, currentStatus: model.TaskStatusCompleted, want: model.OverlayTaskEventCompleted},
+		{name: "late cancellation after failure", eventStatus: model.TaskStatusCancelled, currentStatus: model.TaskStatusFailed},
+		{name: "late failure after cancellation", eventStatus: model.TaskStatusFailed, currentStatus: model.TaskStatusCancelled},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := terminalOverlayEventForCVMState(tt.eventStatus, tt.currentStatus); got != tt.want {
+				t.Fatalf("terminal overlay event = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

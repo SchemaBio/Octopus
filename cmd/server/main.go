@@ -76,6 +76,7 @@ func main() {
 	// Start Sepiida status sync for running tasks (every 30s)
 	taskSvc := service.NewTaskService(cfg)
 	taskSvc.StartSepiidaSync(ctx, 30*time.Second)
+	taskSvc.StartExecutionDelivery(ctx)
 	fmt.Println("Sepiida status sync started (interval: 30s)")
 
 	taskSvc.StartDataWaitSync(ctx, 30*time.Second)

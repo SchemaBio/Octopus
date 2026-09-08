@@ -48,7 +48,8 @@ func (e *OverlayDeniedError) Error() string {
 // instance request.
 func OverlayDispatchOutcomeUnknown(err error) bool {
 	var transport *OverlayTransportError
-	return errors.As(err, &transport)
+	var response *OverlayHTTPError
+	return errors.As(err, &transport) || (errors.As(err, &response) && (response.Status >= 500 || response.Status == 408 || response.Status == 429))
 }
 
 type OverlayTransportError struct{ Err error }
@@ -138,26 +139,40 @@ func (c *OverlayClient) DispatchCVMTask(ctx context.Context, req model.CVMDispat
 	if status < 200 || status >= 300 {
 		return nil, &OverlayHTTPError{Status: status, Body: strings.TrimSpace(string(body))}
 	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		// The request may have reached Squid even when a proxy returned an
+		// empty success body.  Treat the response as unknown so the same durable
+		// attempt is retried instead of creating a second attempt after a false
+		// launch failure.
+		return nil, &OverlayTransportError{Err: fmt.Errorf("CVM dispatch returned an empty success response")}
+	}
 	// Squid may accept a dispatch while spot capacity is unavailable.  The
 	// attempt remains durable in Squid and will be retried there; Octopus keeps
 	// the task queued until a later state event supplies the instance ID.
 	if response.Accepted && response.InstanceID == "" {
 		state := strings.ToUpper(strings.TrimSpace(response.InstanceState))
-		if state == "WAITING_CAPACITY" || state == "DISPATCHING" {
-			if req.AttemptID != "" && response.AttemptID != "" && response.AttemptID != req.AttemptID {
-				return nil, fmt.Errorf("CVM dispatch returned a mismatched attempt_id")
+		if state == "WAITING_QUOTA" || state == "WAITING_CAPACITY" || state == "DISPATCHING" {
+			if req.AttemptID != "" && response.AttemptID != req.AttemptID {
+				// The request may already be durable in Squid. Treat a malformed
+				// acknowledgement as an unknown outcome so Octopus retries the same
+				// attempt instead of marking it failed and allowing a new one.
+				return nil, &OverlayTransportError{Err: fmt.Errorf("CVM dispatch returned a mismatched attempt_id")}
 			}
 			return &response, nil
 		}
+		if state == "LAUNCH_FAILED" || state == "TERMINATED" || state == "RECLAIMED" {
+			return nil, fmt.Errorf("CVM execution attempt is already terminal: %s", state)
+		}
+		return nil, &OverlayTransportError{Err: fmt.Errorf("CVM dispatch returned an invalid accepted response")}
 	}
 	if !response.Accepted || response.InstanceID == "" {
 		if response.Reason == "" {
-			response.Reason = "CVM dispatch was not accepted"
+			return nil, &OverlayTransportError{Err: fmt.Errorf("CVM dispatch returned an invalid rejection response")}
 		}
 		return nil, fmt.Errorf("%s", response.Reason)
 	}
 	if req.AttemptID != "" && response.AttemptID != req.AttemptID {
-		return nil, fmt.Errorf("CVM dispatch returned a mismatched attempt_id")
+		return nil, &OverlayTransportError{Err: fmt.Errorf("CVM dispatch returned a mismatched attempt_id")}
 	}
 	return &response, nil
 }

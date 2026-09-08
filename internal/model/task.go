@@ -41,6 +41,12 @@ const (
 
 // Task represents a workflow task
 type Task struct {
+	Version             uint64     `json:"-" gorm:"default:0"`
+	LastCVMEventVersion uint64     `json:"-" gorm:"default:0"`
+	ExecutionPhase      string     `json:"execution_phase,omitempty" gorm:"size:32"`
+	ExecutionReasonCode string     `json:"execution_reason_code,omitempty" gorm:"size:120"`
+	PhaseUpdatedAt      *time.Time `json:"phase_updated_at,omitempty"`
+
 	ID               string         `json:"id" gorm:"primaryKey"`
 	UUID             string         `json:"uuid" gorm:"uniqueIndex"` // Workflow UUID (standard format for Sepiida)
 	Name             string         `json:"name"`
@@ -187,9 +193,9 @@ type TaskUpdateRequest struct {
 
 // TaskListQuery is the query parameters for listing tasks
 type TaskListQuery struct {
-	Status        TaskStatus `form:"status"`
-	SampleID      string     `form:"sampleId"`
-	Search        string     `form:"search"`        // text across name/internal_id/error
+	Status   TaskStatus `form:"status"`
+	SampleID string     `form:"sampleId"`
+	Search   string     `form:"search"` // text across name/internal_id/error
 	// OrgID is an explicit cross-organization filter for platform-admin audit
 	// consumers. The handler still applies the caller scope before the
 	// repository uses this value, so tenant users cannot widen their access.
@@ -206,6 +212,11 @@ type TaskListQuery struct {
 
 // TaskResponse matches frontend AnalysisTask type
 type TaskResponse struct {
+	ExecutionPhase      string     `json:"execution_phase,omitempty"`
+	ExecutionReasonCode string     `json:"execution_reason_code,omitempty"`
+	AttemptID           string     `json:"attempt_id,omitempty"`
+	PhaseUpdatedAt      *time.Time `json:"phase_updated_at,omitempty"`
+
 	ID                      string     `json:"id"`
 	SampleID                string     `json:"sampleId"`
 	InternalID              string     `json:"internalId"`
@@ -225,6 +236,11 @@ type TaskResponse struct {
 
 // TaskDetailResponse matches frontend AnalysisTaskDetail type
 type TaskDetailResponse struct {
+	ExecutionPhase      string     `json:"execution_phase,omitempty"`
+	ExecutionReasonCode string     `json:"execution_reason_code,omitempty"`
+	AttemptID           string     `json:"attempt_id,omitempty"`
+	PhaseUpdatedAt      *time.Time `json:"phase_updated_at,omitempty"`
+
 	ID                      string     `json:"id"`
 	Name                    string     `json:"name"`
 	SampleID                string     `json:"sampleId"`
@@ -333,6 +349,11 @@ type TaskStatsResponse struct {
 
 // TaskProgressResponse is the response for task progress
 type TaskProgressResponse struct {
+	ExecutionPhase      string     `json:"execution_phase,omitempty"`
+	ExecutionReasonCode string     `json:"execution_reason_code,omitempty"`
+	AttemptID           string     `json:"attempt_id,omitempty"`
+	PhaseUpdatedAt      *time.Time `json:"phase_updated_at,omitempty"`
+
 	ID                      string             `json:"id"`
 	UUID                    string             `json:"uuid"`
 	Name                    string             `json:"name"`
@@ -369,6 +390,7 @@ type Template struct {
 // ToResponse converts Task to TaskResponse
 func (t *Task) ToResponse() TaskResponse {
 	resp := TaskResponse{
+		ExecutionPhase: t.ExecutionPhase, ExecutionReasonCode: t.ExecutionReasonCode, AttemptID: t.ExecutionAttemptID, PhaseUpdatedAt: t.PhaseUpdatedAt,
 		ID:                 t.UUID,
 		SampleID:           t.SampleID,
 		InternalID:         t.InternalID,
@@ -397,6 +419,7 @@ func (t *Task) ToResponse() TaskResponse {
 // ToDetailResponse converts Task to TaskDetailResponse
 func (t *Task) ToDetailResponse() TaskDetailResponse {
 	resp := TaskDetailResponse{
+		ExecutionPhase: t.ExecutionPhase, ExecutionReasonCode: t.ExecutionReasonCode, AttemptID: t.ExecutionAttemptID, PhaseUpdatedAt: t.PhaseUpdatedAt,
 		ID:                 t.UUID,
 		Name:               t.Name,
 		SampleID:           t.SampleID,

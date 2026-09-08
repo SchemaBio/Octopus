@@ -78,7 +78,14 @@ func (c *Client) doRequest(method, path string) ([]byte, error) {
 
 // GetWorkflowByUUID queries workflow by UUID
 func (c *Client) GetWorkflowByUUID(uuid string) (*model.SepiidaWorkflow, error) {
-	body, err := c.doRequest("GET", "/api/v1/workflow?"+url.Values{"uuid": {uuid}}.Encode())
+	return c.GetWorkflowByAttempt(uuid, "")
+}
+func (c *Client) GetWorkflowByAttempt(uuid, agentID string) (*model.SepiidaWorkflow, error) {
+	query := url.Values{"uuid": {uuid}}
+	if agentID != "" {
+		query.Set("agent_id", agentID)
+	}
+	body, err := c.doRequest("GET", "/api/v1/workflow?"+query.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +99,9 @@ func (c *Client) GetWorkflowByUUID(uuid string) (*model.SepiidaWorkflow, error) 
 		return nil, fmt.Errorf("sepiida error: %s", resp.Error)
 	}
 
+	if agentID != "" && (resp.Workflow.UUID != uuid || resp.Workflow.AgentID != agentID) {
+		return nil, fmt.Errorf("Sepiida returned a different execution")
+	}
 	return &resp.Workflow, nil
 }
 
@@ -145,8 +155,12 @@ func (c *Client) ListWorkflows() ([]model.SepiidaWorkflow, error) {
 }
 
 // GetWorkflowWithTasks queries workflow with its tasks
-func (c *Client) GetWorkflowWithTasks(uuid string) (*model.SepiidaWorkflow, []model.SepiidaTask, error) {
-	workflow, err := c.GetWorkflowByUUID(uuid)
+func (c *Client) GetWorkflowWithTasks(uuid string, agentID ...string) (*model.SepiidaWorkflow, []model.SepiidaTask, error) {
+	attempt := ""
+	if len(agentID) > 0 {
+		attempt = agentID[0]
+	}
+	workflow, err := c.GetWorkflowByAttempt(uuid, attempt)
 	if err != nil {
 		return nil, nil, err
 	}

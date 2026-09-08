@@ -48,6 +48,64 @@ func TestOverlayClientDispatchUsesDedicatedCloudTimeout(t *testing.T) {
 	}
 }
 
+func TestOverlayClientRejectsTerminalDispatchReceipt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.CVMDispatchResponse{
+			Accepted: true, AttemptID: "attempt-1", InstanceState: "LAUNCH_FAILED",
+		})
+	}))
+	defer server.Close()
+
+	client := testOverlayClient(server.URL, false)
+	_, err := client.DispatchCVMTask(context.Background(), model.CVMDispatchRequest{AttemptID: "attempt-1"})
+	if err == nil || !strings.Contains(err.Error(), "terminal") {
+		t.Fatalf("expected terminal dispatch to be rejected, got %v", err)
+	}
+}
+
+func TestOverlayClientTreatsEmptySuccessAsUnknownDispatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	client := testOverlayClient(server.URL, false)
+	_, err := client.DispatchCVMTask(context.Background(), model.CVMDispatchRequest{AttemptID: "attempt-1"})
+	if err == nil || !OverlayDispatchOutcomeUnknown(err) {
+		t.Fatalf("empty success response should remain reconcilable, got %v", err)
+	}
+}
+
+func TestOverlayClientTreatsMismatchedAttemptAsUnknown(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.CVMDispatchResponse{
+			Accepted: true, AttemptID: "other-attempt", InstanceID: "ins-12345678", InstanceState: "PENDING",
+		})
+	}))
+	defer server.Close()
+
+	client := testOverlayClient(server.URL, false)
+	_, err := client.DispatchCVMTask(context.Background(), model.CVMDispatchRequest{AttemptID: "attempt-1"})
+	if err == nil || !OverlayDispatchOutcomeUnknown(err) {
+		t.Fatalf("mismatched attempt response should remain reconcilable, got %v", err)
+	}
+}
+
+func TestOverlayClientTreatsMissingAttemptOnQueuedReceiptAsUnknown(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.CVMDispatchResponse{
+			Accepted: true, InstanceState: "WAITING_CAPACITY",
+		})
+	}))
+	defer server.Close()
+
+	client := testOverlayClient(server.URL, false)
+	_, err := client.DispatchCVMTask(context.Background(), model.CVMDispatchRequest{AttemptID: "attempt-1"})
+	if err == nil || !OverlayDispatchOutcomeUnknown(err) {
+		t.Fatalf("queued receipt without attempt_id should remain reconcilable, got %v", err)
+	}
+}
+
 func TestOverlayClientAdmitTaskAllowsRequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/admit" {

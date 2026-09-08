@@ -409,6 +409,10 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 		return
 	}
 
+	if task.Executor == model.ExecutorCVM {
+		c.JSON(http.StatusAccepted, gin.H{"data": task.ToResponse()})
+		return
+	}
 	Success(c, task.ToResponse())
 }
 
@@ -425,6 +429,10 @@ func (h *TaskHandler) StopTask(c *gin.Context) {
 		return
 	}
 
+	if task.Executor == model.ExecutorCVM {
+		c.JSON(http.StatusAccepted, gin.H{"data": task.ToResponse()})
+		return
+	}
 	Success(c, task.ToResponse())
 }
 
@@ -441,6 +449,10 @@ func (h *TaskHandler) RetryTask(c *gin.Context) {
 		return
 	}
 
+	if task.Executor == model.ExecutorCVM {
+		c.JSON(http.StatusAccepted, gin.H{"data": task.ToResponse()})
+		return
+	}
 	Success(c, task.ToResponse())
 }
 

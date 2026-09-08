@@ -36,6 +36,8 @@ type OverlayActor struct {
 // OverlayTaskSnapshot is the stable task shape sent to external overlay policy
 // and event services. It intentionally omits local filesystem paths and inputs.
 type OverlayTaskSnapshot struct {
+	ReasonCode       string     `json:"reason_code,omitempty"`
+	Version          uint64     `json:"version,omitempty"`
 	ID               string     `json:"id"`
 	UUID             string     `json:"uuid"`
 	Name             string     `json:"name"`
@@ -63,6 +65,7 @@ func NewOverlayTaskSnapshot(task *Task) OverlayTaskSnapshot {
 		return OverlayTaskSnapshot{}
 	}
 	return OverlayTaskSnapshot{
+		Version: task.Version, ReasonCode: task.ExecutionReasonCode,
 		ID:               task.ID,
 		UUID:             task.UUID,
 		Name:             task.Name,
@@ -104,6 +107,8 @@ type OverlayTaskAdmissionResponse struct {
 // OverlayTaskEventRequest notifies an external control plane about task state
 // changes. Delivery is best effort and must not be required for community mode.
 type OverlayTaskEventRequest struct {
+	EventID        string              `json:"event_id,omitempty"`
+	Version        uint64              `json:"version,omitempty"`
 	Event          string              `json:"event"`
 	Actor          OverlayActor        `json:"actor"`
 	Task           OverlayTaskSnapshot `json:"task"`
@@ -173,12 +178,16 @@ type CVMCancelRequest struct {
 }
 
 type CVMStateEvent struct {
-	TaskUUID      string     `json:"task_uuid"`
-	AttemptID     string     `json:"attempt_id"`
-	InstanceID    string     `json:"instance_id,omitempty"`
-	InstanceState string     `json:"instance_state"`
-	TaskStatus    TaskStatus `json:"task_status,omitempty"`
-	Message       string     `json:"message,omitempty"`
+	EventID        string     `json:"event_id,omitempty"`
+	Version        uint64     `json:"version,omitempty"`
+	ExecutionPhase string     `json:"execution_phase,omitempty"`
+	ReasonCode     string     `json:"reason_code,omitempty"`
+	TaskUUID       string     `json:"task_uuid"`
+	AttemptID      string     `json:"attempt_id"`
+	InstanceID     string     `json:"instance_id,omitempty"`
+	InstanceState  string     `json:"instance_state"`
+	TaskStatus     TaskStatus `json:"task_status,omitempty"`
+	Message        string     `json:"message,omitempty"`
 	// Squid includes the durable attempt timestamps so a cancellation that
 	// reconciles an instance after an unknown dispatch can be billed by actual
 	// runtime even if Octopus never observed a separate running event.

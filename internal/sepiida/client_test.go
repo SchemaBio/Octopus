@@ -1,11 +1,34 @@
 package sepiida
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestClientQueriesExactExecutionAndRejectsFallback(t *testing.T) {
+	for _, returnedAgent := range []string{"attempt-current", "attempt-old"} {
+		t.Run(returnedAgent, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("uuid") != "task-stable" || r.URL.Query().Get("agent_id") != "attempt-current" {
+					t.Error("missing joint execution identity")
+				}
+				fmt.Fprintf(w, `{"workflow":{"id":"run","uuid":"task-stable","agent_id":%q}}`, returnedAgent)
+			}))
+			defer server.Close()
+			result, err := NewClient(server.URL, "query-key").GetWorkflowByAttempt("task-stable", "attempt-current")
+			if returnedAgent == "attempt-old" {
+				if err == nil {
+					t.Fatal("accepted another attempt")
+				}
+			} else if err != nil || result.AgentID != returnedAgent {
+				t.Fatalf("valid execution rejected: %v", err)
+			}
+		})
+	}
+}
 
 func TestClientHealthSendsBearerQueryKey(t *testing.T) {
 	var gotAuth string

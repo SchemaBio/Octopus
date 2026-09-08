@@ -1,8 +1,26 @@
 package repository
 
 import (
+	"fmt"
 	"github.com/SchemaBio/Octopus/internal/model"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// Update rejects stale task snapshots, including callbacks racing cancellation.
+func (r *TaskRepository) Update(task *model.Task) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var current model.Task
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", task.ID).First(&current).Error; err != nil {
+			return err
+		}
+		if current.Version != task.Version {
+			return fmt.Errorf("task state changed; retry operation")
+		}
+		task.Version++
+		return tx.Save(task).Error
+	})
+}
 
 // TaskRepository provides task-specific operations
 type TaskRepository struct {
@@ -48,12 +66,12 @@ func (r *TaskRepository) FindByStatuses(statuses []model.TaskStatus) ([]model.Ta
 	return tasks, err
 }
 
-// FindPendingCVMArchiveTermination returns completed CVM attempts whose COS
+// FindPendingCVMArchiveTermination returns terminal CVM attempts whose COS
 // archive was staged but whose release request has not yet reached Squid.
 func (r *TaskRepository) FindPendingCVMArchiveTermination() ([]model.Task, error) {
 	var tasks []model.Task
 	err := r.db.
-		Where("executor = ? AND status = ? AND cvm_archive_staged_at IS NOT NULL AND cvm_archive_termination_notified_at IS NULL", model.ExecutorCVM, model.TaskStatusCompleted).
+		Where("executor = ? AND status IN ? AND cvm_archive_staged_at IS NOT NULL AND cvm_archive_termination_notified_at IS NULL", model.ExecutorCVM, []model.TaskStatus{model.TaskStatusCompleted, model.TaskStatusPendingInterpretation}).
 		Find(&tasks).Error
 	return tasks, err
 }
