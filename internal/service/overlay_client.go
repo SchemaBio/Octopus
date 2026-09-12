@@ -3,12 +3,16 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -248,6 +252,9 @@ func (c *OverlayClient) postJSONWithClient(ctx context.Context, client *http.Cli
 	req.Header.Set("Content-Type", "application/json")
 	if c.cfg.SharedSecret != "" {
 		req.Header.Set("Authorization", "Bearer "+c.cfg.SharedSecret)
+		ts := strconv.FormatInt(time.Now().Unix(), 10)
+		req.Header.Set("X-Overlay-Timestamp", ts)
+		req.Header.Set("X-Overlay-Signature", overlayRequestMAC(c.cfg.SharedSecret, ts, body))
 	}
 
 	resp, err := client.Do(req)
@@ -266,6 +273,14 @@ func (c *OverlayClient) postJSONWithClient(ctx context.Context, client *http.Cli
 		}
 	}
 	return resp.StatusCode, respBody, nil
+}
+
+func overlayRequestMAC(secret, timestamp string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(timestamp))
+	mac.Write([]byte("."))
+	mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func joinOverlayURL(baseURL, endpointPath string) (string, error) {

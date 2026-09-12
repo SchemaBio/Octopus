@@ -22,6 +22,9 @@ func main() {
 	flag.Parse()
 
 	cfg := config.Load()
+	if err := config.AllowSeed(cfg.Server.Mode); err != nil {
+		fatalf("%v", err)
+	}
 	if err := database.InitDB(cfg); err != nil {
 		fatalf("database: %v", err)
 	}

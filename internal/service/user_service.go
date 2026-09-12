@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -67,9 +68,10 @@ func (s *UserService) Login(email, password string) (*model.LoginResponse, error
 		return nil, errors.New("invalid email or password")
 	}
 
-	// Check if user is active
-	if !user.IsActive {
-		return nil, errors.New("user account is disabled")
+	if user.ApprovalStatus == model.ApprovalStatusPending ||
+		user.ApprovalStatus == model.ApprovalStatusRejected ||
+		!user.IsActive {
+		return nil, errors.New("invalid email or password")
 	}
 
 	// Generate tokens
@@ -362,8 +364,16 @@ func (s *UserService) RevokeToken(token string) error {
 	return s.repo.IncrementTokenVersion(user.ID)
 }
 
+func passwordResetDeliveryEnabled() bool {
+	return os.Getenv("SMTP_ENABLED") == "true" || strings.TrimSpace(os.Getenv("SMTP_URL")) != ""
+}
+
 // GenerateResetToken creates a password reset token for a user.
 func (s *UserService) GenerateResetToken(email string) (string, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if !passwordResetDeliveryEnabled() {
+		return "", nil
+	}
 	user, err := s.repo.FindByEmail(email)
 	if err != nil {
 		return "", nil

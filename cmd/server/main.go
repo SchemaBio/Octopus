@@ -13,6 +13,7 @@ import (
 
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/database"
+	"github.com/SchemaBio/Octopus/internal/middleware"
 	"github.com/SchemaBio/Octopus/internal/router"
 	"github.com/SchemaBio/Octopus/internal/service"
 )
@@ -22,11 +23,16 @@ const (
 	serverIdleTimeout       = 120 * time.Second
 	serverShutdownTimeout   = 30 * time.Second
 	serverMaxHeaderBytes    = 64 << 10
+	serverRequestTimeout    = 60 * time.Second
 )
 
 func main() {
 	cfg := config.Load()
 
+	if err := config.RequireSecureRuntime(cfg.Server.Mode); err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: %v\n", err)
+		os.Exit(1)
+	}
 	if err := config.ValidateStartup(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: %v\n", err)
 		os.Exit(1)
@@ -120,7 +126,7 @@ func main() {
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,
-		Handler:           handler,
+		Handler:           middleware.TimeoutExceptLongRunning(handler, serverRequestTimeout),
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 		IdleTimeout:       serverIdleTimeout,
 		MaxHeaderBytes:    serverMaxHeaderBytes,

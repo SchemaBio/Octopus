@@ -225,9 +225,13 @@ func PreparePassword(rawPassword, email string, enabled bool) string {
 }
 
 // SetTokenCookies sets httpOnly cookies for access and refresh tokens
-func SetTokenCookies(c *gin.Context, cfg *config.JWTConfig, accessToken, refreshToken string) {
-	accessMaxAge := int(cfg.ExpireDuration.Seconds())
-	refreshMaxAge := int(cfg.RefreshDuration.Seconds())
+func SetTokenCookies(c *gin.Context, cfg *config.JWTConfig, accessToken, refreshToken string, remember bool) {
+	accessMaxAge := 0
+	refreshMaxAge := 0
+	if remember {
+		accessMaxAge = int(cfg.ExpireDuration.Seconds())
+		refreshMaxAge = int(cfg.RefreshDuration.Seconds())
+	}
 	csrfToken := randomToken()
 
 	accessCookie := &http.Cookie{

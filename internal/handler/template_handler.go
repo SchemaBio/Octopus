@@ -10,6 +10,7 @@ import (
 
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/pathsafe"
 	"github.com/SchemaBio/Octopus/internal/workflow"
 	"github.com/gin-gonic/gin"
 )
@@ -61,16 +62,9 @@ func isPathWithin(base, path string) bool {
 }
 
 func readTemplateFile(path string) ([]byte, error) {
-	resolved, err := filepath.EvalSymlinks(path)
+	resolved, err := pathsafe.ResolveExistingWithin(templateDir, path)
 	if err != nil {
-		return nil, err
-	}
-	resolvedDir, err := filepath.EvalSymlinks(templateDir)
-	if err != nil {
-		return nil, err
-	}
-	if !isPathWithin(resolvedDir, resolved) {
-		return nil, fmt.Errorf("template path escapes template directory")
+		return nil, fmt.Errorf("template path escapes template directory: %w", err)
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {

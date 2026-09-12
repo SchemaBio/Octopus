@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/pathsafe"
 )
 
 // Archiver provides read-only access to archived task results.
@@ -236,16 +237,9 @@ func (a *Archiver) readArchiveJSONFile(archiveDir, name string) ([]byte, error) 
 }
 
 func resolveArchiveRegularFile(archiveDir, filePath string) (string, error) {
-	baseEval, err := filepath.EvalSymlinks(archiveDir)
+	fileEval, err := pathsafe.ResolveExistingWithin(archiveDir, filePath)
 	if err != nil {
-		return "", err
-	}
-	fileEval, err := filepath.EvalSymlinks(filePath)
-	if err != nil {
-		return "", err
-	}
-	if !archivePathInsideBase(baseEval, fileEval) {
-		return "", fmt.Errorf("archive file escapes archive directory")
+		return "", fmt.Errorf("archive file escapes archive directory: %w", err)
 	}
 	info, err := os.Stat(fileEval)
 	if err != nil {

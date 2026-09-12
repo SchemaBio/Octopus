@@ -199,3 +199,27 @@ func (r *UploadFileRepository) CompletedStorageStats(q *model.UploadFileListQuer
 		Scan(&stats).Error
 	return stats.Total, stats.TotalBytes, err
 }
+
+// CountStalePending counts pending upload objects older than one hour using
+// the same tenant/user scope as PaginateFilesByQuery. It is an aggregate query
+// so management dashboards remain accurate beyond any page-size cap.
+func (r *UploadFileRepository) CountStalePending(q *model.UploadFileListQuery) (int64, error) {
+	db := r.db.Model(&model.UploadFile{}).
+		Joins("JOIN upload_jobs ON upload_jobs.id = upload_files.job_id").
+		Where("upload_files.status = ? AND upload_files.created_at < ?", model.FileStatusPending, time.Now().Add(-time.Hour))
+	if !q.IncludeAll {
+		switch {
+		case q.ExternalOrgID != "":
+			db = db.Where("upload_jobs.external_org_id = ?", q.ExternalOrgID)
+		case q.UserID != 0:
+			db = db.Where("upload_jobs.external_org_id = '' AND upload_jobs.user_id = ?", q.UserID)
+		default:
+			db = db.Where("1 = 0")
+		}
+	}
+	if q.OrgID != "" {
+		db = db.Where("upload_jobs.external_org_id = ?", q.OrgID)
+	}
+	var count int64
+	return count, db.Count(&count).Error
+}

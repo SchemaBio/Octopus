@@ -22,16 +22,20 @@ import (
 // roles therefore collapse to USER (least privilege / fail-closed) rather
 // than escalating: we never map an unrecognized string to SUPER_ADMIN. An
 // already-Octopus-shaped role ("SUPER_ADMIN"/"USER") passes through unchanged.
-func mapExternalRole(role string) string {
-	switch strings.ToUpper(strings.TrimSpace(role)) {
-	case "PLATFORM_ADMIN", "PLATFORMADMIN":
-		return string(model.SystemRoleSuperAdmin)
+const squidBreakGlassHeader = "X-Squid-Break-Glass"
+
+func mapExternalRole(role, breakGlass string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(role))
+	elevated := strings.EqualFold(strings.TrimSpace(breakGlass), "1") || strings.EqualFold(strings.TrimSpace(breakGlass), "true")
+	switch normalized {
+	case "PLATFORM_ADMIN", "PLATFORMADMIN", "SUPER_ADMIN", "SUPERADMIN":
+		if elevated {
+			return string(model.SystemRoleSuperAdmin)
+		}
+		return string(model.SystemRoleUser)
 	case "ORG_USER", "ORGUSER", "USER":
 		return string(model.SystemRoleUser)
 	default:
-		if role == string(model.SystemRoleSuperAdmin) || role == string(model.SystemRoleUser) {
-			return role
-		}
 		return string(model.SystemRoleUser)
 	}
 }
@@ -45,8 +49,27 @@ func applyExternalAuth(c *gin.Context, cfg *config.Config) bool {
 	if token == "" {
 		return false
 	}
+
+	if service.IdentityTokenLooksLike(token) {
+		claims, err := service.ParseIdentityToken(cfg.ExternalAuth.SharedSecret, token)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid external identity token"})
+			c.Abort()
+			return true
+		}
+		applyExternalIdentity(c, claims.UserID, claims.Email, mapExternalRole(claims.Role, boolBreakGlass(claims.BreakGlass)), claims.OrgID, claims.StorageQuotaBytes, true)
+		return true
+	}
+
+	if cfg.Server.Mode == "release" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Signed external identity is required"})
+		c.Abort()
+		return true
+	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.ExternalAuth.SharedSecret)) != 1 {
-		return false
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid external auth credentials"})
+		c.Abort()
+		return true
 	}
 
 	userID, err := strconv.ParseUint(strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.UserIDHeader)), 10, 64)
@@ -57,27 +80,43 @@ func applyExternalAuth(c *gin.Context, cfg *config.Config) bool {
 	}
 
 	email := strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.EmailHeader))
-	role := mapExternalRole(c.GetHeader(cfg.ExternalAuth.RoleHeader))
+	role := mapExternalRole(c.GetHeader(cfg.ExternalAuth.RoleHeader), c.GetHeader(squidBreakGlassHeader))
 	orgID := strings.TrimSpace(c.GetHeader(cfg.ExternalAuth.OrgIDHeader))
+	var quotaBytes int64
+	hasQuota := false
 	storageQuota := strings.TrimSpace(c.GetHeader("X-Octopus-Storage-Quota-Bytes"))
 	if storageQuota != "" {
-		quotaBytes, err := strconv.ParseInt(storageQuota, 10, 64)
-		if err != nil || quotaBytes < 0 {
+		parsed, err := strconv.ParseInt(storageQuota, 10, 64)
+		if err != nil || parsed < 0 {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid external storage quota"})
 			c.Abort()
 			return true
 		}
-		c.Set("storage_quota_bytes", quotaBytes)
+		quotaBytes = parsed
+		hasQuota = true
 	}
+	applyExternalIdentity(c, uint(userID), email, role, orgID, quotaBytes, hasQuota)
+	return true
+}
 
-	c.Set("user_id", uint(userID))
+func boolBreakGlass(enabled bool) string {
+	if enabled {
+		return "1"
+	}
+	return ""
+}
+
+func applyExternalIdentity(c *gin.Context, userID uint, email, role, orgID string, quotaBytes int64, hasQuota bool) {
+	c.Set("user_id", userID)
 	c.Set("email", email)
 	c.Set("role", role)
 	if orgID != "" {
 		c.Set("org_id", orgID)
 	}
+	if hasQuota {
+		c.Set("storage_quota_bytes", quotaBytes)
+	}
 	c.Set("external_auth", true)
-	return true
 }
 
 func bearerToken(header string) string {

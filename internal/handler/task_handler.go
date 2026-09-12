@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,22 +37,9 @@ func NewTaskHandler(cfg *config.Config) *TaskHandler {
 // CVMStateEvent receives lifecycle callbacks from the trusted Squid control
 // plane. It intentionally does not use user JWT authentication.
 func (h *TaskHandler) CVMStateEvent(c *gin.Context) {
-	if h.cfg == nil || !h.cfg.ExternalAuth.Enabled || h.cfg.ExternalAuth.SharedSecret == "" {
-		ErrorUnauthorized(c, "CVM callback authentication is disabled")
+	if _, ok := authenticateMachineCallback(c, h.cfg, 64<<10); !ok {
 		return
 	}
-	authorization := strings.TrimSpace(c.GetHeader("Authorization"))
-	parts := strings.SplitN(authorization, " ", 2)
-	token := ""
-	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
-		token = strings.TrimSpace(parts[1])
-	}
-	if subtle.ConstantTimeCompare([]byte(token), []byte(h.cfg.ExternalAuth.SharedSecret)) != 1 {
-		ErrorUnauthorized(c, "Invalid CVM callback credentials")
-		return
-	}
-
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 	var event model.CVMStateEvent
 	if err := c.ShouldBindJSON(&event); err != nil {
 		ErrorBadRequest(c, err.Error())
@@ -70,21 +56,9 @@ func (h *TaskHandler) CVMStateEvent(c *gin.Context) {
 // execution specification (including short-lived object-store URLs) for the
 // same task attempt and never exposes storage keys to browser clients.
 func (h *TaskHandler) CVMInputRefresh(c *gin.Context) {
-	if h.cfg == nil || !h.cfg.ExternalAuth.Enabled || h.cfg.ExternalAuth.SharedSecret == "" {
-		ErrorUnauthorized(c, "CVM callback authentication is disabled")
+	if _, ok := authenticateMachineCallback(c, h.cfg, 64<<10); !ok {
 		return
 	}
-	authorization := strings.TrimSpace(c.GetHeader("Authorization"))
-	parts := strings.SplitN(authorization, " ", 2)
-	token := ""
-	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
-		token = strings.TrimSpace(parts[1])
-	}
-	if subtle.ConstantTimeCompare([]byte(token), []byte(h.cfg.ExternalAuth.SharedSecret)) != 1 {
-		ErrorUnauthorized(c, "Invalid CVM callback credentials")
-		return
-	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 	var request model.CVMInputRefreshRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		ErrorBadRequest(c, err.Error())

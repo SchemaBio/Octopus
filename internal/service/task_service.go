@@ -20,6 +20,7 @@ import (
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/pathsafe"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/SchemaBio/Octopus/internal/sepiida"
 	"github.com/SchemaBio/Octopus/internal/workflow"
@@ -244,6 +245,73 @@ func (s *TaskService) syncRunningTaskStatuses() {
 	}
 }
 
+// applySepiidaWorkflowStatus copies MiniWDL/Sepiida status onto an Octopus
+// task. CVM executions do not take a business terminal state from Sepiida
+// failed/cancelled reports: those can be replayed with a stolen task token.
+// Local executors still treat Sepiida as authoritative.
+func applySepiidaWorkflowStatus(task *model.Task, status model.SepiidaStatus) (changed bool, completedNow bool) {
+	if task == nil {
+		return false, false
+	}
+	switch status {
+	case model.SepiidaStatusRunning:
+		phaseChanged := task.ExecutionPhase != "running"
+		if task.Status != model.TaskStatusRunning || phaseChanged || task.StartedAt == nil {
+			task.Status = model.TaskStatusRunning
+			task.ExecutionPhase = "running"
+			if phaseChanged || task.StartedAt == nil {
+				now := time.Now().UTC()
+				task.PhaseUpdatedAt = &now
+				if task.StartedAt == nil {
+					task.StartedAt = &now
+				}
+			}
+			return true, false
+		}
+	case model.SepiidaStatusSuccess:
+		if task.Status != model.TaskStatusCompleted {
+			task.Status = model.TaskStatusCompleted
+			task.Progress = 100
+			task.Error = ""
+			now := time.Now()
+			task.FinishedAt = &now
+			return true, true
+		}
+	case model.SepiidaStatusFailed:
+		if task.Executor == model.ExecutorCVM {
+			const msg = "Sepiida reported workflow failure; waiting for CVM lifecycle"
+			if task.Error != msg {
+				task.Error = msg
+				return true, false
+			}
+			return false, false
+		}
+		if task.Status != model.TaskStatusFailed {
+			task.Status = model.TaskStatusFailed
+			task.Error = "Workflow failed (reported by Sepiida)"
+			now := time.Now()
+			task.FinishedAt = &now
+			return true, false
+		}
+	case model.SepiidaStatusCancelled:
+		if task.Executor == model.ExecutorCVM {
+			const msg = "Sepiida reported workflow cancellation; waiting for CVM lifecycle"
+			if task.Error != msg {
+				task.Error = msg
+				return true, false
+			}
+			return false, false
+		}
+		if task.Status != model.TaskStatusCancelled {
+			task.Status = model.TaskStatusCancelled
+			now := time.Now()
+			task.FinishedAt = &now
+			return true, false
+		}
+	}
+	return false, false
+}
+
 func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	if s.sepiida == nil || task.UUID == "" {
 		return
@@ -260,7 +328,6 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 		return
 	}
 
-	completedNow := false
 	previousStatus := task.Status
 	archiveMetadata := workflow.NormalizedArchiveMetadata()
 	if task.Executor == model.ExecutorCVM && workflow.Status == model.SepiidaStatusSuccess {
@@ -294,60 +361,7 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	}
 
 	s.mu.Lock()
-	changed := false
-	switch workflow.Status {
-	case model.SepiidaStatusRunning:
-		phaseChanged := task.ExecutionPhase != "running"
-		if task.Status != model.TaskStatusRunning || phaseChanged || task.StartedAt == nil {
-			task.Status = model.TaskStatusRunning
-			task.ExecutionPhase = "running"
-			if phaseChanged || task.StartedAt == nil {
-				now := time.Now().UTC()
-				task.PhaseUpdatedAt = &now
-				if task.StartedAt == nil {
-					task.StartedAt = &now
-				}
-			}
-			changed = true
-		}
-	case model.SepiidaStatusSuccess:
-		if task.Status != model.TaskStatusCompleted {
-			task.Status = model.TaskStatusCompleted
-			task.Progress = 100
-			task.Error = ""
-			now := time.Now()
-			task.FinishedAt = &now
-			changed = true
-			completedNow = true
-		}
-	case model.SepiidaStatusFailed:
-		if task.Status != model.TaskStatusFailed {
-			task.Status = model.TaskStatusFailed
-			task.Error = "Workflow failed (reported by Sepiida)"
-			now := time.Now()
-			task.FinishedAt = &now
-			changed = true
-		}
-		if task.Executor == model.ExecutorCVM && task.ExecutionPhase != "terminal" && task.ExecutionPhase != "terminating" {
-			task.ExecutionPhase = "terminating"
-			now := time.Now().UTC()
-			task.PhaseUpdatedAt = &now
-			changed = true
-		}
-	case model.SepiidaStatusCancelled:
-		if task.Status != model.TaskStatusCancelled {
-			task.Status = model.TaskStatusCancelled
-			now := time.Now()
-			task.FinishedAt = &now
-			changed = true
-		}
-		if task.Executor == model.ExecutorCVM && task.ExecutionPhase != "terminal" && task.ExecutionPhase != "terminating" {
-			task.ExecutionPhase = "terminating"
-			now := time.Now().UTC()
-			task.PhaseUpdatedAt = &now
-			changed = true
-		}
-	}
+	changed, completedNow := applySepiidaWorkflowStatus(task, workflow.Status)
 
 	if changed {
 		task.UpdatedAt = time.Now()
@@ -480,15 +494,8 @@ func ensurePathInsideBase(base, path string) error {
 }
 
 func resolveRegularFileInsideBase(base, path string) (string, error) {
-	baseEval, err := filepath.EvalSymlinks(base)
+	pathEval, err := pathsafe.ResolveExistingWithin(base, path)
 	if err != nil {
-		return "", err
-	}
-	pathEval, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", err
-	}
-	if err := ensurePathInsideBase(baseEval, pathEval); err != nil {
 		return "", err
 	}
 	info, err := os.Stat(pathEval)
@@ -885,47 +892,23 @@ func (s *TaskService) DiscardDraftTask(task *model.Task) {
 // StartTask starts a queued, waiting_for_data, or failed task.
 // Before launching, it verifies that all input data files are accessible.
 func (s *TaskService) StartTask(ctx context.Context, id string, actor model.OverlayActor) (*model.Task, error) {
-	task, err := s.repo.FindByUUID(id)
+	peek, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
 	}
 
-	if task.Executor == model.ExecutorCVM {
+	if peek.Executor == model.ExecutorCVM {
 		return s.enqueueCVM(ctx, id, actor)
 	}
 
-	if task.Status != model.TaskStatusQueued &&
-		task.Status != model.TaskStatusFailed &&
-		task.Status != model.TaskStatusWaitingData {
-		return nil, fmt.Errorf("task cannot be started from status: %s", task.Status)
+	task, previousStatus, err := s.claimLocalStart(ctx, id)
+	if err != nil {
+		return nil, err
 	}
 
-	if task.Status == model.TaskStatusWaitingData {
-		ready, reason := s.checkDataReady(task)
-		if !ready {
-			return nil, fmt.Errorf("data not ready: %s", reason)
-		}
-	}
-
-	if task.Executor != model.ExecutorCVM {
-		if err := s.stageDataFiles(task); err != nil {
-			return nil, fmt.Errorf("failed to stage data files: %w", err)
-		}
-	}
-
-	previousStatus := task.Status
-	if task.Executor == model.ExecutorCVM {
-		if err := s.prepareCVMExecutionAttempt(task, false); err != nil {
-			return nil, err
-		}
-	} else if task.ExecutionAttemptID == "" || previousStatus == model.TaskStatusFailed || previousStatus == model.TaskStatusCancelled {
-		// Local/Slurm/LSF tasks also need a stable attempt identity so a
-		// re-import of the same attempt cannot double-count a review event.
-		task.ExecutionAttemptID = uuid.New().String()
-		task.UpdatedAt = time.Now()
-		if err := s.repo.Update(task); err != nil {
-			return nil, fmt.Errorf("persist execution attempt: %w", err)
-		}
+	if err := s.stageDataFiles(task); err != nil {
+		s.releaseLocalStart(task)
+		return nil, fmt.Errorf("failed to stage data files: %w", err)
 	}
 	var dispatch *model.CVMDispatchResponse
 	var cvmRequest model.CVMDispatchRequest
@@ -941,6 +924,8 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 		if task.Executor == model.ExecutorCVM {
 			s.markCVMStartFailedWithError(task, err.Error())
 			s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
+		} else {
+			s.releaseLocalStart(task)
 		}
 		return nil, err
 	}
@@ -999,6 +984,8 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 		task.StartedAt = nil
 	} else {
 		task.Status = model.TaskStatusRunning
+		task.ExecutionPhase = "running"
+		task.PhaseUpdatedAt = &now
 		task.StartedAt = &now
 	}
 	task.UpdatedAt = now
@@ -1014,6 +1001,8 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 		if dispatch != nil {
 			_ = s.overlay.CancelCVMTask(context.Background(), model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: "Octopus task update failed"})
 			s.markCVMStartFailed(task)
+		} else {
+			s.releaseLocalStart(task)
 		}
 		s.emitTaskEvent(model.OverlayTaskEventStartFailed, actor, task, previousStatus, err.Error())
 		return nil, err
@@ -2682,6 +2671,9 @@ func (s *TaskService) RefreshCVMExecution(ctx context.Context, taskUUID, attempt
 func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	if strings.TrimSpace(event.TaskUUID) == "" || strings.TrimSpace(event.AttemptID) == "" || strings.TrimSpace(event.InstanceState) == "" {
 		return fmt.Errorf("task_uuid, attempt_id and instance_state are required")
+	}
+	if event.Version < 1 {
+		return fmt.Errorf("CVM event version is required")
 	}
 	task, err := s.repo.FindByUUID(event.TaskUUID)
 	if err != nil {

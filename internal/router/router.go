@@ -68,6 +68,7 @@ func New(cfg *config.Config) *gin.Engine {
 		{
 			authProtected.GET("/me", authHandler.Me)
 			authProtected.PUT("/me", authHandler.UpdateMe)
+			authProtected.POST("/password", authHandler.ChangePassword)
 			authProtected.DELETE("/me", authHandler.DeleteMe)
 		}
 
@@ -111,6 +112,17 @@ func New(cfg *config.Config) *gin.Engine {
 		{
 			workflowConfig.GET("", workflowConfigHandler.List)
 			workflowConfig.PUT("/:template/:genome", workflowConfigHandler.Update)
+		}
+
+		// Bounded cross-tenant aggregates for Cuttlefish. The handler enforces
+		// the 100-tenant request limit and is reachable through Squid's explicit
+		// Octopus proxy allowlist.
+		tenantStatsHandler := handler.NewAdminTenantStatsHandler()
+		tenantStats := v1.Group("/admin/tenant-stats")
+		tenantStats.Use(middleware.JWTAuth(cfg))
+		tenantStats.Use(middleware.RequireAdmin())
+		{
+			tenantStats.GET("", tenantStatsHandler.GetTenantStats)
 		}
 
 		// ========== Sepiida integration ==========

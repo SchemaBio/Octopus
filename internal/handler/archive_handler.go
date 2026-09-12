@@ -61,10 +61,9 @@ func (h *ArchiveHandler) ArchiveStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"uuid":        uuid,
-		"archived":    true,
-		"archive_dir": archiveDir,
-		"files":       files,
+		"uuid":     uuid,
+		"archived": true,
+		"files":    files,
 	})
 }
 

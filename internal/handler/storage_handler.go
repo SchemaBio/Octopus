@@ -1,9 +1,7 @@
 package handler
 
 import (
-	"crypto/subtle"
 	"net/http"
-	"strings"
 
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/service"
@@ -20,22 +18,9 @@ func NewStorageHandler(cfg *config.Config) *StorageHandler {
 }
 
 func (h *StorageHandler) InitializeTenant(c *gin.Context) {
-	if h.cfg == nil || !h.cfg.ExternalAuth.Enabled || h.cfg.ExternalAuth.SharedSecret == "" {
-		ErrorUnauthorized(c, "Tenant storage authentication is disabled")
+	if _, ok := authenticateMachineCallback(c, h.cfg, 16<<10); !ok {
 		return
 	}
-	authorization := strings.TrimSpace(c.GetHeader("Authorization"))
-	parts := strings.SplitN(authorization, " ", 2)
-	token := ""
-	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
-		token = strings.TrimSpace(parts[1])
-	}
-	if subtle.ConstantTimeCompare([]byte(token), []byte(h.cfg.ExternalAuth.SharedSecret)) != 1 {
-		ErrorUnauthorized(c, "Invalid tenant storage credentials")
-		return
-	}
-
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
 	var request struct {
 		OrgID string `json:"org_id" binding:"required"`
 	}

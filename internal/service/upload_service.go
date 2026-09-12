@@ -16,6 +16,7 @@ import (
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/pathsafe"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -1322,7 +1323,19 @@ func (s *UploadService) ListFiles(ctx context.Context, query *model.UploadFileLi
 // GetFileStats returns the total count and total bytes of completed files
 // under the same scope (for the /upload/files/stats aggregate endpoint).
 func (s *UploadService) GetFileStats(ctx context.Context, query *model.UploadFileListQuery) (int64, int64, error) {
-	return s.fileRepo.CompletedStorageStats(query)
+	total, bytes, _, err := s.GetFileStatsWithStale(ctx, query)
+	return total, bytes, err
+}
+
+// GetFileStatsWithStale returns completed storage totals plus a database-side
+// count of pending files older than one hour for management risk signals.
+func (s *UploadService) GetFileStatsWithStale(ctx context.Context, query *model.UploadFileListQuery) (int64, int64, int64, error) {
+	total, bytes, err := s.fileRepo.CompletedStorageStats(query)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	stale, err := s.fileRepo.CountStalePending(query)
+	return total, bytes, stale, err
 }
 
 func (s *UploadService) GetLocalFilePath(ctx context.Context, actor model.OverlayActor, fileUUID string) (string, error) {
@@ -1345,25 +1358,9 @@ func safeLocalUploadPath(localDir, storageKey string) (string, error) {
 	if strings.TrimSpace(storageKey) == "" {
 		return "", fmt.Errorf("upload file path is empty")
 	}
-	base, err := filepath.Abs(localDir)
+	resolvedPath, err := pathsafe.ResolveExistingWithin(localDir, storageKey)
 	if err != nil {
 		return "", err
-	}
-	path, err := filepath.Abs(storageKey)
-	if err != nil {
-		return "", err
-	}
-	resolvedBase, err := filepath.EvalSymlinks(base)
-	if err == nil {
-		base = resolvedBase
-	}
-	resolvedPath, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", err
-	}
-	rel, err := filepath.Rel(base, resolvedPath)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
-		return "", fmt.Errorf("upload file path escapes storage directory")
 	}
 	info, err := os.Stat(resolvedPath)
 	if err != nil {

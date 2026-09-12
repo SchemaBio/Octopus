@@ -14,6 +14,56 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+func (s *TaskService) claimLocalStart(ctx context.Context, id string) (*model.Task, model.TaskStatus, error) {
+	var task model.Task
+	var previous model.TaskStatus
+	err := database.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ?", id).First(&task).Error; err != nil {
+			return fmt.Errorf("task not found: %s", id)
+		}
+		if task.Executor == model.ExecutorCVM {
+			return fmt.Errorf("task cannot be started from status: %s", task.Status)
+		}
+		if task.ExecutionPhase == "starting" || task.ExecutionPhase == "running" {
+			return fmt.Errorf("task cannot be started from status: %s", task.Status)
+		}
+		if task.Status != model.TaskStatusQueued &&
+			task.Status != model.TaskStatusFailed &&
+			task.Status != model.TaskStatusWaitingData {
+			return fmt.Errorf("task cannot be started from status: %s", task.Status)
+		}
+		if task.Status == model.TaskStatusWaitingData {
+			if ready, reason := s.checkDataReady(&task); !ready {
+				return fmt.Errorf("data not ready: %s", reason)
+			}
+		}
+		previous = task.Status
+		if task.ExecutionAttemptID == "" || previous == model.TaskStatusFailed || previous == model.TaskStatusCancelled {
+			task.ExecutionAttemptID = uuid.New().String()
+		}
+		now := time.Now()
+		task.ExecutionPhase = "starting"
+		task.PhaseUpdatedAt = &now
+		task.UpdatedAt = now
+		return tx.Save(&task).Error
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return &task, previous, nil
+}
+
+func (s *TaskService) releaseLocalStart(task *model.Task) {
+	if task == nil {
+		return
+	}
+	now := time.Now()
+	task.ExecutionPhase = "idle"
+	task.PhaseUpdatedAt = &now
+	task.UpdatedAt = now
+	_ = s.repo.Update(task)
+}
+
 func (s *TaskService) enqueueCVM(ctx context.Context, id string, actor model.OverlayActor) (*model.Task, error) {
 	var task model.Task
 	err := database.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {

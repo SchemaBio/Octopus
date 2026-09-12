@@ -78,6 +78,9 @@ func ValidateStartup(cfg *Config) error {
 			}
 		}
 	}
+	if err := validateDatabaseTLS(cfg.Database.DSN); err != nil {
+		return err
+	}
 	if cfg.Storage.RetentionDays < 0 {
 		return fmt.Errorf("DATA_RETENTION_DAYS must be zero or greater")
 	}
@@ -113,6 +116,17 @@ func ValidateStartup(cfg *Config) error {
 		}
 		if cfg.Overlay.FailOpen {
 			return fmt.Errorf("OVERLAY_FAIL_OPEN must be false when DEFAULT_EXECUTOR=cvm_spot")
+		}
+		if strings.TrimSpace(cfg.ExternalAuth.CallbackSecret) == "" {
+			return fmt.Errorf("CVM_CALLBACK_SECRET must be set when DEFAULT_EXECUTOR=cvm_spot")
+		}
+		if cfg.ExternalAuth.CallbackSecret == cfg.ExternalAuth.SharedSecret {
+			return fmt.Errorf("CVM_CALLBACK_SECRET must be distinct from EXTERNAL_AUTH_SHARED_SECRET")
+		}
+		if cfg.Server.Mode == "release" {
+			if err := validateSharedSecret("CVM_CALLBACK_SECRET", cfg.ExternalAuth.CallbackSecret); err != nil {
+				return err
+			}
 		}
 	}
 

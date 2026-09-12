@@ -45,6 +45,12 @@ type User struct {
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
+	Remember bool   `json:"remember"`
+}
+
+type ChangePasswordRequest struct {
+	OldPassword string `json:"old_password" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required,min=8"`
 }
 
 // UserResponse is the user object returned in API responses
@@ -75,7 +81,7 @@ type LoginResponse struct {
 	Organizations []OrganizationInfo `json:"organizations"`
 	CurrentOrg    *OrganizationInfo  `json:"current_org,omitempty"`
 	AccessToken   string             `json:"access_token"`
-	RefreshToken  string             `json:"refresh_token"`
+	RefreshToken  string             `json:"-"`
 	ExpiresAt     string             `json:"expires_at"`
 }
 
@@ -94,7 +100,7 @@ type RefreshRequest struct {
 // RefreshResponse represents refresh token response
 type RefreshResponse struct {
 	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	RefreshToken string `json:"-"`
 	ExpiresAt    string `json:"expires_at"`
 }
 

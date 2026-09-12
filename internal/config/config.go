@@ -70,13 +70,14 @@ type JWTConfig struct {
 }
 
 type ExternalAuthConfig struct {
-	Enabled      bool
-	SharedSecret string
-	HeaderName   string
-	UserIDHeader string
-	EmailHeader  string
-	RoleHeader   string
-	OrgIDHeader  string
+	Enabled        bool
+	SharedSecret   string
+	CallbackSecret string
+	HeaderName     string
+	UserIDHeader   string
+	EmailHeader    string
+	RoleHeader     string
+	OrgIDHeader    string
 }
 
 type OverlayConfig struct {
@@ -104,7 +105,7 @@ type LLMConfig struct {
 type StorageConfig struct {
 	Provider      string // local or s3
 	LocalDir      string // local upload root directory
-	MaxSizeMB     int    // maximum upload file size in MB, 0 means unlimited
+	MaxSizeMB     int    // maximum upload file size in MB; default 20 GiB, 0 means unlimited
 	RetentionDays int    // 0 keeps data indefinitely; SaaS deployments use 7
 	PresignExpiry time.Duration
 	// CVM inputs may wait for spot capacity; keep their download URL valid for
@@ -207,13 +208,14 @@ func Load() *Config {
 			ClientPasswordHashEnabled: getEnv("CLIENT_PASSWORD_HASH_ENABLED", "false") == "true",
 		},
 		ExternalAuth: ExternalAuthConfig{
-			Enabled:      getEnv("EXTERNAL_AUTH_ENABLED", "false") == "true",
-			SharedSecret: getEnvOrFile("EXTERNAL_AUTH_SHARED_SECRET", ""),
-			HeaderName:   getEnv("EXTERNAL_AUTH_HEADER", "X-Octopus-External-Auth"),
-			UserIDHeader: getEnv("EXTERNAL_AUTH_USER_ID_HEADER", "X-Octopus-User-ID"),
-			EmailHeader:  getEnv("EXTERNAL_AUTH_EMAIL_HEADER", "X-Octopus-User-Email"),
-			RoleHeader:   getEnv("EXTERNAL_AUTH_ROLE_HEADER", "X-Octopus-User-Role"),
-			OrgIDHeader:  getEnv("EXTERNAL_AUTH_ORG_ID_HEADER", "X-Octopus-Org-ID"),
+			Enabled:        getEnv("EXTERNAL_AUTH_ENABLED", "false") == "true",
+			SharedSecret:   getEnvOrFile("EXTERNAL_AUTH_SHARED_SECRET", ""),
+			CallbackSecret: getEnvOrFile("CVM_CALLBACK_SECRET", ""),
+			HeaderName:     getEnv("EXTERNAL_AUTH_HEADER", "X-Octopus-External-Auth"),
+			UserIDHeader:   getEnv("EXTERNAL_AUTH_USER_ID_HEADER", "X-Octopus-User-ID"),
+			EmailHeader:    getEnv("EXTERNAL_AUTH_EMAIL_HEADER", "X-Octopus-User-Email"),
+			RoleHeader:     getEnv("EXTERNAL_AUTH_ROLE_HEADER", "X-Octopus-User-Role"),
+			OrgIDHeader:    getEnv("EXTERNAL_AUTH_ORG_ID_HEADER", "X-Octopus-Org-ID"),
 		},
 		Overlay: OverlayConfig{
 			Enabled:           getEnv("OVERLAY_ENABLED", "false") == "true",
@@ -238,7 +240,7 @@ func Load() *Config {
 		Storage: StorageConfig{
 			Provider:              normalizeStorageProvider(storageProvider),
 			LocalDir:              getEnv("STORAGE_LOCAL_DIR", "/mnt/data/uploads"),
-			MaxSizeMB:             parseIntEnv("UPLOAD_MAX_SIZE_MB", 0),
+			MaxSizeMB:             parseIntEnv("UPLOAD_MAX_SIZE_MB", 20480),
 			RetentionDays:         parseIntEnv("DATA_RETENTION_DAYS", 0),
 			PresignExpiry:         parseDuration(getEnv("STORAGE_PRESIGN_EXPIRE", "15m")),
 			CVMInputPresignExpiry: parseDuration(getEnv("CVM_INPUT_PRESIGN_EXPIRE", "1h")),

@@ -8,6 +8,7 @@ import (
 
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -43,9 +44,7 @@ func TestJWTAuthAcceptsTrustedExternalAuthHeaders(t *testing.T) {
 		if !ok || !hasOrg || !hasStorageQuota {
 			t.Fatalf("expected external user, organization, and storage quota in context")
 		}
-		// Squid forwards the platform-admin overlay role; Octopus must map it
-		// to its own SUPER_ADMIN (not pass "PLATFORM_ADMIN" through verbatim).
-		if userID != 42 || email != "user@example.com" || role != string(model.SystemRoleSuperAdmin) || orgID != "org-1" {
+		if userID != 42 || email != "user@example.com" || role != string(model.SystemRoleUser) || orgID != "org-1" {
 			t.Fatalf("unexpected context values: userID=%d email=%q role=%q orgID=%q", userID, email, role, orgID)
 		}
 		if storageQuotaBytes != 50*1024*1024*1024 {
@@ -81,10 +80,10 @@ func TestJWTAuthMapsOverlayRoles(t *testing.T) {
 		want   string
 	}{
 		{"ORG_USER", string(model.SystemRoleUser)},
-		{"org_user", string(model.SystemRoleUser)},          // case-insensitive
-		{"org_admin", string(model.SystemRoleUser)},         // unknown -> USER
-		{"", string(model.SystemRoleUser)},                  // empty -> USER
-		{"SUPER_ADMIN", string(model.SystemRoleSuperAdmin)}, // already Octopus-shaped
+		{"org_user", string(model.SystemRoleUser)},    // case-insensitive
+		{"org_admin", string(model.SystemRoleUser)},   // unknown -> USER
+		{"", string(model.SystemRoleUser)},            // empty -> USER
+		{"SUPER_ADMIN", string(model.SystemRoleUser)}, // admin names require break-glass
 	}
 	for _, tc := range cases {
 		t.Run(tc.header, func(t *testing.T) {
@@ -115,6 +114,60 @@ func TestJWTAuthMapsOverlayRoles(t *testing.T) {
 				t.Fatalf("expected trusted external auth to pass, got %d", resp.Code)
 			}
 		})
+	}
+}
+
+func TestJWTAuthAcceptsSignedIdentityToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := testExternalAuthConfig()
+	token, err := service.SignIdentityToken(cfg.ExternalAuth.SharedSecret, service.IdentityClaims{
+		UserID: 42, Email: "user@example.com", Role: "ORG_USER", OrgID: "org-1", StorageQuotaBytes: 50,
+	}, time.Now())
+	if err != nil {
+		t.Fatalf("SignIdentityToken: %v", err)
+	}
+	router := gin.New()
+	router.Use(JWTAuth(cfg))
+	router.GET("/protected", func(c *gin.Context) {
+		userID, email, role, ok := GetCurrentUser(c)
+		orgID, hasOrg := GetCurrentOrg(c)
+		if !ok || !hasOrg || userID != 42 || email != "user@example.com" || role != string(model.SystemRoleUser) || orgID != "org-1" {
+			t.Fatalf("unexpected identity: %d %s %s %s", userID, email, role, orgID)
+		}
+		c.Status(http.StatusOK)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("X-Octopus-External-Auth", "Bearer "+token)
+	req.Header.Set("X-Octopus-User-ID", "999")
+	req.Header.Set("X-Octopus-User-Role", "PLATFORM_ADMIN")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected signed identity to pass, got %d", resp.Code)
+	}
+}
+
+func TestJWTAuthBreakGlassMapsPlatformAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(JWTAuth(testExternalAuthConfig()))
+	router.GET("/protected", func(c *gin.Context) {
+		_, _, role, ok := GetCurrentUser(c)
+		if !ok || role != string(model.SystemRoleSuperAdmin) {
+			t.Fatalf("expected break-glass platform admin to map to SUPER_ADMIN, got %q ok=%v", role, ok)
+		}
+		c.Status(http.StatusOK)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("X-Octopus-External-Auth", "Bearer shared-overlay-secret")
+	req.Header.Set("X-Octopus-User-ID", "42")
+	req.Header.Set("X-Octopus-User-Email", "user@example.com")
+	req.Header.Set("X-Octopus-User-Role", "PLATFORM_ADMIN")
+	req.Header.Set("X-Squid-Break-Glass", "1")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected break-glass admin mapping to pass, got %d", resp.Code)
 	}
 }
 

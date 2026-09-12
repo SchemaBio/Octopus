@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/SchemaBio/Octopus/internal/pathsafe"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 )
@@ -148,16 +149,9 @@ func parquetRowsToMaps(rawRows []interface{}) ([]map[string]interface{}, error) 
 }
 
 func resolveParquetRegularFile(baseDir, filePath string) (string, error) {
-	baseEval, err := filepath.EvalSymlinks(baseDir)
+	fileEval, err := pathsafe.ResolveExistingWithin(baseDir, filePath)
 	if err != nil {
-		return "", err
-	}
-	fileEval, err := filepath.EvalSymlinks(filePath)
-	if err != nil {
-		return "", err
-	}
-	if !parquetPathInsideBase(baseEval, fileEval) {
-		return "", fmt.Errorf("parquet file escapes output directory")
+		return "", fmt.Errorf("parquet file escapes output directory: %w", err)
 	}
 	info, err := os.Stat(fileEval)
 	if err != nil {

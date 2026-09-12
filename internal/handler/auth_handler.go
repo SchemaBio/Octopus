@@ -39,12 +39,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	service.SetTokenCookies(c, &h.cfg.JWT, resp.AccessToken, resp.RefreshToken)
+	service.SetTokenCookies(c, &h.cfg.JWT, resp.AccessToken, resp.RefreshToken, req.Remember)
 	Success(c, resp)
 }
 
 // Register handles user registration
 func (h *AuthHandler) Register(c *gin.Context) {
+	if h.cfg != nil && h.cfg.ExternalAuth.Enabled {
+		ErrorNotFound(c, "registration is not available")
+		return
+	}
 	var req model.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		ErrorBadRequest(c, err.Error())
@@ -54,14 +58,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	resp, err := h.userService.Register(&req)
 	if err != nil {
 		if err.Error() == "email already exists" {
-			ErrorConflict(c, err.Error())
-		} else {
-			ErrorInternal(c, SanitizeAuthError(err))
+			SuccessCreated(c, gin.H{"message": "Registration submitted."})
+			return
 		}
+		ErrorInternal(c, SanitizeAuthError(err))
 		return
 	}
 
-	service.SetTokenCookies(c, &h.cfg.JWT, resp.AccessToken, resp.RefreshToken)
+	service.SetTokenCookies(c, &h.cfg.JWT, resp.AccessToken, resp.RefreshToken, true)
 	SuccessCreated(c, resp)
 }
 
@@ -87,8 +91,37 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
-	service.SetTokenCookies(c, &h.cfg.JWT, resp.AccessToken, resp.RefreshToken)
+	service.SetTokenCookies(c, &h.cfg.JWT, resp.AccessToken, resp.RefreshToken, true)
 	Success(c, resp)
+}
+
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	userID, _, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	var req model.ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	if err := h.userService.ChangePassword(userID, req.OldPassword, req.NewPassword); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	user, err := h.userService.GetUserByID(userID)
+	if err != nil {
+		ErrorInternal(c, "failed to refresh session")
+		return
+	}
+	accessToken, refreshToken, expiresAt, err := service.NewJWTService(h.cfg).GenerateToken(user)
+	if err != nil {
+		ErrorInternal(c, "failed to refresh session")
+		return
+	}
+	service.SetTokenCookies(c, &h.cfg.JWT, accessToken, refreshToken, true)
+	Success(c, gin.H{"expires_at": expiresAt})
 }
 
 // Me returns the current authenticated user

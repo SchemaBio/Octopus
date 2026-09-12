@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/pathsafe"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/gin-gonic/gin"
 )
@@ -148,19 +149,9 @@ func isPathInsideBase(base, path string) bool {
 }
 
 func resolveRegularFileInsideBase(base, filePath string) (string, error) {
-	baseEval, err := filepath.EvalSymlinks(base)
+	fileEval, err := pathsafe.ResolveExistingWithin(base, filePath)
 	if err != nil {
-		baseEval, err = filepath.Abs(base)
-		if err != nil {
-			return "", err
-		}
-	}
-	fileEval, err := filepath.EvalSymlinks(filePath)
-	if err != nil {
-		return "", err
-	}
-	if !isPathInsideBase(baseEval, fileEval) {
-		return "", fmt.Errorf("file escapes task output directory")
+		return "", fmt.Errorf("file escapes task output directory: %w", err)
 	}
 	info, err := os.Stat(fileEval)
 	if err != nil {
