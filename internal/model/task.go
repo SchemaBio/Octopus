@@ -41,12 +41,18 @@ const (
 
 // Task represents a workflow task
 type Task struct {
-	Version                uint64     `json:"-" gorm:"default:0"`
-	LastCVMEventVersion    uint64     `json:"-" gorm:"default:0"`
-	ExecutionPhase         string     `json:"execution_phase,omitempty" gorm:"size:32"`
-	ExecutionReasonCode    string     `json:"execution_reason_code,omitempty" gorm:"size:120"`
-	PhaseUpdatedAt         *time.Time `json:"phase_updated_at,omitempty"`
-	SepiidaFirstReportedAt *time.Time `json:"-" gorm:"type:timestamptz"`
+	Version                      uint64     `json:"-" gorm:"default:0"`
+	LastCVMEventVersion          uint64     `json:"-" gorm:"default:0"`
+	ExecutionPhase               string     `json:"execution_phase,omitempty" gorm:"size:32"`
+	ExecutionReasonCode          string     `json:"execution_reason_code,omitempty" gorm:"size:120"`
+	PhaseUpdatedAt               *time.Time `json:"phase_updated_at,omitempty"`
+	SepiidaFirstReportedAt       *time.Time `json:"-" gorm:"type:timestamptz"`
+	SepiidaFirstReportExpectedAt *time.Time `json:"-" gorm:"type:timestamptz"`
+	BootstrapPhase               string     `json:"bootstrap_phase,omitempty" gorm:"size:32"`
+	BootstrapLastHeartbeatAt     *time.Time `json:"bootstrap_last_heartbeat_at,omitempty" gorm:"type:timestamptz"`
+	DiagnosticHoldUntil          *time.Time `json:"diagnostic_hold_until,omitempty" gorm:"type:timestamptz"`
+	DiagnosticSummary            string     `json:"diagnostic_summary,omitempty" gorm:"size:1000"`
+	DeleteRequestedAt            *time.Time `json:"-" gorm:"type:timestamptz"`
 
 	ID               string         `json:"id" gorm:"primaryKey"`
 	UUID             string         `json:"uuid" gorm:"uniqueIndex"` // Workflow UUID (standard format for Sepiida)
@@ -213,10 +219,14 @@ type TaskListQuery struct {
 
 // TaskResponse matches frontend AnalysisTask type
 type TaskResponse struct {
-	ExecutionPhase      string     `json:"execution_phase,omitempty"`
-	ExecutionReasonCode string     `json:"execution_reason_code,omitempty"`
-	AttemptID           string     `json:"attempt_id,omitempty"`
-	PhaseUpdatedAt      *time.Time `json:"phase_updated_at,omitempty"`
+	ExecutionPhase           string     `json:"execution_phase,omitempty"`
+	ExecutionReasonCode      string     `json:"execution_reason_code,omitempty"`
+	AttemptID                string     `json:"attempt_id,omitempty"`
+	PhaseUpdatedAt           *time.Time `json:"phase_updated_at,omitempty"`
+	BootstrapPhase           string     `json:"bootstrap_phase,omitempty"`
+	BootstrapLastHeartbeatAt *time.Time `json:"bootstrap_last_heartbeat_at,omitempty"`
+	DiagnosticHoldUntil      *time.Time `json:"diagnostic_hold_until,omitempty"`
+	DiagnosticSummary        string     `json:"diagnostic_summary,omitempty"`
 
 	ID                      string     `json:"id"`
 	SampleID                string     `json:"sampleId"`
@@ -237,10 +247,14 @@ type TaskResponse struct {
 
 // TaskDetailResponse matches frontend AnalysisTaskDetail type
 type TaskDetailResponse struct {
-	ExecutionPhase      string     `json:"execution_phase,omitempty"`
-	ExecutionReasonCode string     `json:"execution_reason_code,omitempty"`
-	AttemptID           string     `json:"attempt_id,omitempty"`
-	PhaseUpdatedAt      *time.Time `json:"phase_updated_at,omitempty"`
+	ExecutionPhase           string     `json:"execution_phase,omitempty"`
+	ExecutionReasonCode      string     `json:"execution_reason_code,omitempty"`
+	AttemptID                string     `json:"attempt_id,omitempty"`
+	PhaseUpdatedAt           *time.Time `json:"phase_updated_at,omitempty"`
+	BootstrapPhase           string     `json:"bootstrap_phase,omitempty"`
+	BootstrapLastHeartbeatAt *time.Time `json:"bootstrap_last_heartbeat_at,omitempty"`
+	DiagnosticHoldUntil      *time.Time `json:"diagnostic_hold_until,omitempty"`
+	DiagnosticSummary        string     `json:"diagnostic_summary,omitempty"`
 
 	ID                      string     `json:"id"`
 	Name                    string     `json:"name"`
@@ -270,28 +284,34 @@ type TaskListResponse struct {
 // Cuttlefish's audit queries previously fetched via direct SQL on the tasks
 // table (name, executor, vm_status, result_import_*, error, started/finished).
 type TaskAuditResponse struct {
-	ID                   string             `json:"id"`
-	Name                 string             `json:"name"`
-	SampleID             string             `json:"sampleId"`
-	InternalID           string             `json:"internalId"`
-	Pipeline             string             `json:"pipeline"`
-	PipelineVersion      string             `json:"pipelineVersion"`
-	Executor             ExecutorType       `json:"executor"`
-	Status               TaskStatus         `json:"status"`
-	Progress             int                `json:"progress"`
-	VMStatus             string             `json:"vm_status,omitempty"`
-	ExecutionAttemptID   string             `json:"execution_attempt_id,omitempty"`
-	ResultImportStatus   ResultImportStatus `json:"result_import_status,omitempty"`
-	ResultImportAttempts int                `json:"result_import_attempts,omitempty"`
-	Error                string             `json:"error,omitempty"`
-	CreatedAt            string             `json:"created_at"`
-	UpdatedAt            string             `json:"updated_at,omitempty"`
-	StartedAt            string             `json:"started_at,omitempty"`
-	FinishedAt           string             `json:"finished_at,omitempty"`
-	CompletedAt          string             `json:"completedAt,omitempty"` // alias of FinishedAt for compat
-	CreatedBy            string             `json:"createdBy"`
-	OrgID                string             `json:"org_id,omitempty"` // audit consumers need org
-	Remark               string             `json:"remark,omitempty"`
+	ID                       string             `json:"id"`
+	Name                     string             `json:"name"`
+	SampleID                 string             `json:"sampleId"`
+	InternalID               string             `json:"internalId"`
+	Pipeline                 string             `json:"pipeline"`
+	PipelineVersion          string             `json:"pipelineVersion"`
+	Executor                 ExecutorType       `json:"executor"`
+	Status                   TaskStatus         `json:"status"`
+	Progress                 int                `json:"progress"`
+	VMStatus                 string             `json:"vm_status,omitempty"`
+	ExecutionAttemptID       string             `json:"execution_attempt_id,omitempty"`
+	ExecutionPhase           string             `json:"execution_phase,omitempty"`
+	ExecutionReasonCode      string             `json:"execution_reason_code,omitempty"`
+	BootstrapPhase           string             `json:"bootstrap_phase,omitempty"`
+	BootstrapLastHeartbeatAt *time.Time         `json:"bootstrap_last_heartbeat_at,omitempty"`
+	DiagnosticHoldUntil      *time.Time         `json:"diagnostic_hold_until,omitempty"`
+	DiagnosticSummary        string             `json:"diagnostic_summary,omitempty"`
+	ResultImportStatus       ResultImportStatus `json:"result_import_status,omitempty"`
+	ResultImportAttempts     int                `json:"result_import_attempts,omitempty"`
+	Error                    string             `json:"error,omitempty"`
+	CreatedAt                string             `json:"created_at"`
+	UpdatedAt                string             `json:"updated_at,omitempty"`
+	StartedAt                string             `json:"started_at,omitempty"`
+	FinishedAt               string             `json:"finished_at,omitempty"`
+	CompletedAt              string             `json:"completedAt,omitempty"` // alias of FinishedAt for compat
+	CreatedBy                string             `json:"createdBy"`
+	OrgID                    string             `json:"org_id,omitempty"` // audit consumers need org
+	Remark                   string             `json:"remark,omitempty"`
 }
 
 // ToAuditResponse converts a Task to the enriched audit response shape.
@@ -299,25 +319,31 @@ type TaskAuditResponse struct {
 // tags on those fields only affect default marshalling, not field access).
 func (t *Task) ToAuditResponse() TaskAuditResponse {
 	resp := TaskAuditResponse{
-		ID:                   t.UUID,
-		Name:                 t.Name,
-		SampleID:             t.SampleID,
-		InternalID:           t.InternalID,
-		Pipeline:             t.Pipeline,
-		PipelineVersion:      t.PipelineVersion,
-		Executor:             t.Executor,
-		Status:               t.Status,
-		Progress:             t.Progress,
-		VMStatus:             t.VMStatus,
-		ExecutionAttemptID:   t.ExecutionAttemptID,
-		ResultImportStatus:   t.ResultImportStatus,
-		ResultImportAttempts: t.ResultImportAttempts,
-		Error:                t.Error,
-		CreatedAt:            t.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:            t.UpdatedAt.Format(time.RFC3339),
-		CreatedBy:            formatID(t.CreatedBy),
-		OrgID:                t.ExternalOrgID,
-		Remark:               t.Remark,
+		ID:                       t.UUID,
+		Name:                     t.Name,
+		SampleID:                 t.SampleID,
+		InternalID:               t.InternalID,
+		Pipeline:                 t.Pipeline,
+		PipelineVersion:          t.PipelineVersion,
+		Executor:                 t.Executor,
+		Status:                   t.Status,
+		Progress:                 t.Progress,
+		VMStatus:                 t.VMStatus,
+		ExecutionAttemptID:       t.ExecutionAttemptID,
+		ExecutionPhase:           t.ExecutionPhase,
+		ExecutionReasonCode:      t.ExecutionReasonCode,
+		BootstrapPhase:           t.BootstrapPhase,
+		BootstrapLastHeartbeatAt: t.BootstrapLastHeartbeatAt,
+		DiagnosticHoldUntil:      t.DiagnosticHoldUntil,
+		DiagnosticSummary:        t.DiagnosticSummary,
+		ResultImportStatus:       t.ResultImportStatus,
+		ResultImportAttempts:     t.ResultImportAttempts,
+		Error:                    t.Error,
+		CreatedAt:                t.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:                t.UpdatedAt.Format(time.RFC3339),
+		CreatedBy:                formatID(t.CreatedBy),
+		OrgID:                    t.ExternalOrgID,
+		Remark:                   t.Remark,
 	}
 	if t.StartedAt != nil {
 		resp.StartedAt = t.StartedAt.Format(time.RFC3339)
@@ -350,10 +376,14 @@ type TaskStatsResponse struct {
 
 // TaskProgressResponse is the response for task progress
 type TaskProgressResponse struct {
-	ExecutionPhase      string     `json:"execution_phase,omitempty"`
-	ExecutionReasonCode string     `json:"execution_reason_code,omitempty"`
-	AttemptID           string     `json:"attempt_id,omitempty"`
-	PhaseUpdatedAt      *time.Time `json:"phase_updated_at,omitempty"`
+	ExecutionPhase           string     `json:"execution_phase,omitempty"`
+	ExecutionReasonCode      string     `json:"execution_reason_code,omitempty"`
+	AttemptID                string     `json:"attempt_id,omitempty"`
+	PhaseUpdatedAt           *time.Time `json:"phase_updated_at,omitempty"`
+	BootstrapPhase           string     `json:"bootstrap_phase,omitempty"`
+	BootstrapLastHeartbeatAt *time.Time `json:"bootstrap_last_heartbeat_at,omitempty"`
+	DiagnosticHoldUntil      *time.Time `json:"diagnostic_hold_until,omitempty"`
+	DiagnosticSummary        string     `json:"diagnostic_summary,omitempty"`
 
 	ID                      string             `json:"id"`
 	UUID                    string             `json:"uuid"`
@@ -392,6 +422,8 @@ type Template struct {
 func (t *Task) ToResponse() TaskResponse {
 	resp := TaskResponse{
 		ExecutionPhase: t.ExecutionPhase, ExecutionReasonCode: t.ExecutionReasonCode, AttemptID: t.ExecutionAttemptID, PhaseUpdatedAt: t.PhaseUpdatedAt,
+		BootstrapPhase: t.BootstrapPhase, BootstrapLastHeartbeatAt: t.BootstrapLastHeartbeatAt,
+		DiagnosticHoldUntil: t.DiagnosticHoldUntil, DiagnosticSummary: t.DiagnosticSummary,
 		ID:                 t.UUID,
 		SampleID:           t.SampleID,
 		InternalID:         t.InternalID,
@@ -421,6 +453,8 @@ func (t *Task) ToResponse() TaskResponse {
 func (t *Task) ToDetailResponse() TaskDetailResponse {
 	resp := TaskDetailResponse{
 		ExecutionPhase: t.ExecutionPhase, ExecutionReasonCode: t.ExecutionReasonCode, AttemptID: t.ExecutionAttemptID, PhaseUpdatedAt: t.PhaseUpdatedAt,
+		BootstrapPhase: t.BootstrapPhase, BootstrapLastHeartbeatAt: t.BootstrapLastHeartbeatAt,
+		DiagnosticHoldUntil: t.DiagnosticHoldUntil, DiagnosticSummary: t.DiagnosticSummary,
 		ID:                 t.UUID,
 		Name:               t.Name,
 		SampleID:           t.SampleID,

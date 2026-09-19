@@ -261,12 +261,13 @@ func applySepiidaWorkflowStatus(task *model.Task, status model.SepiidaStatus) (c
 		if task.Status != model.TaskStatusRunning || phaseChanged || task.StartedAt == nil {
 			task.Status = model.TaskStatusRunning
 			task.ExecutionPhase = "running"
-			if phaseChanged || task.StartedAt == nil {
+			if phaseChanged {
 				now := time.Now().UTC()
 				task.PhaseUpdatedAt = &now
-				if task.StartedAt == nil {
-					task.StartedAt = &now
-				}
+			}
+			if task.StartedAt == nil {
+				now := time.Now().UTC()
+				task.StartedAt = &now
 			}
 			return true, false
 		}
@@ -318,6 +319,7 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	if s.sepiida == nil || task.UUID == "" {
 		return
 	}
+	attemptID := task.ExecutionAttemptID
 	// A user cancellation (or a completed cleanup) owns the attempt lifecycle.
 	// Sepiida may still report the last workflow state for a short time, but it
 	// must not resurrect a terminating CVM execution or stage a second archive.
@@ -326,21 +328,33 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	}
 
 	workflow, _, err := s.sepiida.GetWorkflowWithTasks(task.UUID, sepiidaWorkflowAgentID(task))
-	if workflow == nil {
+	if task.Executor == model.ExecutorCVM {
+		latest, latestErr := s.repo.FindByUUID(task.UUID)
+		if latestErr != nil || latest == nil || latest.ExecutionAttemptID != attemptID || latest.ExecutionPhase == "terminating" || latest.ExecutionPhase == "terminal" {
+			return
+		}
+		*task = *latest
+	}
+	if err != nil || workflow == nil {
 		s.timeoutMissingSepiidaFirstReport(task)
 		return
 	}
 	if task.SepiidaFirstReportedAt == nil {
 		now := time.Now().UTC()
-		result := database.GetDB().Model(&model.Task{}).Where("uuid = ? AND sepiida_first_reported_at IS NULL", task.UUID).Update("sepiida_first_reported_at", now)
-		if result.Error == nil {
+		query := database.GetDB().Model(&model.Task{}).Where("uuid = ? AND sepiida_first_reported_at IS NULL", task.UUID)
+		if task.Executor == model.ExecutorCVM {
+			query = query.Where("execution_attempt_id = ?", attemptID)
+		}
+		result := query.Update("sepiida_first_reported_at", now)
+		if result.Error == nil && result.RowsAffected == 1 {
 			task.SepiidaFirstReportedAt = &now
+		} else if result.Error == nil && task.Executor == model.ExecutorCVM {
+			var current model.Task
+			if database.GetDB().Where("uuid = ? AND execution_attempt_id = ?", task.UUID, attemptID).First(&current).Error == nil {
+				task.SepiidaFirstReportedAt = current.SepiidaFirstReportedAt
+			}
 		}
 	}
-	if err != nil {
-		return
-	}
-
 	previousStatus := task.Status
 	archiveMetadata := workflow.NormalizedArchiveMetadata()
 	if task.Executor == model.ExecutorCVM && workflow.Status == model.SepiidaStatusSuccess {
@@ -446,13 +460,13 @@ func (s *TaskService) timeoutMissingSepiidaFirstReport(task *model.Task) {
 }
 
 func sepiidaFirstReportOverdue(task *model.Task, timeout time.Duration, now time.Time) bool {
-	if task == nil || timeout <= 0 || task.Executor != model.ExecutorCVM || task.SepiidaFirstReportedAt != nil || task.PhaseUpdatedAt == nil {
+	if task == nil || timeout <= 0 || task.Executor != model.ExecutorCVM || task.SepiidaFirstReportedAt != nil || task.SepiidaFirstReportExpectedAt == nil {
 		return false
 	}
-	if task.ExecutionPhase != "bootstrapping" && task.ExecutionPhase != "running" {
+	if task.ExecutionPhase != "running" && task.ExecutionPhase != "archiving" {
 		return false
 	}
-	return !now.Before(task.PhaseUpdatedAt.Add(timeout))
+	return !now.Before(task.SepiidaFirstReportExpectedAt.Add(timeout))
 }
 
 func (s *TaskService) stageCVMArchive(task *model.Task, metadata model.SepiidaArchiveMetadata) error {
@@ -1646,6 +1660,8 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 
 	resp := &model.TaskProgressResponse{
 		ExecutionPhase: task.ExecutionPhase, ExecutionReasonCode: task.ExecutionReasonCode, AttemptID: task.ExecutionAttemptID, PhaseUpdatedAt: task.PhaseUpdatedAt,
+		BootstrapPhase: task.BootstrapPhase, BootstrapLastHeartbeatAt: task.BootstrapLastHeartbeatAt,
+		DiagnosticHoldUntil: task.DiagnosticHoldUntil, DiagnosticSummary: task.DiagnosticSummary,
 		ID:                      task.UUID,
 		UUID:                    task.UUID,
 		Name:                    task.Name,
@@ -1683,6 +1699,10 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 			resp.ExecutionReasonCode = task.ExecutionReasonCode
 			resp.AttemptID = task.ExecutionAttemptID
 			resp.PhaseUpdatedAt = task.PhaseUpdatedAt
+			resp.BootstrapPhase = task.BootstrapPhase
+			resp.BootstrapLastHeartbeatAt = task.BootstrapLastHeartbeatAt
+			resp.DiagnosticHoldUntil = task.DiagnosticHoldUntil
+			resp.DiagnosticSummary = task.DiagnosticSummary
 			resp.VMStatus = task.VMStatus
 			resp.DispatchNextRetryAt = task.CVMDispatchNextRetryAt
 			resp.DispatchRetryDeadlineAt = task.CVMDispatchRetryDeadlineAt
@@ -1731,10 +1751,9 @@ func (s *TaskService) ListTasksAudit(ctx context.Context, query *model.TaskListQ
 	}, nil
 }
 
-// DeleteTask removes a task from normal queries. Active tasks first transition
-// to cancelled and synchronously deliver that event to the control plane. The
-// control plane settles actual runtime credits before marking the CVM for
-// termination, so the task is hidden only after settlement is acknowledged.
+// DeleteTask removes a task from normal queries. Active CVM tasks retain a
+// durable delete intent and are hidden automatically after Squid confirms that
+// their cloud resource has reached a terminal state.
 func (s *TaskService) DeleteTask(ctx context.Context, id string, actor model.OverlayActor) error {
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
@@ -1742,6 +1761,16 @@ func (s *TaskService) DeleteTask(ctx context.Context, id string, actor model.Ove
 	}
 
 	if task.Executor == model.ExecutorCVM && task.ExecutionAttemptID != "" && task.ExecutionPhase != "terminal" {
+		// Deleting an active CVM is asynchronous. Persist the user's intent so
+		// the terminal Squid callback can hide the task automatically after the
+		// cloud resource is confirmed gone.
+		now := time.Now().UTC()
+		if err := database.GetDB().WithContext(ctx).Model(&model.Task{}).
+			Where("id = ? AND delete_requested_at IS NULL", task.ID).
+			Update("delete_requested_at", now).Error; err != nil {
+			return err
+		}
+		task.DeleteRequestedAt = &now
 		request := model.CVMCancelRequest{Actor: actor, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Reason: cvmTerminationReason(task, model.OverlayTaskEventCancelled)}
 		_, err := s.cancelCVM(ctx, id, request)
 		if err != nil {
@@ -2583,10 +2612,23 @@ func (s *TaskService) prepareCVMExecutionAttempt(task *model.Task, forceNew bool
 	if task == nil || task.Executor != model.ExecutorCVM {
 		return fmt.Errorf("CVM task is required")
 	}
+	previousAttemptID := task.ExecutionAttemptID
 	_, invalidAttempt := uuid.Parse(task.ExecutionAttemptID)
 	if forceNew || invalidAttempt != nil || cvmAttemptStateTerminal(task.VMStatus) {
 		task.ExecutionAttemptID = uuid.New().String()
 		task.CVMInstanceID = ""
+	}
+	if task.ExecutionAttemptID != previousAttemptID {
+		task.SepiidaFirstReportedAt = nil
+		task.SepiidaFirstReportExpectedAt = nil
+		task.BootstrapPhase = ""
+		task.BootstrapLastHeartbeatAt = nil
+		task.DiagnosticHoldUntil = nil
+		task.DiagnosticSummary = ""
+		task.ExecutionReasonCode = ""
+		task.ExecutionPhase = "dispatching"
+		now := time.Now().UTC()
+		task.PhaseUpdatedAt = &now
 	}
 	task.CVMArchiveStagedAt = nil
 	task.CVMArchiveTerminationNotifiedAt = nil
@@ -2754,6 +2796,11 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	if task.Executor != model.ExecutorCVM {
 		return fmt.Errorf("task is not a CVM task")
 	}
+	if event.ExecutionPhase == "terminal" {
+		fmt.Printf("CVM terminal callback reconcile: task_uuid=%s event_attempt=%q task_attempt=%q event_version=%d last_event_version=%d event_phase=%q task_phase=%q event_status=%q task_status=%q delete_requested=%t\n",
+			event.TaskUUID, event.AttemptID, task.ExecutionAttemptID, event.Version, task.LastCVMEventVersion,
+			event.ExecutionPhase, task.ExecutionPhase, event.TaskStatus, task.Status, task.DeleteRequestedAt != nil)
+	}
 	if !cvmStateEventMatchesCurrentAttempt(task, event) {
 		return nil
 	}
@@ -2766,7 +2813,7 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 		// newer callback has already won.
 		return nil
 	}
-	if event.Version > 0 && event.Version == task.LastCVMEventVersion {
+	if event.Version > 0 && event.Version == task.LastCVMEventVersion && !cvmTerminalEventNeedsReconciliation(task, event) {
 		// Squid retries the same durable callback when Octopus persisted the
 		// task transition but the follow-up settlement/refund event was not
 		// acknowledged. The task version is already advanced in that case, so
@@ -2774,17 +2821,57 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 		// second time. Returning early for the same version would leave an
 		// attempt permanently pre-deducted after a transient overlay outage.
 		if eventID := terminalOverlayEventForCVMState(event.TaskStatus, task.Status); eventID != "" {
-			return s.emitTaskEventWithError(eventID, model.OverlayActor{}, task, task.Status, event.Message)
+			if err := s.emitTaskEventWithError(eventID, model.OverlayActor{}, task, task.Status, event.Message); err != nil {
+				return err
+			}
+			if cvmTaskReadyForRequestedDelete(task) {
+				return s.repo.DeleteByID(task.ID)
+			}
 		}
 		return nil
 	}
 	if event.Version > 0 {
 		task.LastCVMEventVersion = event.Version
 	}
+	if event.ExecutionPhase == "running" && task.SepiidaFirstReportExpectedAt == nil {
+		expectedAt := event.OccurredAt.UTC()
+		if event.OccurredAt.IsZero() {
+			expectedAt = time.Now().UTC()
+		}
+		result := database.GetDB().Model(&model.Task{}).
+			Where("uuid = ? AND execution_attempt_id = ? AND sepiida_first_report_expected_at IS NULL", task.UUID, event.AttemptID).
+			Update("sepiida_first_report_expected_at", expectedAt)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 1 {
+			task.SepiidaFirstReportExpectedAt = &expectedAt
+		} else {
+			var persisted model.Task
+			if err := database.GetDB().Select("sepiida_first_report_expected_at").Where("uuid = ? AND execution_attempt_id = ?", task.UUID, event.AttemptID).First(&persisted).Error; err == nil {
+				task.SepiidaFirstReportExpectedAt = persisted.SepiidaFirstReportExpectedAt
+			}
+		}
+	}
 	if event.ExecutionPhase != "" && (task.ExecutionPhase != "terminating" || event.ExecutionPhase == "terminal" || event.ExecutionPhase == "release_failed") {
+		phaseChanged := task.ExecutionPhase != event.ExecutionPhase
 		task.ExecutionPhase = event.ExecutionPhase
-		now := time.Now().UTC()
-		task.PhaseUpdatedAt = &now
+		if phaseChanged {
+			now := time.Now().UTC()
+			task.PhaseUpdatedAt = &now
+		}
+	}
+	if event.BootstrapPhase != "" {
+		task.BootstrapPhase = event.BootstrapPhase
+	}
+	if event.LastHeartbeatAt != nil {
+		task.BootstrapLastHeartbeatAt = event.LastHeartbeatAt
+	}
+	if event.DiagnosticSummary != "" {
+		task.DiagnosticSummary = event.DiagnosticSummary
+	}
+	if event.DiagnosticHoldUntil != nil || (event.ExecutionPhase != "" && event.ExecutionPhase != "diagnostic_hold") {
+		task.DiagnosticHoldUntil = event.DiagnosticHoldUntil
 	}
 	task.ExecutionReasonCode = event.ReasonCode
 	previousStatus := task.Status
@@ -2871,7 +2958,30 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	} else {
 		s.emitStatusEvent(task, previousStatus)
 	}
+	if cvmTaskReadyForRequestedDelete(task) {
+		return s.repo.DeleteByID(task.ID)
+	}
 	return nil
+}
+
+func cvmTaskReadyForRequestedDelete(task *model.Task) bool {
+	if task == nil || task.DeleteRequestedAt == nil || task.ExecutionPhase != "terminal" {
+		return false
+	}
+	switch task.Status {
+	case model.TaskStatusCompleted, model.TaskStatusPendingInterpretation, model.TaskStatusFailed, model.TaskStatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func cvmTerminalEventNeedsReconciliation(task *model.Task, event model.CVMStateEvent) bool {
+	return task != nil &&
+		event.Version > 0 &&
+		event.Version == task.LastCVMEventVersion &&
+		event.ExecutionPhase == "terminal" &&
+		task.ExecutionPhase != "terminal"
 }
 
 // terminalOverlayEventForCVMState identifies the idempotent business event

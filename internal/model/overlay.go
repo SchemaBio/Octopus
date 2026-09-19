@@ -178,25 +178,30 @@ type CVMCancelRequest struct {
 }
 
 type CVMStateEvent struct {
-	EventID        string     `json:"event_id,omitempty"`
-	Version        uint64     `json:"version,omitempty"`
-	ExecutionPhase string     `json:"execution_phase,omitempty"`
-	ReasonCode     string     `json:"reason_code,omitempty"`
-	TaskUUID       string     `json:"task_uuid"`
-	AttemptID      string     `json:"attempt_id"`
-	InstanceID     string     `json:"instance_id,omitempty"`
-	InstanceState  string     `json:"instance_state"`
-	TaskStatus     TaskStatus `json:"task_status,omitempty"`
-	Message        string     `json:"message,omitempty"`
+	EventID           string     `json:"event_id,omitempty"`
+	Version           uint64     `json:"version,omitempty"`
+	ExecutionPhase    string     `json:"execution_phase,omitempty"`
+	ReasonCode        string     `json:"reason_code,omitempty"`
+	BootstrapPhase    string     `json:"bootstrap_phase,omitempty"`
+	DiagnosticSummary string     `json:"diagnostic_summary,omitempty"`
+	TaskUUID          string     `json:"task_uuid"`
+	AttemptID         string     `json:"attempt_id"`
+	InstanceID        string     `json:"instance_id,omitempty"`
+	InstanceState     string     `json:"instance_state"`
+	TaskStatus        TaskStatus `json:"task_status,omitempty"`
+	Message           string     `json:"message,omitempty"`
 	// Squid includes the durable attempt timestamps so a cancellation that
 	// reconciles an instance after an unknown dispatch can be billed by actual
 	// runtime even if Octopus never observed a separate running event.
-	StartedAt       *time.Time `json:"started_at,omitempty"`
-	FinishedAt      *time.Time `json:"finished_at,omitempty"`
-	RetryAt         *time.Time `json:"retry_at,omitempty"`
-	RetryDeadlineAt *time.Time `json:"retry_deadline_at,omitempty"`
-	RetryCount      int        `json:"retry_count,omitempty"`
-	OccurredAt      time.Time  `json:"occurred_at"`
+	StartedAt           *time.Time `json:"started_at,omitempty"`
+	FinishedAt          *time.Time `json:"finished_at,omitempty"`
+	LastHeartbeatAt     *time.Time `json:"last_heartbeat_at,omitempty"`
+	DiagnosticFailureAt *time.Time `json:"diagnostic_failure_at,omitempty"`
+	DiagnosticHoldUntil *time.Time `json:"diagnostic_hold_until,omitempty"`
+	RetryAt             *time.Time `json:"retry_at,omitempty"`
+	RetryDeadlineAt     *time.Time `json:"retry_deadline_at,omitempty"`
+	RetryCount          int        `json:"retry_count,omitempty"`
+	OccurredAt          time.Time  `json:"occurred_at"`
 }
 
 type OverlayCreditChargeRequest struct {

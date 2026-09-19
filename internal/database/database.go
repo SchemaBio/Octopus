@@ -326,6 +326,11 @@ func migrateTaskExecutionColumns() error {
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS execution_phase varchar(32) DEFAULT ''",
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS execution_reason_code varchar(120) DEFAULT ''",
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS phase_updated_at timestamptz",
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sepiida_first_report_expected_at timestamptz",
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS bootstrap_phase varchar(32) DEFAULT ''",
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS bootstrap_last_heartbeat_at timestamptz",
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS diagnostic_hold_until timestamptz",
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS diagnostic_summary varchar(1000) DEFAULT ''",
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cvm_archive_staged_at timestamptz",
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cvm_archive_termination_notified_at timestamptz",
 	}
@@ -345,6 +350,16 @@ func migrateTaskExecutionColumns() error {
 	}
 	if err := DB.Exec("UPDATE tasks SET execution_reason_code = '' WHERE execution_reason_code IS NULL").Error; err != nil {
 		return fmt.Errorf("failed to backfill execution reason codes: %w", err)
+	}
+	if err := DB.Exec("UPDATE tasks SET bootstrap_phase = '' WHERE bootstrap_phase IS NULL").Error; err != nil {
+		return fmt.Errorf("failed to backfill bootstrap phases: %w", err)
+	}
+	if err := DB.Exec("UPDATE tasks SET diagnostic_summary = '' WHERE diagnostic_summary IS NULL").Error; err != nil {
+		return fmt.Errorf("failed to backfill diagnostic summaries: %w", err)
+	}
+	if err := DB.Exec(`UPDATE tasks SET sepiida_first_report_expected_at = COALESCE(started_at, phase_updated_at)
+		WHERE executor = 'cvm_spot' AND execution_phase IN ('running', 'archiving') AND sepiida_first_report_expected_at IS NULL`).Error; err != nil {
+		return fmt.Errorf("failed to backfill Sepiida first-report deadlines: %w", err)
 	}
 	// Preserve a useful phase for in-flight CVM attempts created before the
 	// phase column existed. Terminal records are fenced from late callbacks;
@@ -370,6 +385,10 @@ func migrateTaskExecutionColumns() error {
 		"ALTER TABLE tasks ALTER COLUMN execution_phase SET NOT NULL",
 		"ALTER TABLE tasks ALTER COLUMN execution_reason_code SET DEFAULT ''",
 		"ALTER TABLE tasks ALTER COLUMN execution_reason_code SET NOT NULL",
+		"ALTER TABLE tasks ALTER COLUMN bootstrap_phase SET DEFAULT ''",
+		"ALTER TABLE tasks ALTER COLUMN bootstrap_phase SET NOT NULL",
+		"ALTER TABLE tasks ALTER COLUMN diagnostic_summary SET DEFAULT ''",
+		"ALTER TABLE tasks ALTER COLUMN diagnostic_summary SET NOT NULL",
 	} {
 		if err := DB.Exec(statement).Error; err != nil {
 			return fmt.Errorf("failed to constrain task execution columns: %w", err)

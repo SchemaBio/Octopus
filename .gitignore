@@ -18,6 +18,7 @@ coverage.*
 profile.cov
 .cache/
 .gocache/
+.gotmp/
 *.go.[0-9]*
 
 # Dependency directories (remove the comment below to include it)
