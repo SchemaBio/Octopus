@@ -41,11 +41,12 @@ const (
 
 // Task represents a workflow task
 type Task struct {
-	Version             uint64     `json:"-" gorm:"default:0"`
-	LastCVMEventVersion uint64     `json:"-" gorm:"default:0"`
-	ExecutionPhase      string     `json:"execution_phase,omitempty" gorm:"size:32"`
-	ExecutionReasonCode string     `json:"execution_reason_code,omitempty" gorm:"size:120"`
-	PhaseUpdatedAt      *time.Time `json:"phase_updated_at,omitempty"`
+	Version                uint64     `json:"-" gorm:"default:0"`
+	LastCVMEventVersion    uint64     `json:"-" gorm:"default:0"`
+	ExecutionPhase         string     `json:"execution_phase,omitempty" gorm:"size:32"`
+	ExecutionReasonCode    string     `json:"execution_reason_code,omitempty" gorm:"size:120"`
+	PhaseUpdatedAt         *time.Time `json:"phase_updated_at,omitempty"`
+	SepiidaFirstReportedAt *time.Time `json:"-" gorm:"type:timestamptz"`
 
 	ID               string         `json:"id" gorm:"primaryKey"`
 	UUID             string         `json:"uuid" gorm:"uniqueIndex"` // Workflow UUID (standard format for Sepiida)

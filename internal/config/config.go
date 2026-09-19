@@ -48,9 +48,10 @@ type TaskConfig struct {
 }
 
 type SepiidaConfig struct {
-	ServerURL string // Sepiida server URL
-	QueryKey  string // Query API key
-	Enabled   bool   // Enable Sepiida integration
+	ServerURL          string        // Sepiida server URL
+	QueryKey           string        // Query API key
+	Enabled            bool          // Enable Sepiida integration
+	FirstReportTimeout time.Duration // Maximum wait for the first workflow report
 }
 
 type ParquetConfig struct {
@@ -189,9 +190,10 @@ func Load() *Config {
 			MiniWDLLSFPath:   getEnv("MINIWDL_LSF_PATH", "miniwdl-lsf"),
 		},
 		Sepiida: SepiidaConfig{
-			ServerURL: getEnv("SEPIIDA_URL", "http://localhost:9090"),
-			QueryKey:  getEnvOrFile("SEPIIDA_QUERY_KEY", ""),
-			Enabled:   getEnv("SEPIIDA_ENABLED", "true") == "true",
+			ServerURL:          getEnv("SEPIIDA_URL", "http://localhost:9090"),
+			QueryKey:           getEnvOrFile("SEPIIDA_QUERY_KEY", ""),
+			Enabled:            getEnv("SEPIIDA_ENABLED", "true") == "true",
+			FirstReportTimeout: parseDuration(getEnv("SEPIIDA_FIRST_REPORT_TIMEOUT", "10m")),
 		},
 		Parquet: ParquetConfig{
 			Enabled:      getEnv("PARQUET_ENABLED", "true") == "true",

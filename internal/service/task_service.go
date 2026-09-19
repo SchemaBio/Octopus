@@ -25,6 +25,8 @@ import (
 	"github.com/SchemaBio/Octopus/internal/sepiida"
 	"github.com/SchemaBio/Octopus/internal/workflow"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type TaskService struct {
@@ -324,7 +326,18 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	}
 
 	workflow, _, err := s.sepiida.GetWorkflowWithTasks(task.UUID, sepiidaWorkflowAgentID(task))
-	if err != nil || workflow == nil {
+	if workflow == nil {
+		s.timeoutMissingSepiidaFirstReport(task)
+		return
+	}
+	if task.SepiidaFirstReportedAt == nil {
+		now := time.Now().UTC()
+		result := database.GetDB().Model(&model.Task{}).Where("uuid = ? AND sepiida_first_reported_at IS NULL", task.UUID).Update("sepiida_first_reported_at", now)
+		if result.Error == nil {
+			task.SepiidaFirstReportedAt = &now
+		}
+	}
+	if err != nil {
 		return
 	}
 
@@ -381,6 +394,65 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	if task.Executor == model.ExecutorCVM {
 		s.notifyCVMArchiveCompletion(task)
 	}
+}
+
+func (s *TaskService) timeoutMissingSepiidaFirstReport(task *model.Task) {
+	timeout := s.cfg.Sepiida.FirstReportTimeout
+	if !sepiidaFirstReportOverdue(task, timeout, time.Now().UTC()) {
+		return
+	}
+
+	const reasonCode = "SEPIIDA_FIRST_REPORT_TIMEOUT"
+	const message = "Sepiida did not receive the first workflow progress report before the deadline"
+	var current model.Task
+	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ?", task.UUID).First(&current).Error; err != nil {
+			return err
+		}
+		if current.ExecutionAttemptID == "" || !sepiidaFirstReportOverdue(&current, timeout, time.Now().UTC()) {
+			return nil
+		}
+		now := time.Now().UTC()
+		current.ExecutionPhase = "terminating"
+		current.ExecutionReasonCode = reasonCode
+		current.Error = message
+		current.VMStatus = "TERMINATING"
+		current.PhaseUpdatedAt = &now
+		current.Version++
+		if err := tx.Save(&current).Error; err != nil {
+			return err
+		}
+		request := model.CVMCancelRequest{TaskUUID: current.UUID, AttemptID: current.ExecutionAttemptID, Reason: model.OverlayTaskEventFailed}
+		payload, err := json.Marshal(request)
+		if err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.CVMCancellation{
+			AttemptID: current.ExecutionAttemptID, TaskUUID: current.UUID, Payload: string(payload), NextRetryAt: now,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.CVMSubmission{}).Where("attempt_id = ? AND delivered = FALSE", current.ExecutionAttemptID).Updates(map[string]interface{}{
+			"delivered": true, "last_error": "dispatch cancelled after Sepiida first-report timeout",
+		}).Error
+	})
+	if err != nil {
+		fmt.Printf("WARNING: enforce Sepiida first-report timeout for task %s: %v\n", task.UUID, err)
+		return
+	}
+	if current.UUID != "" {
+		*task = current
+	}
+}
+
+func sepiidaFirstReportOverdue(task *model.Task, timeout time.Duration, now time.Time) bool {
+	if task == nil || timeout <= 0 || task.Executor != model.ExecutorCVM || task.SepiidaFirstReportedAt != nil || task.PhaseUpdatedAt == nil {
+		return false
+	}
+	if task.ExecutionPhase != "bootstrapping" && task.ExecutionPhase != "running" {
+		return false
+	}
+	return !now.Before(task.PhaseUpdatedAt.Add(timeout))
 }
 
 func (s *TaskService) stageCVMArchive(task *model.Task, metadata model.SepiidaArchiveMetadata) error {
@@ -2709,7 +2781,7 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	if event.Version > 0 {
 		task.LastCVMEventVersion = event.Version
 	}
-	if event.ExecutionPhase != "" && (task.ExecutionPhase != "terminating" || event.ExecutionPhase == "terminal") {
+	if event.ExecutionPhase != "" && (task.ExecutionPhase != "terminating" || event.ExecutionPhase == "terminal" || event.ExecutionPhase == "release_failed") {
 		task.ExecutionPhase = event.ExecutionPhase
 		now := time.Now().UTC()
 		task.PhaseUpdatedAt = &now
@@ -2751,6 +2823,9 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 		task.CVMDispatchRetryCount = event.RetryCount
 	}
 	if event.TaskStatus == model.TaskStatusQueued && strings.TrimSpace(event.Message) != "" {
+		task.Error = strings.TrimSpace(event.Message)
+	}
+	if event.ExecutionPhase == "release_failed" && strings.TrimSpace(event.Message) != "" {
 		task.Error = strings.TrimSpace(event.Message)
 	}
 	if event.TaskStatus == model.TaskStatusRunning {
