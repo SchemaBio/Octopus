@@ -2791,6 +2791,13 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	}
 	task, err := s.repo.FindByUUID(event.TaskUUID)
 	if err != nil {
+		// A terminal callback can be replayed after the first delivery already
+		// fulfilled a durable delete intent and soft-deleted the task. Treat that
+		// authenticated replay as acknowledged so Squid can finish its outbox;
+		// non-terminal events for unknown tasks remain errors.
+		if event.ExecutionPhase == "terminal" || cvmAttemptStateTerminal(event.InstanceState) {
+			return nil
+		}
 		return fmt.Errorf("task not found: %s", event.TaskUUID)
 	}
 	if task.Executor != model.ExecutorCVM {

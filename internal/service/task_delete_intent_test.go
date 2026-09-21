@@ -41,3 +41,16 @@ func TestCVMTerminalEventNeedsReconciliation(t *testing.T) {
 		t.Fatal("a different event version is not a duplicate reconciliation")
 	}
 }
+
+func TestTerminalStateClassificationForDeletedTaskReplay(t *testing.T) {
+	for _, state := range []string{"TERMINATED", "RECLAIMED", "LAUNCH_FAILED", " reclaimed "} {
+		if !cvmAttemptStateTerminal(state) {
+			t.Fatalf("expected %q to be terminal", state)
+		}
+	}
+	for _, state := range []string{"", "TERMINATING", "RUNNING", "RELEASE_FAILED"} {
+		if cvmAttemptStateTerminal(state) {
+			t.Fatalf("did not expect %q to be terminal", state)
+		}
+	}
+}
