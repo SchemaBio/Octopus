@@ -154,13 +154,13 @@ func TestCVMStateEventOnlyMatchesCurrentAttempt(t *testing.T) {
 
 func TestCVMEventBusinessStartClassification(t *testing.T) {
 	if cvmEventCarriesBusinessStart(model.CVMStateEvent{TaskStatus: model.TaskStatusQueued, ExecutionPhase: "bootstrapping", StartedAt: ptrTimeForCVMTest(time.Now())}) {
-		t.Fatal("bootstrap timestamp must not start business billing")
+		t.Fatal("bootstrap timestamp must not mark the workflow as running")
 	}
 	if !cvmEventCarriesBusinessStart(model.CVMStateEvent{TaskStatus: model.TaskStatusRunning, ExecutionPhase: "running", StartedAt: ptrTimeForCVMTest(time.Now())}) {
 		t.Fatal("running callback must carry business start")
 	}
 	if cvmEventCarriesBusinessStart(model.CVMStateEvent{TaskStatus: model.TaskStatusCancelled, ExecutionPhase: "terminating", StartedAt: ptrTimeForCVMTest(time.Now())}) {
-		t.Fatal("termination timestamp without a running phase must not start billing")
+		t.Fatal("termination timestamp without a running phase must not mark the workflow as running")
 	}
 }
 

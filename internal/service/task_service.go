@@ -1062,8 +1062,8 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 	if task.Executor == model.ExecutorCVM {
 		// A cloud instance being provisioned is not the same as a workflow
 		// running. Sepiida/Squid will confirm the business-running phase after
-		// node initialization and MiniWDL startup, which is also when billing
-		// runtime timestamps should begin.
+		// node initialization and MiniWDL startup. Squid separately bills node
+		// occupancy from cloud provisioning, including initialization.
 		task.Status = model.TaskStatusQueued
 		task.ExecutionPhase = "bootstrapping"
 		task.PhaseUpdatedAt = &now
