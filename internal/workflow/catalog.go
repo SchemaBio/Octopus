@@ -40,7 +40,7 @@ var definitions = map[string]Definition{
 			"SingleWES.read_1": "/mnt/data/test/202511_proband_ILMN_1.fq.gz",
 			"SingleWES.read_2": "/mnt/data/test/202511_proband_ILMN_2.fq.gz",
 			"SingleWES.fasta": "/mnt/data/database/Homo_sapiens.GRCh37.dna.primary_assembly.fa",
-			"SingleWES.bed": "/mnt/data/test/hg19_IDTv1.bed",
+			"SingleWES.bed": "/mnt/data/database/hg19_default.bed",
 			"SingleWES.flank_size": 50,
 			"SingleWES.assembly": "GRCh37",
 			"SingleWES.ref_dir": "/mnt/data/database",
@@ -75,7 +75,7 @@ var definitions = map[string]Definition{
 				]
 			},
 			"TrioWES.fasta": "/mnt/data/database/Homo_sapiens.GRCh37.dna.primary_assembly.fa",
-			"TrioWES.bed": "/mnt/data/test/hg19_IDTv1.bed",
+			"TrioWES.bed": "/mnt/data/database/hg19_default.bed",
 			"TrioWES.flank_size": 50,
 			"TrioWES.ped": "/mnt/data/test/ped.txt",
 			"TrioWES.assembly": "GRCh37",
@@ -97,7 +97,7 @@ var definitions = map[string]Definition{
 		Description: "Calibrate the built-in CNV baseline with selected normal samples",
 		Inputs: mustParseInputs(`{
 			"CNVBaselineFix.prefix": "reference",
-			"CNVBaselineFix.bed": "/mnt/data/test/hg19_IDTv1.bed",
+			"CNVBaselineFix.bed": "/mnt/data/database/hg19_default.bed",
 			"CNVBaselineFix.fasta": "/mnt/data/database/Homo_sapiens.GRCh37.dna.primary_assembly.fa",
 			"CNVBaselineFix.assembly": "GRCh37",
 			"CNVBaselineFix.existing_reference": "/mnt/data/database/schema_bundle/hg19_reference.cnvkit.cnn",

@@ -875,6 +875,11 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		}
 		inputs["CNVBaselineFix.prefix"] = taskOutputPrefix(workflowUUID)
 	}
+	if executor == model.ExecutorCVM {
+		if _, err := cvmAnalysisBEDInput(req.Template, inputs); err != nil {
+			return nil, err
+		}
+	}
 	inputJSON, err := json.Marshal(inputs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal inputs: %w", err)
@@ -2438,6 +2443,9 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 	if err != nil {
 		return model.CVMDispatchRequest{}, err
 	}
+	if err := validateCVMStagedBED(task.Template, inputs, downloads); err != nil {
+		return model.CVMDispatchRequest{}, err
+	}
 	inlineFiles := make([]model.CVMInlineFile, 0, 1)
 	if task.Template == "trio" {
 		content, _ := inputs["TrioWES.ped_content"].(string)
@@ -2479,6 +2487,13 @@ func buildCVMWDLInputs(template, genome string, taskInputs map[string]interface{
 	if err != nil {
 		return nil, err
 	}
+	// Preserve the selected genome's defaults before overlaying persisted inputs.
+	defaultBEDs := make(map[string]interface{})
+	for _, key := range []string{"SingleWES.bed", "TrioWES.bed", "CNVBaselineFix.bed"} {
+		if value, ok := inputs[key]; ok {
+			defaultBEDs[key] = value
+		}
+	}
 	for key, value := range taskInputs {
 		if _, known := inputs[key]; known {
 			inputs[key] = value
@@ -2499,6 +2514,16 @@ func buildCVMWDLInputs(template, genome string, taskInputs map[string]interface{
 		copyCVMInput(inputs, "TrioWES.bed", taskInputs, "bed_file")
 	case "baseline_fix":
 		copyCVMInput(inputs, "CNVBaselineFix.bed", taskInputs, "bed_file")
+	}
+	// Older tasks persisted catalog example paths. Resolve those on retry too,
+	// while retaining explicitly selected custom BED assets.
+	for key, defaultBED := range defaultBEDs {
+		if bed, ok := inputs[key].(string); ok {
+			switch strings.TrimSpace(bed) {
+			case "/mnt/data/test/hg19_IDTv1.bed", "/mnt/data/test/hg38_IDTv1.bed":
+				inputs[key] = defaultBED
+			}
+		}
 	}
 	return inputs, nil
 }
