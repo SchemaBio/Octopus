@@ -64,8 +64,13 @@ func (h *TaskHandler) CVMInputRefresh(c *gin.Context) {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	execution, err := h.svc.RefreshCVMExecution(c.Request.Context(), request.TaskUUID, request.AttemptID)
+	execution, err := h.svc.RefreshCVMExecution(c.Request.Context(), request.TaskUUID, request.AttemptID, request.WorkflowContractVersion)
 	if err != nil {
+		var inputObjectError *service.CVMInputObjectError
+		if errors.As(err, &inputObjectError) {
+			c.JSON(http.StatusFailedDependency, gin.H{"reason_code": inputObjectError.ReasonCode, "error": "CVM input object preflight failed"})
+			return
+		}
 		lower := strings.ToLower(err.Error())
 		if strings.Contains(lower, "not found") {
 			ErrorNotFound(c, err.Error())

@@ -118,9 +118,12 @@ type OverlayTaskEventRequest struct {
 }
 
 type CVMInputDownload struct {
-	ObjectKey string `json:"object_key"`
-	URL       string `json:"url"`
-	Target    string `json:"target"`
+	ObjectKey         string `json:"object_key"`
+	URL               string `json:"url"`
+	Target            string `json:"target"`
+	ExpectedSizeBytes int64  `json:"expected_size_bytes,omitempty"`
+	ValidationRole    string `json:"validation_role,omitempty"`
+	PairKey           string `json:"pair_key,omitempty"`
 }
 
 type CVMInlineFile struct {
@@ -149,8 +152,9 @@ type CVMDispatchRequest struct {
 // by Squid before a queued spot retry. They are authenticated by the same
 // service secret as CVM lifecycle callbacks and never reach the browser.
 type CVMInputRefreshRequest struct {
-	TaskUUID  string `json:"task_uuid"`
-	AttemptID string `json:"attempt_id"`
+	TaskUUID                string `json:"task_uuid"`
+	AttemptID               string `json:"attempt_id"`
+	WorkflowContractVersion string `json:"workflow_contract_version,omitempty"`
 }
 
 type CVMInputRefreshResponse struct {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -332,10 +333,11 @@ func (s *TaskService) deliverExecutions(ctx context.Context) {
 					// record for the same attempt, so route the failure through the
 					// normal terminal event and let Squid reconcile/refund it
 					// idempotently instead of bypassing cleanup.
-					latest.ExecutionReasonCode = "DISPATCH_FAILED"
+					latest.ExecutionReasonCode = cvmDispatchFailureReason(err)
 					latest.Status = model.TaskStatusFailed
 					latest.ExecutionPhase = "terminal"
 					latest.VMStatus = "LAUNCH_FAILED"
+					latest.StartedAt = nil
 					latest.Error = err.Error()
 					now := time.Now().UTC()
 					latest.FinishedAt = &now
@@ -355,6 +357,14 @@ func (s *TaskService) deliverExecutions(ctx context.Context) {
 			_ = db.Model(&job).Update("delivered", true).Error
 		}
 	}
+}
+
+func cvmDispatchFailureReason(err error) string {
+	var inputObjectError *CVMInputObjectError
+	if errors.As(err, &inputObjectError) && inputObjectError.ReasonCode != "" {
+		return inputObjectError.ReasonCode
+	}
+	return "DISPATCH_FAILED"
 }
 
 func cvmAttemptNoLongerDispatchable(task *model.Task) bool {

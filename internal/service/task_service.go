@@ -2382,6 +2382,17 @@ func applyAssetInputPaths(inputs map[string]interface{}, asset *model.DataAsset,
 }
 
 func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.OverlayActor, task *model.Task) (model.CVMDispatchRequest, error) {
+	return s.buildCVMDispatchRequestForContract(ctx, actor, task, workflow.ContractVersion)
+}
+
+func (s *TaskService) buildCVMDispatchRequestForContract(ctx context.Context, actor model.OverlayActor, task *model.Task, contractVersion string) (model.CVMDispatchRequest, error) {
+	contractVersion = strings.TrimSpace(contractVersion)
+	if contractVersion == "" {
+		contractVersion = workflow.ContractVersion
+	}
+	if contractVersion != "germline-v1" && contractVersion != "germline-v2" {
+		return model.CVMDispatchRequest{}, fmt.Errorf("unsupported CVM workflow contract version")
+	}
 	if _, err := uuid.Parse(task.ExecutionAttemptID); err != nil {
 		return model.CVMDispatchRequest{}, fmt.Errorf("valid execution attempt ID is required for CVM dispatch")
 	}
@@ -2419,7 +2430,8 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 	}
 	storage, err := newS3Storage(ctx, s.cfg.Storage)
 	if err != nil {
-		return model.CVMDispatchRequest{}, err
+		return model.CVMDispatchRequest{}, &CVMInputObjectError{ReasonCode: cvmReasonInputObjectUnavailable,
+			err: fmt.Errorf("CVM input object storage preflight is unavailable")}
 	}
 	cvmInputExpiry := s.cfg.Storage.CVMInputPresignExpiry
 	if cvmInputExpiry <= 0 {
@@ -2427,17 +2439,14 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 		// configs that bypass config.Load (tests and embedded deployments).
 		cvmInputExpiry = time.Hour
 	}
-	downloads := make([]model.CVMInputDownload, 0, len(remote))
-	for _, asset := range remote {
-		name := safeCVMInputName(asset.FileName)
-		target := path.Join("/mnt/data/inputs", asset.UUID+"-"+name)
-		url, err := storage.presignDownloadWithExpiry(ctx, asset.StorageKey, name, cvmInputExpiry)
-		if err != nil {
-			return model.CVMDispatchRequest{}, fmt.Errorf("presign CVM input %s: %w", asset.UUID, err)
-		}
+	downloads, err := prepareCVMInputDownloadsForContract(ctx, storage, remote, directLinks, cvmInputExpiry, contractVersion)
+	if err != nil {
+		return model.CVMDispatchRequest{}, err
+	}
+	for i, asset := range remote {
+		target := downloads[i].Target
 		inputs = replaceInputString(inputs, asset.StorageKey, target).(map[string]interface{})
 		applyAssetInputPaths(inputs, asset, directLinks[asset.ID], target)
-		downloads = append(downloads, model.CVMInputDownload{ObjectKey: asset.StorageKey, URL: url, Target: target})
 	}
 	inputs, err = buildCVMWDLInputs(task.Template, referenceGenome, inputs)
 	if err != nil {
@@ -2475,7 +2484,7 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 		AttemptID: task.ExecutionAttemptID,
 		Execution: model.CVMExecutionSpec{
 			Template: task.Template, ReferenceGenome: referenceGenome,
-			WorkflowContractVersion: workflow.ContractVersion,
+			WorkflowContractVersion: contractVersion,
 			Inputs:                  encoded, Downloads: downloads, InlineFiles: inlineFiles,
 		},
 		RequestedAt: time.Now(),
@@ -2770,7 +2779,7 @@ func safeCVMInputName(name string) string {
 // before a capacity retry so every COS/S3 download URL has a fresh expiry.
 // The attempt UUID is checked against the current task to prevent a stale or
 // cross-task callback from receiving another task's inputs.
-func (s *TaskService) RefreshCVMExecution(ctx context.Context, taskUUID, attemptID string) (model.CVMExecutionSpec, error) {
+func (s *TaskService) RefreshCVMExecution(ctx context.Context, taskUUID, attemptID, contractVersion string) (model.CVMExecutionSpec, error) {
 	if strings.TrimSpace(taskUUID) == "" || strings.TrimSpace(attemptID) == "" {
 		return model.CVMExecutionSpec{}, fmt.Errorf("task_uuid and attempt_id are required")
 	}
@@ -2800,7 +2809,7 @@ func (s *TaskService) RefreshCVMExecution(ctx context.Context, taskUUID, attempt
 	if task.ExecutionPhase == "terminating" || task.ExecutionPhase == "terminal" {
 		return model.CVMExecutionSpec{}, fmt.Errorf("task execution is already terminal")
 	}
-	request, err := s.buildCVMDispatchRequest(ctx, model.OverlayActor{UserID: task.CreatedBy, OrgID: task.ExternalOrgID}, task)
+	request, err := s.buildCVMDispatchRequestForContract(ctx, model.OverlayActor{UserID: task.CreatedBy, OrgID: task.ExternalOrgID}, task, contractVersion)
 	if err != nil {
 		return model.CVMExecutionSpec{}, err
 	}

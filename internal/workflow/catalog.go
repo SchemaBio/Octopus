@@ -16,7 +16,7 @@ const ImageWorkflowDir = "/home/ubuntu/schema-germline"
 // ContractVersion identifies the input shape expected by the workflow bundle
 // baked into the SaaS CVM image. Keep this in the dispatch contract so an
 // image/catalog mismatch is rejected before a spot instance is created.
-const ContractVersion = "germline-v1"
+const ContractVersion = "germline-v2"
 
 // Definition describes a workflow template.
 type Definition struct {
