@@ -512,8 +512,24 @@ func (s *TaskService) adoptLegacyExecutions(ctx context.Context) {
 			// A terminal task must fence the old attempt before a new start can
 			// reuse the task. Keep the exact attempt ID and ask Squid to reconcile
 			// it; never create a replacement cloud request during migration.
+			//
+			// A cancelled task receives FinishedAt only from Squid's terminal
+			// callback. Preserve that confirmation across restarts. Older rows can
+			// have LastCVMEventVersion=0 even though the terminal callback was
+			// applied; moving them back to terminating hides retry forever after
+			// the instance has already disappeared.
 			if legacyTerminal {
-				if phase != "terminating" {
+				releaseConfirmed := phase == "terminal" ||
+					(task.Status == model.TaskStatusCancelled && task.FinishedAt != nil)
+				if releaseConfirmed {
+					if phase != "terminal" || !cvmAttemptStateTerminal(task.VMStatus) {
+						task.ExecutionPhase = "terminal"
+						if !cvmAttemptStateTerminal(task.VMStatus) {
+							task.VMStatus = "TERMINATED"
+						}
+						needsSave = true
+					}
+				} else if phase != "terminating" {
 					task.ExecutionPhase = "terminating"
 					task.VMStatus = "TERMINATING"
 					needsSave = true
