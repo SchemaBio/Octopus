@@ -53,6 +53,7 @@ type SepiidaConfig struct {
 	QueryKey           string        // Query API key
 	Enabled            bool          // Enable Sepiida integration
 	FirstReportTimeout time.Duration // Maximum wait for the first workflow report
+	QueryGracePeriod   time.Duration // Additional grace when Sepiida reads are unavailable
 }
 
 type ParquetConfig struct {
@@ -213,6 +214,7 @@ func Load() *Config {
 			QueryKey:           getEnvOrFile("SEPIIDA_QUERY_KEY", ""),
 			Enabled:            getEnv("SEPIIDA_ENABLED", "true") == "true",
 			FirstReportTimeout: parseDuration(getEnv("SEPIIDA_FIRST_REPORT_TIMEOUT", "10m")),
+			QueryGracePeriod:   parseDuration(getEnv("SEPIIDA_QUERY_GRACE_PERIOD", "30m")),
 		},
 		Parquet: ParquetConfig{
 			Enabled:      getEnv("PARQUET_ENABLED", "true") == "true",

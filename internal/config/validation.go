@@ -54,6 +54,9 @@ func ValidateStartup(cfg *Config) error {
 		if cfg.Sepiida.FirstReportTimeout <= 0 {
 			return fmt.Errorf("SEPIIDA_FIRST_REPORT_TIMEOUT must be positive")
 		}
+		if cfg.Sepiida.QueryGracePeriod < 0 {
+			return fmt.Errorf("SEPIIDA_QUERY_GRACE_PERIOD must not be negative")
+		}
 		if strings.TrimSpace(cfg.Sepiida.QueryKey) != "" {
 			if err := validateAbsoluteServiceURL("SEPIIDA_URL", cfg.Sepiida.ServerURL); err != nil {
 				return err

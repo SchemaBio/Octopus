@@ -272,7 +272,7 @@ func TestValidateStartupRejectsReleaseSepiidaWithoutStrongKey(t *testing.T) {
 		Server: ServerConfig{Mode: "release", AllowedOrigins: "https://app.example.com"},
 		JWT:    JWTConfig{Secret: "xK9mP2vN7bQ4wR6tY8uI1oA3sD5fG0hJ", CookieSecure: true},
 		Sepiida: SepiidaConfig{
-			Enabled: true, ServerURL: "http://sepiida.internal:9090", FirstReportTimeout: 10 * time.Minute,
+			Enabled: true, ServerURL: "http://sepiida.internal:9090", FirstReportTimeout: 10 * time.Minute, QueryGracePeriod: 30 * time.Minute,
 		},
 	}
 
@@ -295,7 +295,7 @@ func TestValidateStartupRejectsSepiidaURLUserInfo(t *testing.T) {
 	cfg := &Config{
 		Server: ServerConfig{Mode: "debug"},
 		Sepiida: SepiidaConfig{
-			Enabled: true, ServerURL: "http://user:pass@sepiida.internal:9090", QueryKey: "debug-query-key", FirstReportTimeout: 10 * time.Minute,
+			Enabled: true, ServerURL: "http://user:pass@sepiida.internal:9090", QueryKey: "debug-query-key", FirstReportTimeout: 10 * time.Minute, QueryGracePeriod: 30 * time.Minute,
 		},
 	}
 

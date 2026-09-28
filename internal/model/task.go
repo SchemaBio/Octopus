@@ -48,6 +48,7 @@ type Task struct {
 	PhaseUpdatedAt               *time.Time `json:"phase_updated_at,omitempty"`
 	SepiidaFirstReportedAt       *time.Time `json:"-" gorm:"type:timestamptz"`
 	SepiidaFirstReportExpectedAt *time.Time `json:"-" gorm:"type:timestamptz"`
+	SepiidaQueryDegradedAt       *time.Time `json:"-" gorm:"type:timestamptz"`
 	BootstrapPhase               string     `json:"bootstrap_phase,omitempty" gorm:"size:32"`
 	BootstrapLastHeartbeatAt     *time.Time `json:"bootstrap_last_heartbeat_at,omitempty" gorm:"type:timestamptz"`
 	DiagnosticHoldUntil          *time.Time `json:"diagnostic_hold_until,omitempty" gorm:"type:timestamptz"`
@@ -404,6 +405,37 @@ type TaskProgressResponse struct {
 	ResultImportAttempts    int                `json:"result_import_attempts,omitempty"`
 	Sepiida                 *SepiidaWorkflow   `json:"sepiida,omitempty"`
 	Tasks                   []SepiidaTask      `json:"tasks,omitempty"`
+	AnalysisProgress        *AnalysisProgress  `json:"analysis_progress,omitempty"`
+	NodeLiveness            *Liveness          `json:"node_liveness,omitempty"`
+	AgentLiveness           *AgentLiveness     `json:"agent_liveness,omitempty"`
+}
+
+type AnalysisStage struct {
+	Code    string `json:"code"`
+	Label   string `json:"label"`
+	Weight  int    `json:"weight"`
+	Percent int    `json:"percent"`
+	Status  string `json:"status"`
+}
+
+type AnalysisProgress struct {
+	Percent        int             `json:"percent"`
+	ProfileVersion string          `json:"profile_version"`
+	ActiveStages   []string        `json:"active_stages"`
+	Stages         []AnalysisStage `json:"stages"`
+}
+
+type Liveness struct {
+	State      string     `json:"state"`
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+}
+
+type AgentLiveness struct {
+	State              string     `json:"state"`
+	LastCollectedAt    *time.Time `json:"last_collected_at,omitempty"`
+	LastProgressPushAt *time.Time `json:"last_progress_push_at,omitempty"`
+	CollectionStatus   string     `json:"collection_status,omitempty"`
+	ErrorCode          string     `json:"error_code,omitempty"`
 }
 
 // Template represents a WDL template

@@ -60,6 +60,18 @@ type SepiidaTask struct {
 	UpdatedAt  time.Time     `json:"updated_at"`
 }
 
+type SepiidaAgentSession struct {
+	UUID                      string     `json:"uuid"`
+	AgentID                   string     `json:"agent_id"`
+	AgentVersion              string     `json:"agent_version,omitempty"`
+	CollectionIntervalSeconds int        `json:"collection_interval_seconds,omitempty"`
+	LastCollectedAt           *time.Time `json:"last_collected_at,omitempty"`
+	LastProgressPushAt        *time.Time `json:"last_progress_push_at,omitempty"`
+	LastCollectionStatus      string     `json:"last_collection_status,omitempty"`
+	LastErrorCode             string     `json:"last_error_code,omitempty"`
+	State                     string     `json:"state,omitempty"`
+}
+
 // SepiidaWorkflowResponse is the response from Sepiida API
 type SepiidaWorkflowResponse struct {
 	Workflow SepiidaWorkflow `json:"workflow,omitempty"`

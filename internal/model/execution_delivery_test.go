@@ -30,3 +30,18 @@ func TestExecutionOutboxEventsDoNotReleaseBeforeBusinessCompletion(t *testing.T)
 		t.Fatalf("completed staged task must emit completion and archive events: %#v", events)
 	}
 }
+
+func TestTerminatingRunningTaskDoesNotBecomeUserCancellation(t *testing.T) {
+	task := &Task{Executor: ExecutorCVM, ExternalOrgID: "org-1", ExecutionAttemptID: "attempt-1", Status: TaskStatusRunning, ExecutionPhase: "terminating"}
+	if events := executionOutboxEvents(task); len(events) != 0 {
+		t.Fatalf("automatic termination of a running task must not emit a cancellation event: %#v", events)
+	}
+	task.Status = TaskStatusFailed
+	if events := executionOutboxEvents(task); len(events) != 1 || events[0] != OverlayTaskEventFailed {
+		t.Fatalf("automatic failure must emit task.failed: %#v", events)
+	}
+	task.Status = TaskStatusCancelled
+	if events := executionOutboxEvents(task); len(events) != 1 || events[0] != OverlayTaskEventCancelled {
+		t.Fatalf("explicit cancelled status must emit task.cancelled: %#v", events)
+	}
+}

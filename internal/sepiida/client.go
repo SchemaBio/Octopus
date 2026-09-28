@@ -2,6 +2,7 @@ package sepiida
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,14 @@ import (
 
 	"github.com/SchemaBio/Octopus/internal/model"
 )
+
+var ErrNotFound = errors.New("Sepiida record not found")
+
+type HTTPStatusError struct{ StatusCode int }
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("Sepiida error (status %d)", e.StatusCode)
+}
 
 // Client is the Sepiida API client
 type Client struct {
@@ -70,10 +79,32 @@ func (c *Client) doRequest(method, path string) ([]byte, error) {
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("sepiida error (status %d)", resp.StatusCode)
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: %s", ErrNotFound, resp.Status)
+		}
+		return nil, &HTTPStatusError{StatusCode: resp.StatusCode}
 	}
 
 	return body, nil
+}
+
+func (c *Client) GetAgentStatus(uuid, agentID string) (*model.SepiidaAgentSession, error) {
+	query := url.Values{"uuid": {uuid}, "agent_id": {agentID}}
+	body, err := c.doRequest(http.MethodGet, "/api/v1/agent/status?"+query.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var session model.SepiidaAgentSession
+	if err := json.Unmarshal(body, &session); err != nil {
+		return nil, fmt.Errorf("failed to parse Sepiida agent status: %w", err)
+	}
+	if session.State == "legacy/unknown" {
+		return &session, nil
+	}
+	if session.UUID != uuid || session.AgentID != agentID {
+		return nil, fmt.Errorf("Sepiida returned a different agent attempt")
+	}
+	return &session, nil
 }
 
 // GetWorkflowByUUID queries workflow by UUID

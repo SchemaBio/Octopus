@@ -71,3 +71,21 @@ func TestSepiidaFirstReportOverdueUsesWorkflowStartDeadline(t *testing.T) {
 		})
 	}
 }
+
+func TestSepiidaQueryOutageGraceEndsAtFortyMinutes(t *testing.T) {
+	expectedAt := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
+	task := &model.Task{Executor: model.ExecutorCVM, ExecutionPhase: "running", Status: model.TaskStatusRunning, SepiidaFirstReportExpectedAt: &expectedAt}
+	timeout, grace := 10*time.Minute, 30*time.Minute
+	if sepiidaQueryUnavailableOverdue(task, timeout, grace, expectedAt.Add(40*time.Minute-time.Second)) {
+		t.Fatal("query outage should remain in grace immediately before 40 minutes")
+	}
+	if !sepiidaQueryUnavailableOverdue(task, timeout, grace, expectedAt.Add(40*time.Minute)) {
+		t.Fatal("query outage should become terminal at expected_at + 40 minutes")
+	}
+	task.SepiidaFirstReportedAt = ptrTime(expectedAt.Add(time.Minute))
+	if sepiidaQueryUnavailableOverdue(task, timeout, grace, expectedAt.Add(time.Hour)) {
+		t.Fatal("a confirmed first progress report must disable the timeout")
+	}
+}
+
+func ptrTime(value time.Time) *time.Time { return &value }

@@ -353,6 +353,7 @@ func migrateTaskExecutionColumns() error {
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS execution_reason_code varchar(120) DEFAULT ''",
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS phase_updated_at timestamptz",
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sepiida_first_report_expected_at timestamptz",
+		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sepiida_query_degraded_at timestamptz",
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS bootstrap_phase varchar(32) DEFAULT ''",
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS bootstrap_last_heartbeat_at timestamptz",
 		"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS diagnostic_hold_until timestamptz",

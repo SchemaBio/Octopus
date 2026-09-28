@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -327,7 +328,13 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 		return
 	}
 
-	workflow, _, err := s.sepiida.GetWorkflowWithTasks(task.UUID, sepiidaWorkflowAgentID(task))
+	sepiidaWorkflow, tasks, err := s.sepiida.GetWorkflowWithTasks(task.UUID, sepiidaWorkflowAgentID(task))
+	var agentSession *model.SepiidaAgentSession
+	if task.Executor == model.ExecutorCVM {
+		if session, statusErr := s.sepiida.GetAgentStatus(task.UUID, attemptID); statusErr == nil {
+			agentSession = session
+		}
+	}
 	if task.Executor == model.ExecutorCVM {
 		latest, latestErr := s.repo.FindByUUID(task.UUID)
 		if latestErr != nil || latest == nil || latest.ExecutionAttemptID != attemptID || latest.ExecutionPhase == "terminating" || latest.ExecutionPhase == "terminal" {
@@ -335,29 +342,28 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 		}
 		*task = *latest
 	}
-	if err != nil || workflow == nil {
-		s.timeoutMissingSepiidaFirstReport(task)
+	if agentSession != nil && agentSession.LastProgressPushAt != nil {
+		s.recordSepiidaFirstReport(task, agentSession.LastProgressPushAt)
+	}
+	if err != nil {
+		if errors.Is(err, sepiida.ErrNotFound) {
+			s.clearSepiidaQueryDegraded(task)
+			s.timeoutMissingSepiidaFirstReport(task, false)
+		} else {
+			s.timeoutMissingSepiidaFirstReport(task, true)
+		}
 		return
 	}
-	if task.SepiidaFirstReportedAt == nil {
-		now := time.Now().UTC()
-		query := database.GetDB().Model(&model.Task{}).Where("uuid = ? AND sepiida_first_reported_at IS NULL", task.UUID)
-		if task.Executor == model.ExecutorCVM {
-			query = query.Where("execution_attempt_id = ?", attemptID)
-		}
-		result := query.Update("sepiida_first_reported_at", now)
-		if result.Error == nil && result.RowsAffected == 1 {
-			task.SepiidaFirstReportedAt = &now
-		} else if result.Error == nil && task.Executor == model.ExecutorCVM {
-			var current model.Task
-			if database.GetDB().Where("uuid = ? AND execution_attempt_id = ?", task.UUID, attemptID).First(&current).Error == nil {
-				task.SepiidaFirstReportedAt = current.SepiidaFirstReportedAt
-			}
-		}
+	if sepiidaWorkflow == nil {
+		s.clearSepiidaQueryDegraded(task)
+		s.timeoutMissingSepiidaFirstReport(task, false)
+		return
 	}
+	s.clearSepiidaQueryDegraded(task)
+	s.recordSepiidaFirstReport(task, nil)
 	previousStatus := task.Status
-	archiveMetadata := workflow.NormalizedArchiveMetadata()
-	if task.Executor == model.ExecutorCVM && workflow.Status == model.SepiidaStatusSuccess {
+	archiveMetadata := sepiidaWorkflow.NormalizedArchiveMetadata()
+	if task.Executor == model.ExecutorCVM && sepiidaWorkflow.Status == model.SepiidaStatusSuccess {
 		if !archiveMetadata.Archived {
 			// Sepiida can report workflow success before the archive callback is
 			// accepted by Sepiida. Keep the business status stable until the
@@ -388,7 +394,14 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	}
 
 	s.mu.Lock()
-	changed, completedNow := applySepiidaWorkflowStatus(task, workflow.Status)
+	changed, completedNow := applySepiidaWorkflowStatus(task, sepiidaWorkflow.Status)
+	if sepiidaWorkflow.Status == model.SepiidaStatusRunning {
+		analysis := workflow.CalculateAnalysisProgress(task.Template, tasks, false)
+		if task.Progress < analysis.Percent {
+			task.Progress = analysis.Percent
+			changed = true
+		}
+	}
 
 	if changed {
 		task.UpdatedAt = time.Now()
@@ -397,7 +410,7 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 			fmt.Printf("WARNING: persist Sepiida task status for %s: %v\n", task.UUID, err)
 			return
 		}
-		s.syncCNVBaselineOutput(task, workflow.OutputsJSON)
+		s.syncCNVBaselineOutput(task, sepiidaWorkflow.OutputsJSON)
 		s.emitStatusEvent(task, previousStatus)
 	}
 	s.mu.Unlock()
@@ -410,23 +423,49 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	}
 }
 
-func (s *TaskService) timeoutMissingSepiidaFirstReport(task *model.Task) {
+func (s *TaskService) timeoutMissingSepiidaFirstReport(task *model.Task, queryUnavailable bool) {
+	if task == nil || database.GetDB() == nil {
+		return
+	}
+	attemptID := task.ExecutionAttemptID
 	timeout := s.cfg.Sepiida.FirstReportTimeout
-	if !sepiidaFirstReportOverdue(task, timeout, time.Now().UTC()) {
+	grace := s.cfg.Sepiida.QueryGracePeriod
+	if queryUnavailable {
+		if task.SepiidaQueryDegradedAt == nil {
+			now := time.Now().UTC()
+			query := database.GetDB().Model(&model.Task{}).Where("uuid = ? AND execution_attempt_id = ? AND sepiida_query_degraded_at IS NULL", task.UUID, task.ExecutionAttemptID)
+			if err := query.Update("sepiida_query_degraded_at", now).Error; err == nil {
+				task.SepiidaQueryDegradedAt = &now
+			}
+		}
+		if !sepiidaQueryUnavailableOverdue(task, timeout, grace, time.Now().UTC()) {
+			return
+		}
+	} else if !sepiidaFirstReportOverdue(task, timeout, time.Now().UTC()) {
 		return
 	}
 
-	const reasonCode = "SEPIIDA_FIRST_REPORT_TIMEOUT"
-	const message = "Sepiida did not receive the first workflow progress report before the deadline"
+	reasonCode := "SEPIIDA_FIRST_REPORT_TIMEOUT"
+	message := "Sepiida did not receive the first workflow progress report before the deadline"
+	if queryUnavailable {
+		reasonCode = "SEPIIDA_QUERY_UNAVAILABLE"
+		message = "Sepiida remained unavailable while confirming the first workflow progress report"
+	}
 	var current model.Task
 	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ?", task.UUID).First(&current).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ? AND execution_attempt_id = ?", task.UUID, attemptID).First(&current).Error; err != nil {
 			return err
 		}
-		if current.ExecutionAttemptID == "" || !sepiidaFirstReportOverdue(&current, timeout, time.Now().UTC()) {
+		overdue := sepiidaFirstReportOverdue(&current, timeout, time.Now().UTC())
+		if queryUnavailable {
+			overdue = sepiidaQueryUnavailableOverdue(&current, timeout, grace, time.Now().UTC())
+		}
+		if current.ExecutionAttemptID != attemptID || attemptID == "" || !overdue || current.Status != model.TaskStatusRunning {
 			return nil
 		}
 		now := time.Now().UTC()
+		current.Status = model.TaskStatusFailed
+		current.FinishedAt = &now
 		current.ExecutionPhase = "terminating"
 		current.ExecutionReasonCode = reasonCode
 		current.Error = message
@@ -459,6 +498,50 @@ func (s *TaskService) timeoutMissingSepiidaFirstReport(task *model.Task) {
 	}
 }
 
+func sepiidaQueryUnavailableOverdue(task *model.Task, timeout, grace time.Duration, now time.Time) bool {
+	if task == nil || grace < 0 || !sepiidaFirstReportEligible(task) || timeout <= 0 {
+		return false
+	}
+	return !now.Before(task.SepiidaFirstReportExpectedAt.Add(timeout + grace))
+}
+
+func sepiidaFirstReportEligible(task *model.Task) bool {
+	return task != nil && task.Executor == model.ExecutorCVM && task.SepiidaFirstReportedAt == nil &&
+		task.SepiidaFirstReportExpectedAt != nil && (task.ExecutionPhase == "running" || task.ExecutionPhase == "archiving")
+}
+
+func (s *TaskService) recordSepiidaFirstReport(task *model.Task, reportedAt *time.Time) {
+	if task == nil || task.SepiidaFirstReportedAt != nil || database.GetDB() == nil {
+		return
+	}
+	now := time.Now().UTC()
+	if reportedAt != nil {
+		now = reportedAt.UTC()
+	}
+	query := database.GetDB().Model(&model.Task{}).Where("uuid = ? AND sepiida_first_reported_at IS NULL", task.UUID)
+	if task.Executor == model.ExecutorCVM {
+		query = query.Where("execution_attempt_id = ?", task.ExecutionAttemptID)
+	}
+	result := query.Update("sepiida_first_reported_at", now)
+	if result.Error == nil && result.RowsAffected == 1 {
+		task.SepiidaFirstReportedAt = &now
+	} else if result.Error == nil && task.Executor == model.ExecutorCVM {
+		var current model.Task
+		if database.GetDB().Where("uuid = ? AND execution_attempt_id = ?", task.UUID, task.ExecutionAttemptID).First(&current).Error == nil {
+			task.SepiidaFirstReportedAt = current.SepiidaFirstReportedAt
+		}
+	}
+}
+
+func (s *TaskService) clearSepiidaQueryDegraded(task *model.Task) {
+	if task == nil || task.SepiidaQueryDegradedAt == nil || database.GetDB() == nil {
+		return
+	}
+	if err := database.GetDB().Model(&model.Task{}).Where("uuid = ? AND execution_attempt_id = ?", task.UUID, task.ExecutionAttemptID).Update("sepiida_query_degraded_at", nil).Error; err == nil {
+		task.SepiidaQueryDegradedAt = nil
+	}
+}
+
 func sepiidaFirstReportOverdue(task *model.Task, timeout time.Duration, now time.Time) bool {
 	if task == nil || timeout <= 0 || task.Executor != model.ExecutorCVM || task.SepiidaFirstReportedAt != nil || task.SepiidaFirstReportExpectedAt == nil {
 		return false
@@ -476,12 +559,27 @@ func (s *TaskService) stageCVMArchive(task *model.Task, metadata model.SepiidaAr
 	if task.CVMArchiveStagedAt != nil {
 		return nil
 	}
+	if task.ExecutionPhase != "archiving" || task.Progress < 99 {
+		now := time.Now().UTC()
+		task.ExecutionPhase = "archiving"
+		task.PhaseUpdatedAt = &now
+		task.UpdatedAt = now
+		if task.Progress < 99 {
+			task.Progress = 99
+		}
+		if err := s.repo.Update(task); err != nil {
+			return fmt.Errorf("persist archive phase: %w", err)
+		}
+	}
 	if err := s.stageCOSArchive(task, metadata); err != nil {
 		return err
 	}
 	now := time.Now()
 	task.CVMArchiveStagedAt = &now
 	task.ExecutionPhase = "archiving"
+	if task.Progress < 99 {
+		task.Progress = 99
+	}
 	task.PhaseUpdatedAt = &now
 	task.UpdatedAt = now
 	return s.repo.Update(task)
@@ -1685,12 +1783,35 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 		ResultImportFingerprint: task.ResultImportFingerprint,
 		ResultImportAttempts:    task.ResultImportAttempts,
 	}
+	if task.Executor == model.ExecutorCVM {
+		resp.NodeLiveness = nodeLiveness(task.BootstrapLastHeartbeatAt, time.Now().UTC())
+		if task.Status == model.TaskStatusRunning || task.Status == model.TaskStatusCompleted || task.Progress > 0 {
+			analysis := workflow.CalculateAnalysisProgress(task.Template, nil, task.Status == model.TaskStatusCompleted)
+			if analysis.Percent < task.Progress {
+				analysis.Percent = task.Progress
+			}
+			resp.AnalysisProgress = analysis
+		}
+		if task.ExecutionAttemptID != "" {
+			if s.sepiida == nil {
+				resp.AgentLiveness = &model.AgentLiveness{State: "legacy/unknown"}
+			} else if session, statusErr := s.sepiida.GetAgentStatus(task.UUID, task.ExecutionAttemptID); statusErr == nil && session != nil {
+				resp.AgentLiveness = agentLiveness(session, time.Now().UTC())
+			} else if errors.Is(statusErr, sepiida.ErrNotFound) {
+				resp.AgentLiveness = &model.AgentLiveness{State: "legacy/unknown"}
+			} else if statusErr == nil {
+				resp.AgentLiveness = &model.AgentLiveness{State: "legacy/unknown"}
+			} else {
+				resp.AgentLiveness = &model.AgentLiveness{State: "unknown"}
+			}
+		}
+	}
 
 	// Query Sepiida for real-time progress
 	if s.sepiida != nil && task.UUID != "" {
-		workflow, tasks, err := s.sepiida.GetWorkflowWithTasks(task.UUID, sepiidaWorkflowAgentID(task))
-		if err == nil && workflow != nil {
-			resp.Sepiida = workflow
+		sepiidaWorkflow, tasks, err := s.sepiida.GetWorkflowWithTasks(task.UUID, sepiidaWorkflowAgentID(task))
+		if err == nil && sepiidaWorkflow != nil {
+			resp.Sepiida = sepiidaWorkflow
 			resp.Tasks = tasks
 			s.syncTaskFromSepiida(task)
 			resp.Status = task.Status
@@ -1712,10 +1833,71 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 			resp.DispatchNextRetryAt = task.CVMDispatchNextRetryAt
 			resp.DispatchRetryDeadlineAt = task.CVMDispatchRetryDeadlineAt
 			resp.DispatchRetryCount = task.CVMDispatchRetryCount
+			if task.Executor == model.ExecutorCVM {
+				analysis := workflow.CalculateAnalysisProgress(task.Template, tasks, sepiidaWorkflow.Status == model.SepiidaStatusSuccess)
+				if task.ExecutionPhase == "archiving" && analysis.Percent < 99 {
+					analysis.Percent = 99
+				}
+				if task.Status == model.TaskStatusCompleted {
+					analysis.Percent = 100
+				}
+				if analysis.Percent < task.Progress {
+					analysis.Percent = task.Progress
+				}
+				resp.AnalysisProgress = analysis
+				resp.NodeLiveness = nodeLiveness(task.BootstrapLastHeartbeatAt, time.Now().UTC())
+			}
 		}
 	}
 
 	return resp, nil
+}
+
+func nodeLiveness(lastSeen *time.Time, now time.Time) *model.Liveness {
+	status := &model.Liveness{State: "unknown", LastSeenAt: lastSeen}
+	if lastSeen == nil {
+		return status
+	}
+	age := now.Sub(*lastSeen)
+	switch {
+	case age <= 2*time.Minute:
+		status.State = "online"
+	case age <= 5*time.Minute:
+		status.State = "delayed"
+	default:
+		status.State = "offline"
+	}
+	return status
+}
+
+func agentLiveness(session *model.SepiidaAgentSession, now time.Time) *model.AgentLiveness {
+	result := &model.AgentLiveness{
+		LastCollectedAt: session.LastCollectedAt, LastProgressPushAt: session.LastProgressPushAt,
+		CollectionStatus: session.LastCollectionStatus, ErrorCode: session.LastErrorCode,
+	}
+	if session.LastCollectedAt == nil {
+		result.State = "legacy/unknown"
+		return result
+	}
+	interval := time.Duration(session.CollectionIntervalSeconds) * time.Second
+	onlineThreshold := 45 * time.Second
+	if interval*3 > onlineThreshold {
+		onlineThreshold = interval * 3
+	}
+	delayedThreshold := 2 * time.Minute
+	if interval*8 > delayedThreshold {
+		delayedThreshold = interval * 8
+	}
+	age := now.Sub(*session.LastCollectedAt)
+	switch {
+	case age <= onlineThreshold:
+		result.State = "online"
+	case age <= delayedThreshold:
+		result.State = "delayed"
+	default:
+		result.State = "offline"
+	}
+	return result
 }
 
 // ListTasks lists tasks with optional filtering

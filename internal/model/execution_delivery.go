@@ -96,8 +96,12 @@ func executionOutboxEvents(t *Task) []string {
 			event = OverlayTaskEventCompleted
 		case TaskStatusFailed:
 			event = OverlayTaskEventFailed
-		default:
+		case TaskStatusCancelled:
 			event = OverlayTaskEventCancelled
+		default:
+			// A terminating execution is not necessarily a user cancellation.
+			// Emit only the business terminal state already recorded on the task.
+			event = ""
 		}
 	}
 	events := make([]string, 0, 2)

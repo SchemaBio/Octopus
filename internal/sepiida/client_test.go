@@ -1,12 +1,45 @@
 package sepiida
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestClientReadsAttemptScopedAgentSession(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agent/status" || r.URL.Query().Get("uuid") != "task-stable" || r.URL.Query().Get("agent_id") != "attempt-current" {
+			t.Fatalf("unexpected scoped agent status query: %s", r.URL.String())
+		}
+		_, _ = w.Write([]byte(`{"uuid":"task-stable","agent_id":"attempt-current","collection_interval_seconds":15,"last_collection_status":"ok"}`))
+	}))
+	defer server.Close()
+
+	session, err := NewClient(server.URL, "query-key").GetAgentStatus("task-stable", "attempt-current")
+	if err != nil || session == nil || session.AgentID != "attempt-current" {
+		t.Fatalf("agent session read failed: session=%+v err=%v", session, err)
+	}
+}
+
+func TestClientSeparatesMissingWorkflowFromSepiidaOutage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) }))
+	defer server.Close()
+	_, err := NewClient(server.URL, "query-key").GetWorkflowByAttempt("task-stable", "attempt-current")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("404 should be identified as a successful missing-record result: %v", err)
+	}
+
+	server503 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }))
+	defer server503.Close()
+	_, err = NewClient(server503.URL, "query-key").GetWorkflowByAttempt("task-stable", "attempt-current")
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("5xx should be identifiable as a query outage: %v", err)
+	}
+}
 
 func TestClientQueriesExactExecutionAndRejectsFallback(t *testing.T) {
 	for _, returnedAgent := range []string{"attempt-current", "attempt-old"} {
