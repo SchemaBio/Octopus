@@ -68,6 +68,8 @@ type SNVIndelListQuery struct {
 	Gene               string `form:"gene"`
 	Classification     string `form:"classification"`
 	GeneListID         string `form:"geneListId"`
+	Sort               string `form:"sort"`
+	Direction          string `form:"direction"`
 	// GeneListGenes is populated by ResultService only after GeneListID has
 	// been resolved within the authenticated actor's scope.
 	GeneListGenes []string `form:"-" json:"-"`

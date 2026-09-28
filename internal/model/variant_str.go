@@ -42,6 +42,8 @@ type STRListQuery struct {
 	ExecutionAttemptID string `form:"-" json:"-"`
 	Search             string `form:"search"`
 	Status             string `form:"status"`
+	Sort               string `form:"sort"`
+	Direction          string `form:"direction"`
 	Page               int    `form:"page" binding:"omitempty,min=1"`
 	PageSize           int    `form:"page_size" binding:"omitempty,min=1,max=100"`
 }

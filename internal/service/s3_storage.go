@@ -172,6 +172,23 @@ func (s *s3Storage) presignDownloadWithExpiry(ctx context.Context, key, filename
 	return request.URL, nil
 }
 
+// presignRead returns a short-lived object URL without a content-disposition
+// override. IGV.js needs the storage service to honor browser Range requests
+// against the original BAM/VCF content type; forcing an attachment response
+// can make some browsers download the file instead of issuing a range read.
+func (s *s3Storage) presignRead(ctx context.Context, key string, expiry time.Duration) (string, error) {
+	if expiry <= 0 {
+		expiry = s.expiry
+	}
+	request, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket), Key: aws.String(key),
+	}, func(o *s3.PresignOptions) { o.Expires = expiry })
+	if err != nil {
+		return "", fmt.Errorf("presign S3 read: %w", err)
+	}
+	return request.URL, nil
+}
+
 func (s *s3Storage) stat(ctx context.Context, key string) (int64, error) {
 	output, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
 	if err != nil {

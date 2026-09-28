@@ -110,6 +110,12 @@ func ValidateStartup(cfg *Config) error {
 			}
 		}
 	}
+	if err := validateIGVReferenceConfig("IGV_HG19", cfg.IGV.HG19, cfg.Server.Mode); err != nil {
+		return err
+	}
+	if err := validateIGVReferenceConfig("IGV_HG38", cfg.IGV.HG38, cfg.Server.Mode); err != nil {
+		return err
+	}
 	if cfg.Task.DefaultExecutor == "cvm_spot" {
 		if !cfg.Overlay.Enabled {
 			return fmt.Errorf("OVERLAY_ENABLED must be true when DEFAULT_EXECUTOR=cvm_spot")
@@ -133,6 +139,37 @@ func ValidateStartup(cfg *Config) error {
 		}
 	}
 
+	return nil
+}
+
+func validateIGVReferenceConfig(prefix string, ref IGVReferenceConfig, mode string) error {
+	values := map[string]string{
+		prefix + "_FASTA_URL":            ref.FASTAURL,
+		prefix + "_FAI_URL":              ref.FAIURL,
+		prefix + "_ALIAS_URL":            ref.AliasURL,
+		prefix + "_CYTOBAND_URL":         ref.CytobandURL,
+		prefix + "_GENE_TRACK_URL":       ref.GeneTrackURL,
+		prefix + "_GENE_TRACK_INDEX_URL": ref.GeneTrackIndexURL,
+	}
+	for name, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if err := validateAbsoluteServiceURL(name, value); err != nil {
+			return err
+		}
+		if mode == "release" {
+			if err := validateReleaseHTTPSURL(name, value); err != nil {
+				return err
+			}
+		}
+	}
+	if (strings.TrimSpace(ref.FASTAURL) == "") != (strings.TrimSpace(ref.FAIURL) == "") {
+		return fmt.Errorf("%s_FASTA_URL and %s_FAI_URL must be configured together", prefix, prefix)
+	}
+	if (strings.TrimSpace(ref.GeneTrackURL) == "") != (strings.TrimSpace(ref.GeneTrackIndexURL) == "") {
+		return fmt.Errorf("%s_GENE_TRACK_URL and %s_GENE_TRACK_INDEX_URL must be configured together", prefix, prefix)
+	}
 	return nil
 }
 

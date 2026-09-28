@@ -211,6 +211,9 @@ func New(cfg *config.Config) *gin.Engine {
 		results := v1.Group("/tasks/:id/results")
 		results.Use(middleware.JWTAuth(cfg))
 		{
+			results.GET("/context", resultHandler.GetContext)
+			results.GET("/igv", resultHandler.GetIGVSession)
+			results.POST("/igv/urls", resultHandler.SignIGVTrackURLs)
 			results.GET("/qc", resultHandler.GetQC)
 			results.GET("/snv-indel", resultHandler.ListSNVIndels)
 			results.GET("/cnv-segment", resultHandler.ListCNVSegments)

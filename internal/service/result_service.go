@@ -15,17 +15,19 @@ import (
 
 // ResultService handles result business logic
 type ResultService struct {
-	cfg          *config.Config
-	repo         *repository.ResultRepository
-	geneListRepo *repository.GeneListRepository
+	cfg             *config.Config
+	repo            *repository.ResultRepository
+	geneListRepo    *repository.GeneListRepository
+	importBatchRepo *repository.ResultImportBatchRepository
 }
 
 // NewResultService creates a new result service
 func NewResultService(cfg *config.Config) *ResultService {
 	return &ResultService{
-		cfg:          cfg,
-		repo:         repository.NewResultRepository(),
-		geneListRepo: repository.NewGeneListRepository(),
+		cfg:             cfg,
+		repo:            repository.NewResultRepository(),
+		geneListRepo:    repository.NewGeneListRepository(),
+		importBatchRepo: repository.NewResultImportBatchRepository(),
 	}
 }
 

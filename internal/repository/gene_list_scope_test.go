@@ -60,7 +60,7 @@ func TestResultRepositoryUsesResolvedGeneListGenes(t *testing.T) {
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "result_snv_indels" WHERE task_id = \$1 AND gene IN \(\$2,\$3\)`).
 		WithArgs("task-1", "BRCA1", "BRCA2").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT \* FROM "result_snv_indels" WHERE task_id = \$1 AND gene IN \(\$2,\$3\) ORDER BY acmg_classification ASC, gene ASC LIMIT \$4`).
+	mock.ExpectQuery(`SELECT \* FROM "result_snv_indels" WHERE task_id = \$1 AND gene IN \(\$2,\$3\) ORDER BY CASE acmg_classification WHEN 'Pathogenic' THEN 1 WHEN 'Likely_Pathogenic' THEN 2 WHEN 'VUS' THEN 3 WHEN 'Likely_Benign' THEN 4 WHEN 'Benign' THEN 5 ELSE 99 END ASC,gene ASC,id ASC LIMIT \$4`).
 		WithArgs("task-1", "BRCA1", "BRCA2", 20).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "gene"}).AddRow("variant-1", "task-1", "BRCA1"))
 
@@ -89,7 +89,7 @@ func TestResultRepositoryEmptyResolvedGeneListMatchesNothing(t *testing.T) {
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "result_snv_indels" WHERE task_id = \$1 AND 1 = 0`).
 		WithArgs("task-1").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectQuery(`SELECT \* FROM "result_snv_indels" WHERE task_id = \$1 AND 1 = 0 ORDER BY acmg_classification ASC, gene ASC LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "result_snv_indels" WHERE task_id = \$1 AND 1 = 0 ORDER BY CASE acmg_classification WHEN 'Pathogenic' THEN 1 WHEN 'Likely_Pathogenic' THEN 2 WHEN 'VUS' THEN 3 WHEN 'Likely_Benign' THEN 4 WHEN 'Benign' THEN 5 ELSE 99 END ASC,gene ASC,id ASC LIMIT \$2`).
 		WithArgs("task-1", 20).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 

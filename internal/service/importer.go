@@ -191,7 +191,8 @@ func (imp *Importer) importFromArchive(taskID string, archiveDir string) (*Impor
 	return result, nil
 }
 
-// importQC reads QC data from outputs.resolved.json
+// importQC reads QC data from outputs.resolved.json. Single workflows expose a
+// QC object; Trio workflows expose one object per member in workflow order.
 func (imp *Importer) importQC(taskID string, archiveDir string, result *ImportResult) error {
 	data, err := (&Archiver{cfg: imp.cfg}).readArchiveJSONFile(archiveDir, "outputs.resolved.json")
 	if err != nil {
@@ -203,28 +204,77 @@ func (imp *Importer) importQC(taskID string, archiveDir string, result *ImportRe
 		return err
 	}
 
-	// Find qc_result in any summary
-	var qcData map[string]interface{}
+	// Find qc_result in any summary. The current WDL contract includes members
+	// for Trio output. Older archives fall back to the documented order.
+	type qcDocument struct {
+		data map[string]interface{}
+		role string
+	}
+	var documents []qcDocument
 	for _, v := range parsed {
 		if summary, ok := v.(map[string]interface{}); ok {
-			if qc, ok := summary["qc_result"].(map[string]interface{}); ok {
-				qcData = qc
-				break
+			roles := resultMemberRoles(summary["members"])
+			switch qc := summary["qc_result"].(type) {
+			case map[string]interface{}:
+				documents = append(documents, qcDocument{data: qc, role: memberRoleAt(roles, 0, false)})
+			case []interface{}:
+				for i, item := range qc {
+					if itemMap, ok := item.(map[string]interface{}); ok {
+						documents = append(documents, qcDocument{data: itemMap, role: memberRoleAt(roles, i, true)})
+					}
+				}
 			}
 		}
 	}
 
-	if qcData == nil {
+	if len(documents) == 0 {
 		return fmt.Errorf("qc_result not found in outputs.resolved.json")
 	}
 
-	// Delete existing QC for this task
-	qc := imp.parseQCResult(taskID, qcData)
-	if err := imp.repo.CreateQC(qc); err != nil {
-		return err
+	for _, document := range documents {
+		qc := imp.parseQCResult(taskID, document.data)
+		qc.MemberRole = document.role
+		qc.MemberID = qc.SampleID
+		if qc.MemberID == "" {
+			qc.MemberID = qc.MemberRole
+		}
+		if qc.MemberRole == "" {
+			qc.MemberRole = "proband"
+		}
+		if err := imp.repo.CreateQC(qc); err != nil {
+			return err
+		}
 	}
-	result.Counts["qc"] = 1
+	result.Counts["qc"] = len(documents)
 	return nil
+}
+
+func resultMemberRoles(value interface{}) []string {
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	roles := make([]string, 0, len(items))
+	for _, item := range items {
+		if role, ok := item.(string); ok && strings.TrimSpace(role) != "" {
+			roles = append(roles, strings.TrimSpace(role))
+		}
+	}
+	return roles
+}
+
+func memberRoleAt(roles []string, index int, trio bool) string {
+	if index >= 0 && index < len(roles) {
+		return roles[index]
+	}
+	if trio {
+		fallback := []string{"proband", "father", "mother"}
+		if index >= 0 && index < len(fallback) {
+			return fallback[index]
+		}
+		return fmt.Sprintf("member:%d", index+1)
+	}
+	return "proband"
 }
 
 // parseQCResult parses the nested qc_result JSON into a flat QCResult model
@@ -235,6 +285,7 @@ func (imp *Importer) parseQCResult(taskID string, qc map[string]interface{}) *mo
 		ImportBatchID:      imp.importBatchID,
 		ID:                 uuid.New().String(),
 		TaskID:             taskID,
+		MetricAvailability: qcMetricAvailability(qc),
 	}
 
 	if sid, ok := qc["sample_id"].(string); ok {
@@ -311,6 +362,44 @@ func (imp *Importer) parseQCResult(taskID string, qc map[string]interface{}) *mo
 	}
 
 	return r
+}
+
+// qcMetricAvailability preserves the source-field presence independently of
+// the flattened numeric values. This lets the results API expose null for an
+// unknown metric instead of turning it into a clinically misleading zero.
+func qcMetricAvailability(qc map[string]interface{}) string {
+	available := map[string]bool{}
+	mark := func(group, key, metric string) {
+		if section, ok := qc[group].(map[string]interface{}); ok {
+			if group == "fastp" {
+				section, _ = section["after_filtering"].(map[string]interface{})
+			}
+			if _, ok := section[key]; ok {
+				available[metric] = true
+			}
+		}
+	}
+	mark("fastp", "total_reads", "totalReads")
+	mark("fastp", "q30_rate", "q30Rate")
+	mark("fastp", "gc_content", "gcContent")
+	mark("xamdst", "mapped_reads", "mappedReads")
+	mark("xamdst", "mapped_reads_fraction", "mappedReadsFraction")
+	mark("xamdst", "average_depth", "averageDepth")
+	mark("xamdst", "average_depth_rmdup", "dedupDepth")
+	mark("xamdst", "coverage_gte_30x", "coverageGte30x")
+	mark("xamdst", "insert_size_median", "insertSizeMedian")
+	mark("xamdst", "target_data_fraction_all", "targetDataFraction")
+	mark("hs_metrics", "mean_target_coverage", "meanTargetCoverage")
+	mark("hs_metrics", "pct_target_bases_30x", "pctTargetBases30x")
+	mark("sambamba", "percent_duplication", "duplicateRate")
+	mark("mt_xamdst", "mt_average_depth", "mtAverageDepth")
+	mark("mt_xamdst", "mt_coverage_gt_0x", "mtCoverageGt0x")
+	mark("sry", "predicted_gender", "predictedGender")
+	encoded, err := json.Marshal(available)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
 }
 
 // findResultFiles finds all result TSV files in the archive directory

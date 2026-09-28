@@ -106,6 +106,9 @@ func AutoMigrate() error {
 	if err := migrateAuditScope(); err != nil {
 		return err
 	}
+	if err := migrateQCMemberScope(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -298,6 +301,29 @@ func migrateAuditScope() error {
 	} {
 		if err := DB.Exec(statement).Error; err != nil {
 			return fmt.Errorf("failed to create review event indexes: %w", err)
+		}
+	}
+	return nil
+}
+
+// migrateQCMemberScope upgrades the former one-QC-record-per-attempt key to
+// an explicit member scoped key. Existing imported records are retained as an
+// unknown legacy member instead of being guessed to belong to a family role.
+func migrateQCMemberScope() error {
+	if DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	for _, statement := range []string{
+		`ALTER TABLE result_qc ADD COLUMN IF NOT EXISTS member_id varchar(100)`,
+		`ALTER TABLE result_qc ADD COLUMN IF NOT EXISTS member_role varchar(30)`,
+		`ALTER TABLE result_qc ADD COLUMN IF NOT EXISTS metric_availability jsonb`,
+		`UPDATE result_qc SET member_id = COALESCE(NULLIF(member_id, ''), NULLIF(sample_id, ''), 'legacy:unknown') WHERE member_id IS NULL OR member_id = ''`,
+		`UPDATE result_qc SET member_role = COALESCE(NULLIF(member_role, ''), 'unknown') WHERE member_role IS NULL OR member_role = ''`,
+		`DROP INDEX IF EXISTS idx_result_qc_attempt`,
+		`CREATE UNIQUE INDEX idx_result_qc_attempt ON result_qc (tenant_id, task_id, execution_attempt_id, member_id)`,
+	} {
+		if err := DB.Exec(statement).Error; err != nil {
+			return fmt.Errorf("failed to migrate QC member scope: %w", err)
 		}
 	}
 	return nil

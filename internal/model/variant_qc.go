@@ -4,8 +4,8 @@ package model
 // Flattened from the nested qc_result structure in outputs.resolved.json
 type QCResult struct {
 	// QC is a result projection and therefore carries the same immutable
-	// provenance as the variant tables.  Keep the composite uniqueness below
-	// scoped to tenant + task + execution attempt so retries can coexist.
+	// provenance as the variant tables. A single execution can contain one QC
+	// document per family member, so member_id is part of the uniqueness key.
 	TenantID           string `json:"-" gorm:"size:160;index;uniqueIndex:idx_result_qc_attempt,priority:1"`
 	ExecutionAttemptID string `json:"-" gorm:"size:36;index;uniqueIndex:idx_result_qc_attempt,priority:3"`
 	ImportBatchID      uint   `json:"-" gorm:"index"`
@@ -13,7 +13,13 @@ type QCResult struct {
 	TaskID             string `json:"taskId" gorm:"size:36;index;uniqueIndex:idx_result_qc_attempt,priority:2"`
 
 	// Sample
-	SampleID string `json:"sampleId" gorm:"size:100"`
+	SampleID   string `json:"sampleId" gorm:"size:100"`
+	MemberID   string `json:"memberId" gorm:"size:100;index;uniqueIndex:idx_result_qc_attempt,priority:4"`
+	MemberRole string `json:"memberRole" gorm:"size:30;index"`
+	// MetricAvailability records which source fields were present at import.
+	// Numeric database columns remain compatible with older imports, while API
+	// consumers can distinguish a reported zero from an unavailable metric.
+	MetricAvailability string `json:"metricAvailability,omitempty" gorm:"type:jsonb"`
 
 	// fastp - after filtering
 	TotalReads      int64   `json:"totalReads"`

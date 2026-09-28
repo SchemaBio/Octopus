@@ -38,6 +38,61 @@ func NewResultHandler(cfg *config.Config) *ResultHandler {
 	}
 }
 
+// GetContext returns a single attempt-scoped context for the interpretation
+// workspace. It is deliberately separate from the paginated result endpoints
+// so browsers can discard their cache when an execution is re-imported.
+func (h *ResultHandler) GetContext(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	context, err := h.svc.GetContext(c.Request.Context(), task)
+	if err != nil {
+		ErrorInternal(c, "failed to load result context")
+		return
+	}
+	Success(c, context)
+}
+
+// GetIGVSession returns safe evidence descriptors. Object keys and short-lived
+// URLs are intentionally omitted from this metadata response.
+func (h *ResultHandler) GetIGVSession(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	session, err := h.svc.GetIGVSession(c.Request.Context(), task)
+	if err != nil {
+		ErrorInternal(c, "failed to load IGV evidence")
+		return
+	}
+	Success(c, session)
+}
+
+// SignIGVTrackURLs signs only manifest-authorized tracks for this task. A
+// version conflict tells the browser to refresh its result context first.
+func (h *ResultHandler) SignIGVTrackURLs(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	var request model.IGVURLRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		ErrorBadRequest(c, "trackIds and version are required")
+		return
+	}
+	urls, err := h.svc.SignIGVTracks(c.Request.Context(), task, request)
+	if err != nil {
+		if errors.Is(err, service.ErrIGVEvidenceChanged) {
+			ErrorConflict(c, "result evidence changed; refresh the result context")
+			return
+		}
+		ErrorBadRequest(c, "requested IGV evidence is unavailable")
+		return
+	}
+	Success(c, urls)
+}
+
 // ListReviewEvents lists the audit timeline for one authorized task.
 func (h *ResultHandler) ListReviewEvents(c *gin.Context) {
 	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))

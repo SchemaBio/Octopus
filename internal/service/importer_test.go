@@ -1,10 +1,39 @@
 package service
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestQCMemberRolesKeepsTrioOrderAndAvailability(t *testing.T) {
+	roles := resultMemberRoles([]interface{}{"proband", "father", "mother"})
+	for index, want := range []string{"proband", "father", "mother"} {
+		if got := memberRoleAt(roles, index, true); got != want {
+			t.Fatalf("memberRoleAt(%d) = %q, want %q", index, got, want)
+		}
+	}
+	if got := memberRoleAt(nil, 1, true); got != "father" {
+		t.Fatalf("trio fallback role = %q, want father", got)
+	}
+
+	availability := qcMetricAvailability(map[string]interface{}{
+		"fastp": map[string]interface{}{
+			"after_filtering": map[string]interface{}{"total_reads": float64(0)},
+		},
+	})
+	var parsed map[string]bool
+	if err := json.Unmarshal([]byte(availability), &parsed); err != nil {
+		t.Fatalf("decode availability: %v", err)
+	}
+	if !parsed["totalReads"] {
+		t.Fatal("present zero-valued total_reads was not marked available")
+	}
+	if parsed["averageDepth"] {
+		t.Fatal("missing average_depth was marked available")
+	}
+}
 
 func TestImporterImportQCRejectsSymlinkEscape(t *testing.T) {
 	archiveDir := t.TempDir()

@@ -19,6 +19,7 @@ type Config struct {
 	LLM          LLMConfig
 	Storage      StorageConfig
 	Report       ReportConfig
+	IGV          IGVConfig
 }
 
 type ServerConfig struct {
@@ -130,6 +131,24 @@ type StorageConfig struct {
 type ReportConfig struct {
 	PackageMaxSizeMB int
 	RequestTimeout   time.Duration
+}
+
+// IGVConfig describes self-hosted immutable reference assets. Task archives
+// remain private; only the result service can mint short-lived COS URLs for
+// the task-specific tracks.
+type IGVConfig struct {
+	HG19           IGVReferenceConfig
+	HG38           IGVReferenceConfig
+	TrackURLExpiry time.Duration
+}
+
+type IGVReferenceConfig struct {
+	FASTAURL          string
+	FAIURL            string
+	AliasURL          string
+	CytobandURL       string
+	GeneTrackURL      string
+	GeneTrackIndexURL string
 }
 
 // Load loads configuration from environment and files
@@ -263,6 +282,25 @@ func Load() *Config {
 		Report: ReportConfig{
 			PackageMaxSizeMB: parseIntEnv("REPORT_PACKAGE_MAX_SIZE_MB", 20*1024),
 			RequestTimeout:   parseDuration(getEnv("REPORT_REQUEST_TIMEOUT", "5m")),
+		},
+		IGV: IGVConfig{
+			HG19: IGVReferenceConfig{
+				FASTAURL:          strings.TrimSpace(getEnv("IGV_HG19_FASTA_URL", "")),
+				FAIURL:            strings.TrimSpace(getEnv("IGV_HG19_FAI_URL", "")),
+				AliasURL:          strings.TrimSpace(getEnv("IGV_HG19_ALIAS_URL", "")),
+				CytobandURL:       strings.TrimSpace(getEnv("IGV_HG19_CYTOBAND_URL", "")),
+				GeneTrackURL:      strings.TrimSpace(getEnv("IGV_HG19_GENE_TRACK_URL", "")),
+				GeneTrackIndexURL: strings.TrimSpace(getEnv("IGV_HG19_GENE_TRACK_INDEX_URL", "")),
+			},
+			HG38: IGVReferenceConfig{
+				FASTAURL:          strings.TrimSpace(getEnv("IGV_HG38_FASTA_URL", "")),
+				FAIURL:            strings.TrimSpace(getEnv("IGV_HG38_FAI_URL", "")),
+				AliasURL:          strings.TrimSpace(getEnv("IGV_HG38_ALIAS_URL", "")),
+				CytobandURL:       strings.TrimSpace(getEnv("IGV_HG38_CYTOBAND_URL", "")),
+				GeneTrackURL:      strings.TrimSpace(getEnv("IGV_HG38_GENE_TRACK_URL", "")),
+				GeneTrackIndexURL: strings.TrimSpace(getEnv("IGV_HG38_GENE_TRACK_INDEX_URL", "")),
+			},
+			TrackURLExpiry: parseDuration(getEnv("IGV_TRACK_URL_EXPIRE", "10m")),
 		},
 	}
 }

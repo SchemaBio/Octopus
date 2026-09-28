@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/database"
@@ -86,7 +87,12 @@ func (r *ResultRepository) PaginateSNVIndels(query *model.SNVIndelListQuery) ([]
 	}
 
 	var results []model.SNVIndel
-	err := db.Order("acmg_classification ASC, gene ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
+	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
+		"classification": acmgClassificationOrder, "gene": "gene", "chromosome": naturalChromosomeOrder("chromosome"),
+		"position": "position", "depth": "depth", "vaf": "vaf", "alleleFrequency": "vaf", "zygosity": "zygosity",
+		"acmgClassification": acmgClassificationOrder, "reviewed": "reviewed", "reported": "reported",
+	}, acmgClassificationOrder+" ASC", "gene ASC")
+	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
 }
 
@@ -140,7 +146,12 @@ func (r *ResultRepository) PaginateCNVSegments(query *model.CNVSegmentListQuery)
 	}
 
 	var results []model.CNVSegment
-	err := db.Order("chromosome ASC, start_position ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
+	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
+		"chromosome": naturalChromosomeOrder("chromosome"), "start": "start_position", "startPosition": "start_position",
+		"end": "end_position", "endPosition": "end_position", "length": "(end_position - start_position)", "type": "type",
+		"classification": "classification", "confidence": "weight", "reviewed": "reviewed", "reported": "reported",
+	}, naturalChromosomeOrder("chromosome")+" ASC", "start_position ASC")
+	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
 }
 
@@ -189,7 +200,12 @@ func (r *ResultRepository) PaginateCNVExons(query *model.CNVExonListQuery) ([]mo
 	}
 
 	var results []model.CNVExon
-	err := db.Order("gene ASC, start_position ASC, end_position ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
+	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
+		"gene": "gene", "chromosome": naturalChromosomeOrder("chromosome"), "start": "start_position", "startPosition": "start_position",
+		"end": "end_position", "endPosition": "end_position", "type": "type", "classification": "classification",
+		"ratio": "copy_ratio", "confidence": "weight", "reviewed": "reviewed", "reported": "reported",
+	}, "gene ASC", "start_position ASC", "end_position ASC")
+	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
 }
 
@@ -241,7 +257,11 @@ func (r *ResultRepository) PaginateSTRs(query *model.STRListQuery) ([]model.STR,
 	}
 
 	var results []model.STR
-	err := db.Order("gene ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
+	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
+		"gene": "gene", "chromosome": naturalChromosomeOrder("chromosome"), "position": "position", "status": "status",
+		"repeatCount": "ref_repeats", "reviewed": "reviewed", "reported": "reported",
+	}, "gene ASC", "position ASC")
+	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
 }
 
@@ -290,7 +310,12 @@ func (r *ResultRepository) PaginateMEIs(query *model.MEIListQuery) ([]model.MEIV
 	}
 
 	var results []model.MEIVariant
-	err := db.Order("chromosome ASC, position ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
+	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
+		"gene": "gene", "chromosome": naturalChromosomeOrder("chromosome"), "position": "position", "type": "te_type",
+		"meiType": "te_type", "length": "avg_soft_clip_length", "frequency": "gnomad_af",
+		"supportingReads": "supporting_reads", "reviewed": "reviewed", "reported": "reported",
+	}, naturalChromosomeOrder("chromosome")+" ASC", "position ASC")
+	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
 }
 
@@ -323,6 +348,10 @@ func (r *ResultRepository) PaginateMTVariants(query *model.MTListQuery) ([]model
 			s, s, s, s, s, s,
 		)
 	}
+	if query.Pathogenicity != "" {
+		pattern := "%" + strings.ToLower(strings.TrimSpace(query.Pathogenicity)) + "%"
+		db = db.Where("LOWER(clinvar_sig) LIKE ?", pattern)
+	}
 
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
@@ -339,7 +368,11 @@ func (r *ResultRepository) PaginateMTVariants(query *model.MTListQuery) ([]model
 	}
 
 	var results []model.MitochondrialVariant
-	err := db.Order("position ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
+	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
+		"position": "position", "gene": "mt_gene", "heteroplasmy": "heteroplasmy", "pathogenicity": "clinvar_sig",
+		"reviewed": "reviewed", "reported": "reported",
+	}, "position ASC")
+	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
 }
 
@@ -385,7 +418,12 @@ func (r *ResultRepository) PaginateUPDRegions(query *model.UPDListQuery) ([]mode
 	}
 
 	var results []model.UPDRegion
-	err := db.Order("chromosome ASC, start_position ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
+	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
+		"chromosome": naturalChromosomeOrder("chromosome"), "start": "start_position", "startPosition": "start_position",
+		"end": "end_position", "endPosition": "end_position", "length": "(end_position - start_position)", "type": "type",
+		"reviewed": "reviewed", "reported": "reported",
+	}, naturalChromosomeOrder("chromosome")+" ASC", "start_position ASC")
+	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
 }
 
@@ -416,9 +454,33 @@ func (r *ResultRepository) FindQCByTaskID(taskID string) (*model.QCResult, error
 
 func (r *ResultRepository) FindQCByTaskScope(taskID, tenantID, attemptID string) (*model.QCResult, error) {
 	var result model.QCResult
-	err := scopedResultQuery(r.db, taskID, tenantID, attemptID).First(&result).Error
+	err := scopedResultQuery(r.db, taskID, tenantID, attemptID).Order("member_role ASC, member_id ASC, id ASC").First(&result).Error
 	return &result, err
 }
+
+// applyResultOrder accepts only a per-result-type column whitelist. It keeps a
+// stable ID tie breaker so pagination cannot shuffle equal rows between pages.
+func applyResultOrder(db *gorm.DB, sortKey, direction string, allowed map[string]string, defaults ...string) *gorm.DB {
+	direction = strings.ToUpper(strings.TrimSpace(direction))
+	if direction != "DESC" {
+		direction = "ASC"
+	}
+	if column, ok := allowed[sortKey]; ok {
+		return db.Order(column + " " + direction).Order("id ASC")
+	}
+	for _, order := range defaults {
+		db = db.Order(order)
+	}
+	return db.Order("id ASC")
+}
+
+func naturalChromosomeOrder(column string) string {
+	// column is always a repository constant, never an HTTP parameter.
+	normalized := fmt.Sprintf("regexp_replace(lower(%s), '^chr', '')", column)
+	return fmt.Sprintf("CASE WHEN %s ~ '^[0-9]+$' THEN (%s)::int WHEN %s = 'x' THEN 23 WHEN %s = 'y' THEN 24 WHEN %s IN ('m', 'mt') THEN 25 ELSE 1000 END", normalized, normalized, normalized, normalized, normalized)
+}
+
+const acmgClassificationOrder = "CASE acmg_classification WHEN 'Pathogenic' THEN 1 WHEN 'Likely_Pathogenic' THEN 2 WHEN 'VUS' THEN 3 WHEN 'Likely_Benign' THEN 4 WHEN 'Benign' THEN 5 ELSE 99 END"
 
 func (r *ResultRepository) taskProvenance(taskID string) (string, string) {
 	var task model.Task
@@ -517,7 +579,12 @@ func (r *ResultRepository) PaginateROHRegions(query *model.ROHListQuery) ([]mode
 	}
 
 	var results []model.ROHRegion
-	err := db.Order("chr ASC, begin ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
+	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
+		"chromosome": naturalChromosomeOrder("chr"), "start": "begin", "startPosition": "begin", "end": "end", "endPosition": "end",
+		"size": "size_mb", "sizeMb": "size_mb", "variantCount": "nb_variants", "homozygosity": "percentage_homozygosity",
+		"reviewed": "reviewed", "reported": "reported",
+	}, naturalChromosomeOrder("chr")+" ASC", "begin ASC")
+	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
 }
 

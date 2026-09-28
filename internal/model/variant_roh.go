@@ -26,6 +26,8 @@ type ROHListQuery struct {
 	TenantID           string `form:"-" json:"-"`
 	ExecutionAttemptID string `form:"-" json:"-"`
 	Search             string `form:"search"`
+	Sort               string `form:"sort"`
+	Direction          string `form:"direction"`
 	Page               int    `form:"page" binding:"omitempty,min=1"`
 	PageSize           int    `form:"page_size" binding:"omitempty,min=1,max=100"`
 }
