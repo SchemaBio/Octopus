@@ -74,3 +74,15 @@ func TestImporterImportQCRejectsOversizeOutputs(t *testing.T) {
 		t.Fatal("expected oversized outputs.resolved.json to be rejected")
 	}
 }
+
+func TestMarshalImportAuditJSONKeepsNilCollectionsValid(t *testing.T) {
+	if got := marshalImportAuditJSON([]string(nil)); got != "[]" {
+		t.Fatalf("nil source-file list JSON = %q, want []", got)
+	}
+	if got := marshalImportAuditJSON(map[string]int(nil)); got != "{}" {
+		t.Fatalf("nil counts JSON = %q, want {}", got)
+	}
+	if got := marshalImportAuditJSON(nil); got != "null" {
+		t.Fatalf("nil value JSON = %q, want null", got)
+	}
+}

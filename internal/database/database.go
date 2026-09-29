@@ -91,6 +91,9 @@ func AutoMigrate() error {
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)
 	}
+	if err := migrateResultImportStorage(); err != nil {
+		return err
+	}
 	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS upload_multipart_active_file_idx ON upload_multipart_sessions (file_uuid) WHERE status = 'active'").Error; err != nil {
 		return fmt.Errorf("failed to create multipart session index: %w", err)
 	}
@@ -110,6 +113,22 @@ func AutoMigrate() error {
 		return err
 	}
 
+	return nil
+}
+
+func migrateResultImportStorage() error {
+	if DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	if err := DB.Exec(`ALTER TABLE result_snv_indels ALTER COLUMN alpha_missense_amc TYPE TEXT USING alpha_missense_amc::text`).Error; err != nil {
+		return fmt.Errorf("failed to expand AlphaMissense annotation storage: %w", err)
+	}
+	if err := DB.Exec(`ALTER TABLE result_import_batches ALTER COLUMN object_keys_json SET DEFAULT '[]'::jsonb`).Error; err != nil {
+		return fmt.Errorf("failed to set import object key default: %w", err)
+	}
+	if err := DB.Exec(`ALTER TABLE result_import_batches ALTER COLUMN counts_json SET DEFAULT '{}'::jsonb`).Error; err != nil {
+		return fmt.Errorf("failed to set import counts default: %w", err)
+	}
 	return nil
 }
 

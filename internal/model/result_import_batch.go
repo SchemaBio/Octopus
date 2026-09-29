@@ -24,8 +24,8 @@ type ResultImportBatch struct {
 	ArchiveBase        string                  `json:"archive_base" gorm:"type:text"`
 	ArchivePrefix      string                  `json:"archive_prefix" gorm:"type:text"`
 	OutputsKey         string                  `json:"outputs_key" gorm:"type:text"`
-	ObjectKeysJSON     string                  `json:"object_keys_json" gorm:"type:jsonb"`
-	CountsJSON         string                  `json:"counts_json" gorm:"type:jsonb"`
+	ObjectKeysJSON     string                  `json:"object_keys_json" gorm:"type:jsonb;default:'[]'"`
+	CountsJSON         string                  `json:"counts_json" gorm:"type:jsonb;default:'{}'"`
 	Error              string                  `json:"error" gorm:"type:text"`
 	StartedAt          time.Time               `json:"started_at" gorm:"type:timestamptz;index"`
 	FinishedAt         *time.Time              `json:"finished_at,omitempty" gorm:"type:timestamptz"`

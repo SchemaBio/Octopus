@@ -1,11 +1,17 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
+	"path"
+	"time"
+
 	"github.com/SchemaBio/Octopus/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+var ErrResultImportAlreadyRunning = errors.New("result import is already running")
 
 // Update rejects stale task snapshots, including callbacks racing cancellation.
 func (r *TaskRepository) Update(task *model.Task) error {
@@ -17,9 +23,132 @@ func (r *TaskRepository) Update(task *model.Task) error {
 		if current.Version != task.Version {
 			return fmt.Errorf("task state changed; retry operation")
 		}
+		// Import bookkeeping is updated independently from task lifecycle state.
+		// Preserve the latest values when a stale lifecycle snapshot is saved.
+		task.ResultImportStatus = current.ResultImportStatus
+		task.ResultImportError = current.ResultImportError
+		task.ResultImportedAt = current.ResultImportedAt
+		task.ResultImportStartedAt = current.ResultImportStartedAt
+		task.ResultImportFingerprint = current.ResultImportFingerprint
+		task.ResultImportAttempts = current.ResultImportAttempts
 		task.Version++
 		return tx.Save(task).Error
 	})
+}
+
+// BeginResultImport claims a completed task attempt without changing its
+// lifecycle version. A stale running import is closed with an audit batch so
+// interrupted imports can be retried safely.
+func (r *TaskRepository) BeginResultImport(task *model.Task, archiveBase, fingerprint string, now time.Time, staleAfter time.Duration) (int, error) {
+	if task == nil {
+		return 0, fmt.Errorf("task is required")
+	}
+	attempts := 0
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var current model.Task
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ?", task.UUID).First(&current).Error; err != nil {
+			return err
+		}
+		if current.ExecutionAttemptID != task.ExecutionAttemptID {
+			return fmt.Errorf("execution attempt changed before result import")
+		}
+		if current.Status != model.TaskStatusCompleted {
+			return fmt.Errorf("task is not completed")
+		}
+		if current.ResultImportStatus == model.ResultImportStatusRunning {
+			if current.ResultImportStartedAt != nil && now.Sub(*current.ResultImportStartedAt) < staleAfter {
+				return ErrResultImportAlreadyRunning
+			}
+			previousStarted := current.ResultImportStartedAt
+			if previousStarted == nil {
+				previousStarted = &current.UpdatedAt
+			}
+			batchAttemptID := current.ExecutionAttemptID
+			if batchAttemptID == "" {
+				batchAttemptID = current.UUID
+			}
+			archivePrefix := current.UUID
+			if current.Executor == model.ExecutorCVM {
+				archivePrefix = path.Join(current.UUID, "attempts", batchAttemptID)
+			}
+			interrupted := &model.ResultImportBatch{
+				TaskUUID: current.UUID, TenantID: model.TenantIDForTask(&current),
+				ExecutionAttemptID: batchAttemptID, Source: "local", Status: model.ResultImportBatchStatusFailed,
+				Fingerprint: fingerprint, ArchiveBase: archiveBase, ArchivePrefix: archivePrefix,
+				OutputsKey: "outputs.resolved.json", ObjectKeysJSON: "[]", CountsJSON: "{}",
+				Error:     "previous result import did not finish; marked stale before retry",
+				StartedAt: *previousStarted, FinishedAt: &now,
+			}
+			if err := tx.Create(interrupted).Error; err != nil {
+				return fmt.Errorf("record interrupted result import: %w", err)
+			}
+		}
+
+		attempts = current.ResultImportAttempts + 1
+		if err := tx.Model(&model.Task{}).Where("uuid = ? AND execution_attempt_id = ?", current.UUID, current.ExecutionAttemptID).Updates(map[string]interface{}{
+			"result_import_status":      model.ResultImportStatusRunning,
+			"result_import_error":       "",
+			"result_imported_at":        nil,
+			"result_import_started_at":  now,
+			"result_import_fingerprint": "",
+			"result_import_attempts":    attempts,
+			"updated_at":                now,
+		}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	task.ResultImportStatus = model.ResultImportStatusRunning
+	task.ResultImportError = ""
+	task.ResultImportedAt = nil
+	task.ResultImportStartedAt = &now
+	task.ResultImportFingerprint = ""
+	task.ResultImportAttempts = attempts
+	task.UpdatedAt = now
+	return attempts, nil
+}
+
+// FinishResultImport only writes import metadata for the still-current
+// attempt and invocation. It cannot overwrite lifecycle status or phase.
+func (r *TaskRepository) FinishResultImport(task *model.Task, attemptNumber int, status model.ResultImportStatus, importErr, fingerprint string, finishedAt time.Time) error {
+	if task == nil {
+		return fmt.Errorf("task is required")
+	}
+	updates := map[string]interface{}{
+		"result_import_status":      status,
+		"result_import_error":       importErr,
+		"result_imported_at":        nil,
+		"result_import_started_at":  nil,
+		"result_import_fingerprint": fingerprint,
+		"updated_at":                finishedAt,
+	}
+	if status == model.ResultImportStatusSuccess {
+		updates["result_imported_at"] = finishedAt
+	}
+	result := r.db.Model(&model.Task{}).Where(
+		"uuid = ? AND execution_attempt_id = ? AND result_import_status = ? AND result_import_attempts = ?",
+		task.UUID, task.ExecutionAttemptID, model.ResultImportStatusRunning, attemptNumber,
+	).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("result import attempt is no longer current")
+	}
+	task.ResultImportStatus = status
+	task.ResultImportError = importErr
+	if status == model.ResultImportStatusSuccess {
+		task.ResultImportedAt = &finishedAt
+	} else {
+		task.ResultImportedAt = nil
+	}
+	task.ResultImportStartedAt = nil
+	task.ResultImportFingerprint = fingerprint
+	task.UpdatedAt = finishedAt
+	return nil
 }
 
 // TaskRepository provides task-specific operations

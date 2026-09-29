@@ -42,7 +42,7 @@ type SNVIndel struct {
 	EVOScore            *float64           `json:"evoScore,omitempty" gorm:"type:numeric"`
 	EVOScoreAN          *float64           `json:"evoScoreAN,omitempty" gorm:"type:numeric"`
 	AlphaMissenseAM     *float64           `json:"alphaMissenseAM,omitempty" gorm:"type:numeric"`
-	AlphaMissenseAMC    string             `json:"alphaMissenseAMC,omitempty" gorm:"size:20"`
+	AlphaMissenseAMC    string             `json:"alphaMissenseAMC,omitempty" gorm:"type:text"`
 	HgncID              string             `json:"hgncId,omitempty" gorm:"size:50"`
 	RsID                string             `json:"rsId,omitempty" gorm:"size:200"`
 	MaxAF               *float64           `json:"maxAF,omitempty" gorm:"type:numeric"`

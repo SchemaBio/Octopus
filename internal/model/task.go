@@ -101,6 +101,7 @@ type Task struct {
 	ResultImportStatus      ResultImportStatus `json:"-" gorm:"size:30;default:'pending'"`
 	ResultImportError       string             `json:"-" gorm:"type:text"`
 	ResultImportedAt        *time.Time         `json:"-" gorm:"type:timestamptz"`
+	ResultImportStartedAt   *time.Time         `json:"-" gorm:"type:timestamptz"`
 	ResultImportFingerprint string             `json:"-" gorm:"size:64;index"`
 	ResultImportAttempts    int                `json:"-" gorm:"default:0"`
 
