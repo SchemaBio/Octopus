@@ -43,13 +43,26 @@ func (r *TaskRepository) BeginResultImport(task *model.Task, archiveBase, finger
 	if task == nil {
 		return 0, fmt.Errorf("task is required")
 	}
+	return r.BeginResultImportForAttempt(task, task.ExecutionAttemptID, archiveBase, fingerprint, now, staleAfter)
+}
+
+// BeginResultImportForAttempt adds an explicit attempt fence for operator
+// recovery commands. The row lock checks the requested attempt atomically with
+// the import claim, so a retry cannot switch to a newer task execution.
+func (r *TaskRepository) BeginResultImportForAttempt(task *model.Task, expectedAttemptID, archiveBase, fingerprint string, now time.Time, staleAfter time.Duration) (int, error) {
+	if task == nil {
+		return 0, fmt.Errorf("task is required")
+	}
+	if task.ExecutionAttemptID != expectedAttemptID {
+		return 0, fmt.Errorf("execution attempt does not match the requested result import attempt")
+	}
 	attempts := 0
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var current model.Task
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ?", task.UUID).First(&current).Error; err != nil {
 			return err
 		}
-		if current.ExecutionAttemptID != task.ExecutionAttemptID {
+		if current.ExecutionAttemptID != expectedAttemptID {
 			return fmt.Errorf("execution attempt changed before result import")
 		}
 		if current.Status != model.TaskStatusCompleted {

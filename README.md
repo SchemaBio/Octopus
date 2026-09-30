@@ -152,6 +152,14 @@ go run ./cmd/seed -reset # 清空 seed 后重插
 | GET | /api/v1/tasks/:id/export/vcf | 导出 VCF |
 | GET | /api/v1/tasks/:id/export/mt-vcf | 导出线粒体 VCF |
 
+服务端归档恢复命令默认只检查指定任务和 attempt 的归档，不执行写入：
+
+```sh
+/app/octopus results-import --task <task-uuid> --attempt <attempt-uuid>
+```
+
+确认 dry-run 输出后，显式追加 `--execute` 才会创建操作员导入批次并运行同一归档导入流程。该命令不运行数据库迁移。
+
 ### 样本管理 (需要认证)
 
 | Method | Path | Description |

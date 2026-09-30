@@ -1555,13 +1555,20 @@ func (s *TaskService) importTaskArchive(task *model.Task) {
 }
 
 func (s *TaskService) runTaskArchiveImport(task *model.Task, archiveDir string) error {
+	if task == nil {
+		return fmt.Errorf("task is required")
+	}
+	return s.runTaskArchiveImportForAttempt(task, archiveDir, task.ExecutionAttemptID, "local")
+}
+
+func (s *TaskService) runTaskArchiveImportForAttempt(task *model.Task, archiveDir, expectedAttemptID, source string) error {
 	fingerprint := archiveImportFingerprint(task, archiveDir)
 	now := time.Now()
-	attemptNumber, err := s.repo.BeginResultImport(task, s.cfg.Task.ArchiveDir, fingerprint, now, 15*time.Minute)
+	attemptNumber, err := s.repo.BeginResultImportForAttempt(task, expectedAttemptID, s.cfg.Task.ArchiveDir, fingerprint, now, 15*time.Minute)
 	if err != nil {
 		return err
 	}
-	batch, err := s.startResultImportBatch(task, archiveDir, fingerprint, now)
+	batch, err := s.startResultImportBatch(task, archiveDir, fingerprint, source, now)
 	if err != nil {
 		finishedAt := time.Now()
 		if finishErr := s.repo.FinishResultImport(task, attemptNumber, model.ResultImportStatusFailed, err.Error(), "", finishedAt); finishErr != nil {
@@ -1571,7 +1578,9 @@ func (s *TaskService) runTaskArchiveImport(task *model.Task, archiveDir string) 
 	}
 	result, err := NewImporter(s.cfg).ImportFromTaskArchive(task, archiveDir, batch.ID)
 	finishedAt := time.Now()
+	var importErr error
 	if err != nil {
+		importErr = err
 		task.ResultImportStatus = model.ResultImportStatusFailed
 		task.ResultImportError = err.Error()
 	} else if result == nil || !result.Success {
@@ -1581,6 +1590,7 @@ func (s *TaskService) runTaskArchiveImport(task *model.Task, archiveDir string) 
 		} else {
 			task.ResultImportError = result.Error
 		}
+		importErr = fmt.Errorf("%s", task.ResultImportError)
 	} else {
 		task.ResultImportStatus = model.ResultImportStatusSuccess
 		task.ResultImportError = ""
@@ -1590,6 +1600,7 @@ func (s *TaskService) runTaskArchiveImport(task *model.Task, archiveDir string) 
 				task.ResultImportStatus = model.ResultImportStatusFailed
 				task.ResultImportError = publishErr.Error()
 				task.ResultImportFingerprint = ""
+				importErr = publishErr
 			}
 		}
 	}
@@ -1600,11 +1611,16 @@ func (s *TaskService) runTaskArchiveImport(task *model.Task, archiveDir string) 
 		s.finishResultImportBatch(batch, result, model.ResultImportStatusFailed, finishErr.Error(), finishedAt)
 		return finishErr
 	}
-	s.finishResultImportBatch(batch, result, task.ResultImportStatus, task.ResultImportError, finishedAt)
-	return nil
+	if batchErr := s.finishResultImportBatch(batch, result, task.ResultImportStatus, task.ResultImportError, finishedAt); batchErr != nil {
+		if importErr != nil {
+			return errors.Join(importErr, batchErr)
+		}
+		return batchErr
+	}
+	return importErr
 }
 
-func (s *TaskService) startResultImportBatch(task *model.Task, archiveDir, fingerprint string, startedAt time.Time) (*model.ResultImportBatch, error) {
+func (s *TaskService) startResultImportBatch(task *model.Task, archiveDir, fingerprint, source string, startedAt time.Time) (*model.ResultImportBatch, error) {
 	if task == nil || s.importBatchRepo == nil {
 		return nil, fmt.Errorf("result import audit repository is unavailable")
 	}
@@ -1621,7 +1637,7 @@ func (s *TaskService) startResultImportBatch(task *model.Task, archiveDir, finge
 		TaskUUID:           task.UUID,
 		TenantID:           model.TenantIDForTask(task),
 		ExecutionAttemptID: attemptID,
-		Source:             "local",
+		Source:             source,
 		Status:             model.ResultImportBatchStatusRunning,
 		Fingerprint:        fingerprint,
 		ArchiveBase:        s.cfg.Task.ArchiveDir,
@@ -1638,9 +1654,9 @@ func (s *TaskService) startResultImportBatch(task *model.Task, archiveDir, finge
 	return batch, nil
 }
 
-func (s *TaskService) finishResultImportBatch(batch *model.ResultImportBatch, result *ImportResult, status model.ResultImportStatus, importErr string, finishedAt time.Time) {
+func (s *TaskService) finishResultImportBatch(batch *model.ResultImportBatch, result *ImportResult, status model.ResultImportStatus, importErr string, finishedAt time.Time) error {
 	if batch == nil || s.importBatchRepo == nil {
-		return
+		return fmt.Errorf("result import audit repository is unavailable")
 	}
 
 	batch.FinishedAt = &finishedAt
@@ -1659,8 +1675,9 @@ func (s *TaskService) finishResultImportBatch(batch *model.ResultImportBatch, re
 		}
 	}
 	if err := s.importBatchRepo.Update(batch); err != nil {
-		fmt.Printf("WARNING: failed to update result import batch for task %s: %v\n", batch.TaskUUID, err)
+		return fmt.Errorf("update result import audit batch for task %s: %w", batch.TaskUUID, err)
 	}
+	return nil
 }
 
 func marshalImportAuditJSON(value interface{}) string {
@@ -2624,6 +2641,13 @@ func (s *TaskService) buildCVMDispatchRequestForContract(ctx context.Context, ac
 	}
 	referenceGenome, err := cvmReferenceGenome(inputs)
 	if err != nil {
+		return model.CVMDispatchRequest{}, err
+	}
+	referenceInputs, err := buildCVMWDLInputs(task.Template, referenceGenome, inputs)
+	if err != nil {
+		return model.CVMDispatchRequest{}, err
+	}
+	if err := s.preflightCVMReferences(ctx, referenceGenome, task.Template, referenceInputs); err != nil {
 		return model.CVMDispatchRequest{}, err
 	}
 	storage, err := newS3Storage(ctx, s.cfg.Storage)

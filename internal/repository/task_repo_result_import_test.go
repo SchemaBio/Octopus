@@ -56,3 +56,17 @@ func TestFinishResultImportRejectsStaleAttempt(t *testing.T) {
 		t.Fatalf("SQL expectations: %v", err)
 	}
 }
+
+func TestBeginResultImportForAttemptRejectsUnselectedAttemptWithoutWriting(t *testing.T) {
+	db, mock := newUploadRepositoryTestDB(t)
+	repo := NewTaskRepository()
+	repo.Repository.db = db
+
+	task := &model.Task{UUID: "task-uuid", ExecutionAttemptID: "current-attempt"}
+	if _, err := repo.BeginResultImportForAttempt(task, "old-attempt", "/archive", "fingerprint", time.Now(), 15*time.Minute); err == nil {
+		t.Fatal("result import accepted an attempt other than the task's current attempt")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unexpected database writes: %v", err)
+	}
+}

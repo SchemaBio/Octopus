@@ -43,12 +43,23 @@ func TestLoadSecretsFromDefaultFiles(t *testing.T) {
 func TestLoadCOSCredentialsAsPair(t *testing.T) {
 	clearStorageCredentialEnv(t)
 	t.Setenv("STORAGE_PROVIDER", "cos")
+	t.Setenv("CVM_REFERENCE_BUCKET", "reference-genomes")
 	t.Setenv("TENCENT_SECRET_ID", "shared-id")
 	t.Setenv("TENCENT_SECRET_KEY", "shared-key")
 
 	cfg := Load()
 	if cfg.Storage.S3AccessKey != "shared-id" || cfg.Storage.S3SecretKey != "shared-key" {
 		t.Fatalf("unexpected shared COS credentials: %q/%q", cfg.Storage.S3AccessKey, cfg.Storage.S3SecretKey)
+	}
+	if cfg.Storage.CVMReferenceBucket != "reference-genomes" {
+		t.Fatalf("CVM reference bucket = %q, want reference-genomes", cfg.Storage.CVMReferenceBucket)
+	}
+}
+
+func TestLoadCVMReferenceBucketDefaultsToSharedReferenceBucket(t *testing.T) {
+	t.Setenv("CVM_REFERENCE_BUCKET", "")
+	if got := Load().Storage.CVMReferenceBucket; got != "schemabio-1327430028" {
+		t.Fatalf("CVM reference bucket = %q, want shared reference bucket", got)
 	}
 }
 
@@ -104,7 +115,7 @@ func clearStorageCredentialEnv(t *testing.T) {
 	t.Helper()
 	for _, name := range []string{
 		"S3_ACCESS_KEY", "S3_SECRET_KEY", "COS_SECRET_ID", "COS_SECRET_KEY",
-		"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY",
+		"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY", "CVM_REFERENCE_BUCKET",
 	} {
 		t.Setenv(name, "")
 		t.Setenv(name+"_FILE", "")
