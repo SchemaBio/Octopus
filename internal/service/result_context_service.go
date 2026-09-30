@@ -109,7 +109,7 @@ func resultReferenceForTask(cfg *config.Config, task *model.Task) model.ResultRe
 	default:
 		return model.ResultReference{DeclaredID: declared, Reason: "该参考序列未配置为可判读的 IGV 参考资源"}
 	}
-	if strings.TrimSpace(reference.FASTAURL) == "" || strings.TrimSpace(reference.FAIURL) == "" {
+	if cfg.IGV.ReferenceProxyBaseURL == "" && (strings.TrimSpace(reference.FASTAURL) == "" || strings.TrimSpace(reference.FAIURL) == "") {
 		return model.ResultReference{DeclaredID: declared, Reason: "该执行的参考 FASTA 与 FAI 尚未配置"}
 	}
 	return model.ResultReference{DeclaredID: declared, Available: true}

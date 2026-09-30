@@ -12,7 +12,7 @@
 
 ## 参考资源
 
-每一种分析参考都必须明确配置 FASTA 与 FAI；缺少任一项时，结果页会显示参考不可用并关闭 reads 判读。支持的环境变量如下：
+参考资源可以通过静态 FASTA/FAI 地址，或已鉴权的同源 Range 入口提供。两种方式均读取实际分析使用的参考。静态方式缺少任一地址时，结果页会显示参考不可用并关闭 reads 判读。支持的环境变量如下：
 
 | 参考 | 必填 | 可选 |
 | --- | --- | --- |
@@ -22,6 +22,10 @@
 参考身份来自该次任务的输入快照，而不是页面默认值。`hg19`、`GRCh37`、`hs37` 映射到 hg19；`hg38`、`GRCh38` 映射到 hg38。未知身份不会猜测为任一版本。
 
 `IGV_TRACK_URL_EXPIRE` 控制轨迹签名有效期，默认十分钟。前端在剩余不足一分钟时刷新当前轨迹地址。
+
+参考桶没有浏览器 CORS 时，配置 `IGV_REFERENCE_PROXY_BASE_URL=https://yijian.schema-bio.com/api/v1/octopus`（自托管使用自身 `/api/v1` 入口）。参考 FASTA/FAI 将通过 `GET /tasks/:id/results/igv/reference/:asset?attempt=...` 读取；优先于静态 FASTA/FAI 地址。每次请求验证登录、租户、任务访问权限及当前 attempt。对象键由该执行的 hg19/hg38 身份选择，浏览器不能提交对象路径。FASTA 必须携带单个 Range，每次最多 8 MiB；FAI 最多 1 MiB。保留 `206`、`Content-Range`，拒绝对象存储忽略 Range 的响应，不下载整份 FASTA。浏览器与入口必须同源以携带现有登录 cookie。样本 BAM/VCF 仍使用短时 COS 授权。
+
+同源入口复用 `CVM_REFERENCE_BUCKET` 及参考预检凭据选择：配置完整的 `CVM_REFERENCE_SECRET_ID/KEY` 时使用该对凭据，否则使用已有 COS/Tencent 凭据。无需为了配置同源入口复制密钥或开放参考桶的公开读权限。
 
 ## COS CORS 与 Range
 

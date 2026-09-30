@@ -141,9 +141,10 @@ type ReportConfig struct {
 // remain private; only the result service can mint short-lived COS URLs for
 // the task-specific tracks.
 type IGVConfig struct {
-	HG19           IGVReferenceConfig
-	HG38           IGVReferenceConfig
-	TrackURLExpiry time.Duration
+	ReferenceProxyBaseURL string
+	HG19                  IGVReferenceConfig
+	HG38                  IGVReferenceConfig
+	TrackURLExpiry        time.Duration
 }
 
 type IGVReferenceConfig struct {
@@ -292,6 +293,7 @@ func Load() *Config {
 			RequestTimeout:   parseDuration(getEnv("REPORT_REQUEST_TIMEOUT", "5m")),
 		},
 		IGV: IGVConfig{
+			ReferenceProxyBaseURL: strings.TrimRight(strings.TrimSpace(getEnv("IGV_REFERENCE_PROXY_BASE_URL", "")), "/"),
 			HG19: IGVReferenceConfig{
 				FASTAURL:          strings.TrimSpace(getEnv("IGV_HG19_FASTA_URL", "")),
 				FAIURL:            strings.TrimSpace(getEnv("IGV_HG19_FAI_URL", "")),

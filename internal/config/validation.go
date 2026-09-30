@@ -113,6 +113,16 @@ func ValidateStartup(cfg *Config) error {
 			}
 		}
 	}
+	if cfg.IGV.ReferenceProxyBaseURL != "" {
+		if err := validateAbsoluteServiceURL("IGV_REFERENCE_PROXY_BASE_URL", cfg.IGV.ReferenceProxyBaseURL); err != nil {
+			return err
+		}
+		if cfg.Server.Mode == "release" {
+			if err := validateReleaseHTTPSURL("IGV_REFERENCE_PROXY_BASE_URL", cfg.IGV.ReferenceProxyBaseURL); err != nil {
+				return err
+			}
+		}
+	}
 	if err := validateIGVReferenceConfig("IGV_HG19", cfg.IGV.HG19, cfg.Server.Mode); err != nil {
 		return err
 	}

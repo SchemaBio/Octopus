@@ -241,6 +241,16 @@ func igvReferenceForTask(cfg *config.Config, task *model.Task) model.IGVReferenc
 	}
 	response.FASTAURL = reference.FASTAURL
 	response.IndexURL = reference.FAIURL
+	if cfg.IGV.ReferenceProxyBaseURL != "" {
+		base := cfg.IGV.ReferenceProxyBaseURL + "/tasks/" + url.PathEscape(task.UUID) + "/results/igv/reference/"
+		attempt := task.ExecutionAttemptID
+		if attempt == "" {
+			attempt = task.UUID
+		}
+		query := "?attempt=" + url.QueryEscape(attempt)
+		response.FASTAURL = base + "fasta" + query
+		response.IndexURL = base + "fai" + query
+	}
 	response.AliasURL = reference.AliasURL
 	response.CytobandURL = reference.CytobandURL
 	response.GeneTrackURL = reference.GeneTrackURL
