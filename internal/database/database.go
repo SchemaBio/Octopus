@@ -123,6 +123,9 @@ func migrateResultImportStorage() error {
 	if err := DB.Exec(`ALTER TABLE result_snv_indels ALTER COLUMN alpha_missense_amc TYPE TEXT USING alpha_missense_amc::text`).Error; err != nil {
 		return fmt.Errorf("failed to expand AlphaMissense annotation storage: %w", err)
 	}
+	if err := DB.Exec(`ALTER TABLE result_snv_indels ALTER COLUMN clinvar_dn TYPE TEXT USING clinvar_dn::text`).Error; err != nil {
+		return fmt.Errorf("failed to expand ClinVar disease annotation storage: %w", err)
+	}
 	if err := DB.Exec(`ALTER TABLE result_import_batches ALTER COLUMN object_keys_json SET DEFAULT '[]'::jsonb`).Error; err != nil {
 		return fmt.Errorf("failed to set import object key default: %w", err)
 	}

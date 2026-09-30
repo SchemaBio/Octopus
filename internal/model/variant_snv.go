@@ -30,7 +30,7 @@ type SNVIndel struct {
 	Cytoband            string             `json:"cytoband,omitempty" gorm:"size:50"`
 	ClinvarSignificance string             `json:"clinvarSignificance,omitempty" gorm:"size:500"`
 	ClinvarRevStat      string             `json:"clinvarRevStat,omitempty" gorm:"size:200"`
-	ClinvarDN           string             `json:"clinvarDn,omitempty" gorm:"size:500"`
+	ClinvarDN           string             `json:"clinvarDn,omitempty" gorm:"type:text"`
 	ClinvarStar         string             `json:"clinvarStar,omitempty" gorm:"size:50"`
 	GnomadAF            *float64           `json:"gnomadAF,omitempty" gorm:"type:numeric"`
 	GnomadEasAF         *float64           `json:"gnomadEasAF,omitempty" gorm:"type:numeric"`
