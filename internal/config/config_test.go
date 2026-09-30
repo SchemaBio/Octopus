@@ -63,6 +63,16 @@ func TestLoadCVMReferenceBucketDefaultsToSharedReferenceBucket(t *testing.T) {
 	}
 }
 
+func TestLoadCVMReferenceCredentials(t *testing.T) {
+	clearStorageCredentialEnv(t)
+	t.Setenv("CVM_REFERENCE_SECRET_ID", "reference-reader-id")
+	t.Setenv("CVM_REFERENCE_SECRET_KEY", "reference-reader-key")
+	cfg := Load().Storage
+	if cfg.CVMReferenceAccessKey != "reference-reader-id" || cfg.CVMReferenceSecretKey != "reference-reader-key" {
+		t.Fatal("dedicated reference credentials were not loaded")
+	}
+}
+
 func TestLoadCOSCredentialsSupportsFilesAndSpecificOverride(t *testing.T) {
 	clearStorageCredentialEnv(t)
 	t.Setenv("STORAGE_PROVIDER", "cos")
@@ -116,6 +126,7 @@ func clearStorageCredentialEnv(t *testing.T) {
 	for _, name := range []string{
 		"S3_ACCESS_KEY", "S3_SECRET_KEY", "COS_SECRET_ID", "COS_SECRET_KEY",
 		"TENCENT_SECRET_ID", "TENCENT_SECRET_KEY", "CVM_REFERENCE_BUCKET",
+		"CVM_REFERENCE_SECRET_ID", "CVM_REFERENCE_SECRET_KEY",
 	} {
 		t.Setenv(name, "")
 		t.Setenv(name+"_FILE", "")

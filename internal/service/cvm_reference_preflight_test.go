@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/SchemaBio/Octopus/internal/config"
 )
 
 type fakeCVMReferenceStorage struct {
@@ -85,5 +87,27 @@ func TestCVMReferencePreflightPassesWithoutDefaultBEDWhenNotUsed(t *testing.T) {
 	}, errs: map[string]error{}}
 	if err := validateCVMReferenceObjects(context.Background(), storage, "hg38", false); err != nil {
 		t.Fatalf("reference preflight without a default BED: %v", err)
+	}
+}
+
+func TestCVMReferenceStorageConfigUsesDedicatedReadCredentials(t *testing.T) {
+	base := config.StorageConfig{S3AccessKey: "tenant-key", S3SecretKey: "tenant-secret", S3SessionToken: "tenant-session",
+		CVMReferenceAccessKey: "reference-key", CVMReferenceSecretKey: "reference-secret"}
+	got, err := cvmReferenceStorageConfig(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.S3AccessKey != "reference-key" || got.S3SecretKey != "reference-secret" || got.S3SessionToken != "" {
+		t.Fatal("reference preflight must use only the dedicated read credentials")
+	}
+	if base.S3AccessKey != "tenant-key" || base.S3SessionToken != "tenant-session" {
+		t.Fatal("reference credential selection must not mutate shared storage configuration")
+	}
+}
+
+func TestCVMReferenceStorageConfigRejectsIncompleteCredentials(t *testing.T) {
+	_, err := cvmReferenceStorageConfig(config.StorageConfig{CVMReferenceAccessKey: "reference-key"})
+	if err == nil {
+		t.Fatal("expected incomplete reference credentials to fail")
 	}
 }

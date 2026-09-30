@@ -5,12 +5,28 @@ import (
 	"fmt"
 	"path"
 	"strings"
+
+	"github.com/SchemaBio/Octopus/internal/config"
 )
 
 const defaultCVMReferenceBucket = "schemabio-1327430028"
 
 type cvmReferenceObjectStorage interface {
 	stat(context.Context, string) (int64, error)
+}
+
+func cvmReferenceStorageConfig(storage config.StorageConfig) (config.StorageConfig, error) {
+	accessKey := strings.TrimSpace(storage.CVMReferenceAccessKey)
+	secretKey := strings.TrimSpace(storage.CVMReferenceSecretKey)
+	if (accessKey == "") != (secretKey == "") {
+		return storage, fmt.Errorf("reference object storage credentials are incomplete")
+	}
+	if accessKey != "" {
+		storage.S3AccessKey = accessKey
+		storage.S3SecretKey = secretKey
+		storage.S3SessionToken = ""
+	}
+	return storage, nil
 }
 
 func cvmReferenceObjectKeys(genome string, requireDefaultBED bool) ([]string, error) {
@@ -50,12 +66,15 @@ func validateCVMReferenceObjects(ctx context.Context, storage cvmReferenceObject
 }
 
 func (s *TaskService) preflightCVMReferences(ctx context.Context, genome, template string, inputs map[string]interface{}) error {
-	config := s.cfg.Storage
-	config.S3Bucket = strings.TrimSpace(config.CVMReferenceBucket)
-	if config.S3Bucket == "" {
-		config.S3Bucket = defaultCVMReferenceBucket
+	storageConfig, err := cvmReferenceStorageConfig(s.cfg.Storage)
+	if err != nil {
+		return &CVMInputObjectError{ReasonCode: "REFERENCE_DATABASE_FAILED", err: err}
 	}
-	storage, err := newS3Storage(ctx, config)
+	storageConfig.S3Bucket = strings.TrimSpace(storageConfig.CVMReferenceBucket)
+	if storageConfig.S3Bucket == "" {
+		storageConfig.S3Bucket = defaultCVMReferenceBucket
+	}
+	storage, err := newS3Storage(ctx, storageConfig)
 	if err != nil {
 		return &CVMInputObjectError{ReasonCode: "REFERENCE_DATABASE_FAILED", err: fmt.Errorf("reference object storage is unavailable")}
 	}

@@ -119,6 +119,8 @@ type StorageConfig struct {
 	S3Region              string
 	S3Bucket              string
 	CVMReferenceBucket    string
+	CVMReferenceAccessKey string
+	CVMReferenceSecretKey string
 	S3AccessKey           string
 	S3SecretKey           string
 	S3SessionToken        string
@@ -273,6 +275,8 @@ func Load() *Config {
 			S3Region:              s3Region,
 			S3Bucket:              s3Bucket,
 			CVMReferenceBucket:    strings.TrimSpace(getEnv("CVM_REFERENCE_BUCKET", "schemabio-1327430028")),
+			CVMReferenceAccessKey: strings.TrimSpace(getEnvOrFile("CVM_REFERENCE_SECRET_ID", "")),
+			CVMReferenceSecretKey: strings.TrimSpace(getEnvOrFile("CVM_REFERENCE_SECRET_KEY", "")),
 			S3AccessKey:           s3AccessKey,
 			S3SecretKey:           s3SecretKey,
 			S3SessionToken:        getEnvOrFile("S3_SESSION_TOKEN", ""),
