@@ -1,11 +1,13 @@
 package service
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -46,12 +48,13 @@ func browserOrdinalMatches(d *model.ResultDataset, rowID string, ordinal int64) 
 // BrowserResultDataset authorizes only the current, validated immutable object.
 // URLs are short-lived and must never be persisted in saved views or logs.
 type BrowserResultDataset struct {
-	Dataset      model.ResultDataset `json:"dataset"`
-	URL          string              `json:"url"`
-	AutomaticURL string              `json:"automaticUrl,omitempty"`
-	ExpiresAt    time.Time           `json:"expiresAt"`
-	Columns      []string            `json:"columns"`
-	Aliases      map[string][]string `json:"aliases"`
+	Dataset           model.ResultDataset `json:"dataset"`
+	URL               string              `json:"url"`
+	AutomaticURL      string              `json:"automaticUrl,omitempty"`
+	AutomaticEncoding string              `json:"automaticEncoding,omitempty"`
+	ExpiresAt         time.Time           `json:"expiresAt"`
+	Columns           []string            `json:"columns"`
+	Aliases           map[string][]string `json:"aliases"`
 }
 
 func (s *ResultService) BrowserDataset(ctx context.Context, task *model.Task, table string) (*BrowserResultDataset, error) {
@@ -99,7 +102,7 @@ func (s *ResultService) BrowserDataset(ctx context.Context, task *model.Task, ta
 	}
 	if table == "snv-indel" {
 		// Publish the versioned persisted baseline once, not once per page/filter.
-		key := resultPackagePrefix(task) + "/browser-baselines/" + d.ID + "-" + d.DataVersion + "-" + automaticACMGProfile + ".jsonl"
+		key := resultPackagePrefix(task) + "/browser-baselines/" + d.ID + "-" + d.DataVersion + "-" + automaticACMGProfile + ".jsonl.gz"
 		if _, err := storage.stat(ctx, key); err != nil {
 			filename := filepath.Join(s.cfg.ResultQuery.AssessmentDir, d.ID+"-"+d.DataVersion+"-"+automaticACMGProfile+".jsonl")
 			f, err := os.Open(filename)
@@ -107,14 +110,34 @@ func (s *ResultService) BrowserDataset(ctx context.Context, task *model.Task, ta
 				return nil, fmt.Errorf("automatic baseline unavailable")
 			}
 			defer f.Close()
-			info, err := f.Stat()
+			// Repeated per-row assessment metadata compresses well. Publish a
+			// versioned gzip object while keeping the canonical JSONL unchanged.
+			compressed, err := os.CreateTemp(s.cfg.ResultQuery.CacheDir, "browser-baseline-*.gz")
+			if err != nil {
+				return nil, fmt.Errorf("automatic baseline compression failed")
+			}
+			defer os.Remove(compressed.Name())
+			defer compressed.Close()
+			zw := gzip.NewWriter(compressed)
+			if _, err = io.Copy(zw, f); err != nil {
+				_ = zw.Close()
+				return nil, fmt.Errorf("automatic baseline compression failed")
+			}
+			if err = zw.Close(); err != nil {
+				return nil, fmt.Errorf("automatic baseline compression failed")
+			}
+			info, err := compressed.Stat()
 			if err != nil {
 				return nil, err
 			}
-			if err = storage.putReader(ctx, key, "application/x-ndjson", f, info.Size()); err != nil {
+			if _, err = compressed.Seek(0, io.SeekStart); err != nil {
+				return nil, err
+			}
+			if err = storage.putReader(ctx, key, "application/gzip", compressed, info.Size()); err != nil {
 				return nil, fmt.Errorf("automatic baseline publication failed")
 			}
 		}
+		result.AutomaticEncoding = "gzip"
 		result.AutomaticURL, err = storage.presignRead(ctx, key, 10*time.Minute)
 		if err != nil {
 			return nil, fmt.Errorf("automatic baseline authorization failed")
