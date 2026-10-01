@@ -30,3 +30,15 @@ octopus results-import --task UUID --attempt ATTEMPT --annotations-only --execut
 ```
 
 默认检查；执行时锁定已完成、导入成功的当前 attempt，逐一核对报告与结果的身份和数量。仅更新原值与两个标签列，保留 ID、review、report、ACMG、积分和终态。事务记录 annotation_recovery 审计，更新结果版本；重复执行没有变更时不新增审计。身份模糊或不匹配时拒绝修复，不整批重新导入。
+
+## 2026-10-01 真实归档修复验收
+
+- 任务 `73ac68fd-4f6e-437b-8244-d16b09bbc7e1`，attempt `5298563b-0d4a-4a28-93c9-e10f86d3b2fe`。
+- 原始报告与数据库 55,393 条记录逐条身份匹配，恢复全部原始注释映射。
+- Pangolin 文本标签 16,273 条；EVOScore2 文本标签 9,544 条；AlphaMissense 原值 9,611 条，包含多值记录。
+- 排除三个修复字段后，全部结果行的有序摘要修复前后相同；变异 ID、人工复核、回报及 ACMG 没有变化。
+- 部署镜像：Octopus `git-bba7087`、YiJian `git-e02e9dd`，健康检查通过。
+- 后端针对性测试、前端类型检查、注释映射测试与生产构建通过。已有 CSS 选择器及 Next middleware 弃用警告不影响本次构建。
+- 本轮未重新运行工作流或申请计算实例。接口与数据验证不等同于浏览器逐项视觉验收。
+- 重复执行恢复命令更新 0 条记录，幂等验证通过。
+- 真实 HTTPS `results/context` 返回 `ready`；SNV 分页接口返回 200，含原始注释及文本标签，未推断 ACMG 分类。
