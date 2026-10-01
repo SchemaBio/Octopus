@@ -7,12 +7,14 @@ type ParquetFilter struct {
 }
 
 type ParquetQueryRequest struct {
-	Offset    int64           `json:"offset"`
-	Limit     int64           `json:"limit"`
-	Search    string          `json:"search"`
-	Sort      string          `json:"sort"`
-	Direction string          `json:"direction"`
-	Filters   []ParquetFilter `json:"filters"`
+	DatasetVersion string          `json:"datasetVersion"`
+	AttemptID      string          `json:"attemptId"`
+	Offset         int64           `json:"offset"`
+	Limit          int64           `json:"limit"`
+	Search         string          `json:"search"`
+	Sort           string          `json:"sort"`
+	Direction      string          `json:"direction"`
+	Filters        []ParquetFilter `json:"filters"`
 }
 
 type ParquetQueryResponse struct {
@@ -23,6 +25,7 @@ type ParquetQueryResponse struct {
 	Limit               int64                    `json:"limit"`
 	Columns             []string                 `json:"columns"`
 	ColumnTypes         map[string]string        `json:"columnTypes"`
+	AttemptID           string                   `json:"attemptId"`
 	Version             string                   `json:"version"`
 	FieldProfileVersion string                   `json:"fieldProfileVersion"`
 }

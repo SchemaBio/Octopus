@@ -34,7 +34,7 @@ type ACMGAssessmentResult struct {
 }
 
 func CalculateSNVACMG(evidence []ACMGEvidenceEntry, manualOverride string) (ACMGAssessmentResult, error) {
-	result := ACMGAssessmentResult{Profile: "acmg-snv-points-v1", State: "insufficient_evidence", Evidence: append([]ACMGEvidenceEntry(nil), evidence...), Pending: []string{"疾病机制、病例/家系及实验室证据需结合具体疾病和专家组规范评估"}}
+	result := ACMGAssessmentResult{Profile: automaticACMGProfile, State: "insufficient_evidence", Evidence: append([]ACMGEvidenceEntry(nil), evidence...), Pending: []string{"疾病机制、病例/家系及实验室证据需结合具体疾病和专家组规范评估"}}
 	seen := map[string]bool{}
 	positiveComputational, negativeComputational := false, false
 	standaloneBenign := false
@@ -155,19 +155,22 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if len(request.Adjustments) == 0 {
 		return nil, nil, fmt.Errorf("at least one adjustment is required")
 	}
-	if _, hasEvidence := request.Adjustments["acmgEvidence"]; hasEvidence && strings.TrimSpace(request.Reason) == "" {
+	if _, hasEvidence := request.Adjustments["acmgEvidence"]; (hasEvidence || request.Adjustments["resetAcmg"] == true) && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("ACMG evidence changes require an adjustment reason")
 	}
 	if _, hasOverride := request.Adjustments["acmgOverride"]; hasOverride && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("ACMG override changes require an adjustment reason")
 	}
-	allowed := map[string]bool{"reviewed": true, "reported": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
+	allowed := map[string]bool{"resetAcmg": true, "reviewed": true, "reported": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
 	for key, value := range request.Adjustments {
+		if (strings.HasPrefix(key, "acmg") || key == "resetAcmg") && table != "snv-indel" {
+			return nil, nil, fmt.Errorf("ACMG small-variant evidence is only valid for SNP/InDel")
+		}
 		if !allowed[key] {
 			return nil, nil, fmt.Errorf("unsupported adjustment field")
 		}
 		switch key {
-		case "reviewed", "reported":
+		case "resetAcmg", "reviewed", "reported":
 			if _, ok := value.(bool); !ok {
 				return nil, nil, fmt.Errorf("review and report values must be boolean")
 			}
@@ -205,16 +208,37 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		}
 	}
 	if value, ok := request.Adjustments["acmgOverride"]; ok {
-		if strings.TrimSpace(fmt.Sprint(value)) != "" && strings.TrimSpace(fmt.Sprint(request.Adjustments["acmgOverrideReason"])) == "" {
+		if strings.TrimSpace(fmt.Sprint(value)) != "" && strings.TrimSpace(stringAdjustment(request.Adjustments, "acmgOverrideReason")) == "" {
 			return nil, nil, fmt.Errorf("manual ACMG override requires a reason")
 		}
+	}
+	dataset, err := s.verifyParquetRow(ctx, task, table, rowID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if request.AttemptID != "" && request.AttemptID != executionAttempt(task) || request.DatasetVersion != "" && request.DatasetVersion != dataset.DataVersion {
+		return nil, nil, ErrAdjustmentConflict
 	}
 	tenant, attempt := model.TenantIDForTask(task), executionAttempt(task)
 	var saved model.ResultRowAdjustment
 	var event model.ResultRowAdjustmentEvent
-	err := database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var lockedTask model.Task
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid=?", task.UUID).First(&lockedTask).Error; err != nil {
+			return err
+		}
+		if executionAttempt(&lockedTask) != attempt {
+			return ErrAdjustmentConflict
+		}
+		var lockedDataset model.ResultDataset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", dataset.ID).First(&lockedDataset).Error; err != nil {
+			return err
+		}
+		if lockedDataset.DataVersion != dataset.DataVersion {
+			return ErrAdjustmentConflict
+		}
 		var current model.ResultRowAdjustment
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND table=? AND row_id=?", tenant, task.UUID, attempt, table, rowID).First(&current).Error
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND row_id=?", tenant, task.UUID, attempt, table, rowID).First(&current).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
@@ -235,15 +259,28 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		for key, value := range request.Adjustments {
 			payload[key] = value
 		}
+		if request.Adjustments["resetAcmg"] == true {
+			for key := range payload {
+				if strings.HasPrefix(key, "acmg") || key == "resetAcmg" {
+					delete(payload, key)
+				}
+			}
+		}
 		if raw, ok := payload["acmgEvidence"]; ok {
 			data, _ := json.Marshal(raw)
 			var evidence []ACMGEvidenceEntry
 			if err := json.Unmarshal(data, &evidence); err != nil {
 				return fmt.Errorf("ACMG evidence is invalid")
 			}
-			assessment, err := CalculateSNVACMG(evidence, strings.TrimSpace(fmt.Sprint(payload["acmgOverride"])))
+			assessment, err := CalculateSNVACMG(evidence, "")
 			if err != nil {
 				return err
+			}
+			payload["acmgClassificationComputed"] = assessment.Classification
+			override := strings.TrimSpace(stringAdjustment(payload, "acmgOverride"))
+			if override != "" {
+				assessment.Classification = override
+				assessment.State = "manual_override"
 			}
 			payload["acmgClassification"] = assessment.Classification
 			payload["acmgScore"] = assessment.Score
@@ -254,8 +291,8 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		if err != nil {
 			return err
 		}
-		saved = model.ResultRowAdjustment{TenantID: tenant, TaskUUID: task.UUID, ExecutionAttemptID: attempt, Table: table, RowID: rowID, PayloadJSON: string(after), Version: version + 1, UpdatedBy: actor, UpdatedAt: time.Now().UTC()}
-		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "task_uuid"}, {Name: "execution_attempt_id"}, {Name: "table"}, {Name: "row_id"}}, DoUpdates: clause.AssignmentColumns([]string{"payload_json", "version", "updated_by", "updated_at"})}).Create(&saved).Error; err != nil {
+		saved = model.ResultRowAdjustment{DatasetVersion: dataset.DataVersion, TenantID: tenant, TaskUUID: task.UUID, ExecutionAttemptID: attempt, Table: table, RowID: rowID, PayloadJSON: string(after), Version: version + 1, UpdatedBy: actor, UpdatedAt: time.Now().UTC()}
+		if err := persistParquetAdjustment(tx, &saved, version); err != nil {
 			return err
 		}
 		event = model.ResultRowAdjustmentEvent{ID: uuid.NewString(), TenantID: tenant, TaskUUID: task.UUID, ExecutionAttemptID: attempt, Table: table, RowID: rowID, BeforeJSON: string(before), AfterJSON: string(after), Reason: strings.TrimSpace(request.Reason), Actor: actor, CreatedAt: time.Now().UTC()}
@@ -271,8 +308,11 @@ func (s *ResultService) GetParquetRowAdjustment(ctx context.Context, task *model
 	if task == nil || !validParquetTable(table) || !validResultRowID(rowID) {
 		return nil, fmt.Errorf("invalid result row identity")
 	}
+	if _, err := s.verifyParquetRow(ctx, task, table, rowID); err != nil {
+		return nil, err
+	}
 	var current model.ResultRowAdjustment
-	err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND table=? AND row_id=?", model.TenantIDForTask(task), task.UUID, executionAttempt(task), table, rowID).First(&current).Error
+	err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND row_id=?", model.TenantIDForTask(task), task.UUID, executionAttempt(task), table, rowID).First(&current).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &model.ResultRowAdjustment{Version: 0, PayloadJSON: "{}"}, nil
 	}
@@ -286,8 +326,11 @@ func (s *ResultService) ListParquetRowAdjustmentEvents(ctx context.Context, task
 	if task == nil || !validParquetTable(table) || !validResultRowID(rowID) {
 		return nil, fmt.Errorf("invalid result row identity")
 	}
+	if _, err := s.verifyParquetRow(ctx, task, table, rowID); err != nil {
+		return nil, err
+	}
 	var rows []model.ResultRowAdjustmentEvent
-	err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND table=? AND row_id=?", model.TenantIDForTask(task), task.UUID, executionAttempt(task), table, rowID).Order("created_at DESC").Limit(200).Find(&rows).Error
+	err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND row_id=?", model.TenantIDForTask(task), task.UUID, executionAttempt(task), table, rowID).Order("created_at DESC").Limit(200).Find(&rows).Error
 	return rows, err
 }
 
@@ -296,4 +339,26 @@ func executionAttempt(task *model.Task) string {
 		return task.ExecutionAttemptID
 	}
 	return task.UUID
+}
+
+func stringAdjustment(payload map[string]interface{}, key string) string {
+	value, _ := payload[key].(string)
+	return value
+}
+
+func persistParquetAdjustment(tx *gorm.DB, saved *model.ResultRowAdjustment, version uint64) error {
+	var write *gorm.DB
+	if version == 0 {
+		write = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(saved)
+	} else {
+		write = tx.Model(&model.ResultRowAdjustment{}).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND row_id=? AND version=?", saved.TenantID, saved.TaskUUID, saved.ExecutionAttemptID, saved.Table, saved.RowID, version).
+			Updates(map[string]interface{}{"dataset_version": saved.DatasetVersion, "payload_json": saved.PayloadJSON, "version": saved.Version, "updated_by": saved.UpdatedBy, "updated_at": saved.UpdatedAt})
+	}
+	if write.Error != nil {
+		return write.Error
+	}
+	if write.RowsAffected != 1 {
+		return ErrAdjustmentConflict
+	}
+	return nil
 }

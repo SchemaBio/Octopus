@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ResultDataset describes one immutable Parquet object for one task attempt.
 type ResultDataset struct {
@@ -17,6 +20,7 @@ type ResultDataset struct {
 	FieldsJSON                 string    `json:"-" gorm:"type:jsonb;not null"`
 	AutomaticAssessmentProfile string    `json:"automaticAssessmentProfile" gorm:"size:64;not null;default:''"`
 	AutomaticAssessmentReady   bool      `json:"automaticAssessmentReady" gorm:"not null;default:false"`
+	ExpectedRows               *int64    `json:"expectedRows,omitempty"`
 	Rows                       int64     `json:"rows"`
 	DataVersion                string    `json:"dataVersion" gorm:"size:64;not null"`
 	CreatedAt                  time.Time `json:"createdAt" gorm:"type:timestamptz"`
@@ -39,6 +43,7 @@ func (ResultRowAutomaticAssessment) TableName() string { return "result_row_auto
 
 // ResultRowAdjustment is the current user-authored overlay for one stable row.
 type ResultRowAdjustment struct {
+	DatasetVersion     string    `json:"datasetVersion" gorm:"size:64;not null;default:''"`
 	TenantID           string    `json:"-" gorm:"size:160;primaryKey"`
 	TaskUUID           string    `json:"taskUuid" gorm:"size:36;primaryKey;index"`
 	ExecutionAttemptID string    `json:"executionAttemptId" gorm:"size:36;primaryKey;index"`
@@ -69,7 +74,40 @@ type ResultRowAdjustmentEvent struct {
 func (ResultRowAdjustmentEvent) TableName() string { return "result_row_adjustment_events" }
 
 type ResultRowAdjustmentRequest struct {
+	DatasetVersion  string                 `json:"datasetVersion"`
+	AttemptID       string                 `json:"attemptId"`
 	ExpectedVersion uint64                 `json:"expectedVersion"`
 	Adjustments     map[string]interface{} `json:"adjustments" binding:"required"`
 	Reason          string                 `json:"reason"`
+}
+
+// Keep JSONB storage private while returning a JSON object to API clients.
+func (r ResultRowAdjustment) MarshalJSON() ([]byte, error) {
+	type alias ResultRowAdjustment
+	return json.Marshal(struct {
+		alias
+		Adjustments json.RawMessage `json:"adjustments"`
+	}{alias(r), json.RawMessage(r.PayloadJSON)})
+}
+func (r ResultRowAdjustmentEvent) MarshalJSON() ([]byte, error) {
+	type alias ResultRowAdjustmentEvent
+	return json.Marshal(struct {
+		alias
+		Before json.RawMessage `json:"before"`
+		After  json.RawMessage `json:"after"`
+	}{alias(r), json.RawMessage(r.BeforeJSON), json.RawMessage(r.AfterJSON)})
+}
+
+// A failed identity proof remains pending and never silently transfers a review.
+type ResultLegacyRowMapping struct {
+	TenantID           string `json:"-" gorm:"primaryKey;size:160"`
+	TaskUUID           string `json:"taskUuid" gorm:"primaryKey;size:36"`
+	ExecutionAttemptID string `json:"attemptId" gorm:"primaryKey;size:36"`
+	Table              string `json:"table" gorm:"primaryKey;size:64"`
+	LegacyID           string `json:"legacyId" gorm:"primaryKey;size:36"`
+	RowID              string `json:"rowId" gorm:"size:64"`
+	DatasetVersion     string `json:"datasetVersion" gorm:"size:64"`
+	Status             string `json:"status" gorm:"size:32"`
+	Reason             string `json:"reason" gorm:"type:text"`
+	UpdatedAt          time.Time
 }

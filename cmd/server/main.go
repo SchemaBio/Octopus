@@ -27,6 +27,13 @@ const (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "results-parquet" {
+		if err := runResultsParquetCommand(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "Parquet preparation failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "results-import" {
 		if err := runResultsImportCommand(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "result import command failed: %v\n", err)

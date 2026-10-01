@@ -6,12 +6,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,7 +23,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"gorm.io/gorm/logger"
 )
+
+var ErrParquetIncomplete = fmt.Errorf("PARQUET_SOURCE_ROW_COUNT_MISMATCH")
 
 const maxCachedParquetBytes = int64(20 << 30)
 
@@ -29,6 +35,7 @@ type parquetQueryWireRequest struct {
 	FilePath   string                `json:"filePath"`
 	DatasetID  string                `json:"datasetId"`
 	ObjectHash string                `json:"objectSha256"`
+	RowID      string                `json:"rowId,omitempty"`
 	RowCount   int64                 `json:"rowCount"`
 	Offset     int64                 `json:"offset"`
 	Limit      int64                 `json:"limit"`
@@ -71,10 +78,10 @@ func (s *ResultService) QueryParquetTable(ctx context.Context, task *model.Task,
 		return nil, err
 	}
 	var overlays []model.ResultRowAdjustment
-	if err := database.DB.Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND table = ?", tenant, task.UUID, attempt, table).Find(&overlays).Error; err != nil {
+	if err := database.DB.Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND \"table\" = ?", tenant, task.UUID, attempt, table).Find(&overlays).Error; err != nil {
 		return nil, err
 	}
-	wire := parquetQueryWireRequest{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, dataset.ID+".parquet"), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, RowCount: dataset.Rows, Offset: maxInt64(0, query.Offset), Limit: maxInt64(1, minInt64(200, query.Limit)), Search: query.Search, Sort: query.Sort, Direction: query.Direction, Filters: query.Filters, Overlays: make([]parquetOverlayWire, 0, len(overlays))}
+	wire := parquetQueryWireRequest{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, dataset.ID+"-"+dataset.ObjectSHA256+".parquet"), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, RowCount: dataset.Rows, Offset: maxInt64(0, query.Offset), Limit: maxInt64(1, minInt64(200, query.Limit)), Search: query.Search, Sort: query.Sort, Direction: query.Direction, Filters: query.Filters, Overlays: make([]parquetOverlayWire, 0, len(overlays))}
 	for _, overlay := range overlays {
 		var payload map[string]interface{}
 		if err := json.Unmarshal([]byte(overlay.PayloadJSON), &payload); err != nil {
@@ -104,22 +111,28 @@ func (s *ResultService) QueryParquetTable(ctx context.Context, task *model.Task,
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("invalid Parquet query response")
 	}
+	if dataset.ExpectedRows != nil && result.RowCount != *dataset.ExpectedRows {
+		return nil, ErrParquetIncomplete
+	}
 	if table == "snv-indel" {
 		if err := applyStoredAutomaticAssessments(ctx, task, dataset, &result); err != nil {
 			return nil, err
 		}
 	}
 	result.Version = dataset.DataVersion
+	result.AttemptID = attempt
 	dataset.Rows = result.RowCount
 	fieldsJSON, _ := json.Marshal(result.Columns)
 	dataset.FieldsJSON = string(fieldsJSON)
 	if err := database.DB.WithContext(ctx).Model(&model.ResultDataset{}).
-		Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND table = ?", dataset.TenantID, dataset.TaskUUID, dataset.ExecutionAttemptID, table).
+		Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND \"table\" = ?", dataset.TenantID, dataset.TaskUUID, dataset.ExecutionAttemptID, table).
 		Updates(map[string]interface{}{"rows": dataset.Rows, "fields_json": dataset.FieldsJSON}).Error; err != nil {
 		return nil, fmt.Errorf("failed to store Parquet schema metadata")
 	}
 	for i := range result.Items {
 		result.Items[i] = normalizeParquetAPIItem(table, result.Items[i])
+		result.Items[i]["datasetVersion"] = dataset.DataVersion
+		result.Items[i]["attemptId"] = attempt
 	}
 	return &result, nil
 }
@@ -131,9 +144,13 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 	cacheDir := s.cfg.ResultQuery.CacheDir
 	identity := sha256.Sum256([]byte(tenant + "/" + task.UUID + "/" + attempt + "/" + table))
 	datasetID := hex.EncodeToString(identity[:])
-	cachePath := filepath.Join(cacheDir, datasetID+".parquet")
+	cachePath := filepath.Join(cacheDir, currentCacheName(datasetID, ""))
 	var current model.ResultDataset
-	lookupErr := database.DB.WithContext(ctx).Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND table = ?", tenant, task.UUID, attempt, table).First(&current).Error
+	lookupErr := database.DB.WithContext(ctx).Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND \"table\" = ?", tenant, task.UUID, attempt, table).First(&current).Error
+	if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+		return nil, lookupErr
+	}
+	cachePath = filepath.Join(cacheDir, currentCacheName(datasetID, current.ObjectSHA256))
 	storage, err := newS3Storage(ctx, s.cfg.Storage)
 	if err != nil {
 		return nil, err
@@ -145,11 +162,7 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 	if err != nil {
 		return nil, err
 	}
-	manifestKey, _, manifestVersion, err := igvArchiveObjectIndex(prefix, objects)
-	if err != nil {
-		return nil, err
-	}
-	manifest, err := readIGVManifest(ctx, storage, manifestKey)
+	manifest, manifestVersion, err := readParquetResultManifest(ctx, storage, prefix, objects)
 	if err != nil {
 		return nil, err
 	}
@@ -159,12 +172,9 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 	}
 	var candidates []s3ObjectInfo
 	for _, ref := range manifestParquetRefs(manifest) {
-		key := ref
-		if !strings.HasPrefix(key, prefix+"/") {
-			key = path.Join(prefix, key)
-		}
-		if _, err := safeResultPackageRelativePath(prefix, key); err != nil {
-			return nil, fmt.Errorf("invalid Parquet reference in result manifest")
+		key, err := archiveParquetRefKey(storage.bucket, prefix, ref)
+		if err != nil {
+			return nil, err
 		}
 		object, ok := byKey[key]
 		if ok && parquetTableMatch(table, path.Base(key)) {
@@ -179,6 +189,19 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 	}
 	if lookupErr == nil && current.ManifestVersion == manifestVersion && current.ObjectKey == candidates[0].Key && current.SourceSize == candidates[0].Size && current.SourceLastModified.Equal(candidates[0].LastModified) && current.ObjectSHA256 != "" {
 		if st, statErr := os.Stat(cachePath); statErr == nil && st.Size() == current.SourceSize {
+			if current.ExpectedRows == nil {
+				expected, err := s.archivedTextSourceRows(ctx, storage, prefix, manifest, byKey, current.ObjectKey, table)
+				if err != nil {
+					return nil, err
+				}
+				current.ExpectedRows = expected
+				if expected != nil {
+					if err := database.DB.WithContext(ctx).Model(&model.ResultDataset{}).Where("id=? AND data_version=?", current.ID, current.DataVersion).Update("expected_rows", expected).Error; err != nil {
+						return nil, err
+					}
+				}
+			}
+
 			if err := s.ensureAutomaticAssessments(ctx, task, tenant, attempt, table, &current); err != nil {
 				return nil, err
 			}
@@ -218,15 +241,20 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 		os.Remove(tmp.Name())
 		return nil, err
 	}
+	objectHash := hex.EncodeToString(hash.Sum(nil))
+	cachePath = filepath.Join(cacheDir, currentCacheName(datasetID, objectHash))
 	if err := os.Rename(tmp.Name(), cachePath); err != nil {
 		os.Remove(tmp.Name())
 		return nil, err
 	}
-	objectHash := hex.EncodeToString(hash.Sum(nil))
+	expectedRows, err := s.archivedTextSourceRows(ctx, storage, prefix, manifest, byKey, candidates[0].Key, table)
+	if err != nil {
+		return nil, err
+	}
 	fieldsJSON, _ := json.Marshal([]string{})
 	dataVersion := objectHash
-	item := model.ResultDataset{ID: datasetID, TenantID: tenant, TaskUUID: task.UUID, ExecutionAttemptID: attempt, Table: table, ObjectKey: candidates[0].Key, ObjectSHA256: objectHash, ManifestVersion: manifestVersion, SourceSize: candidates[0].Size, SourceLastModified: candidates[0].LastModified, FieldsJSON: string(fieldsJSON), Rows: 0, DataVersion: dataVersion, CreatedAt: time.Now().UTC()}
-	if err := database.DB.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "task_uuid"}, {Name: "execution_attempt_id"}, {Name: "table"}}, DoUpdates: clause.AssignmentColumns([]string{"object_key", "object_sha256", "manifest_version", "source_size", "source_last_modified", "fields_json", "rows", "data_version", "automatic_assessment_profile", "automatic_assessment_ready", "created_at"})}).Create(&item).Error; err != nil {
+	item := model.ResultDataset{ID: datasetID, TenantID: tenant, TaskUUID: task.UUID, ExecutionAttemptID: attempt, Table: table, ObjectKey: candidates[0].Key, ObjectSHA256: objectHash, ManifestVersion: manifestVersion, SourceSize: candidates[0].Size, SourceLastModified: candidates[0].LastModified, FieldsJSON: string(fieldsJSON), ExpectedRows: expectedRows, Rows: 0, DataVersion: dataVersion, CreatedAt: time.Now().UTC()}
+	if err := database.DB.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "task_uuid"}, {Name: "execution_attempt_id"}, {Name: "table"}}, DoUpdates: clause.AssignmentColumns([]string{"object_key", "object_sha256", "manifest_version", "source_size", "source_last_modified", "fields_json", "expected_rows", "rows", "data_version", "automatic_assessment_profile", "automatic_assessment_ready", "created_at"})}).Create(&item).Error; err != nil {
 		return nil, err
 	}
 	if err := s.ensureAutomaticAssessments(ctx, task, tenant, attempt, table, &item); err != nil {
@@ -235,7 +263,7 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 	return &item, nil
 }
 
-const automaticACMGProfile = "acmg-snv-points-v1"
+const automaticACMGProfile = "acmg-snv-points-v2"
 
 func (s *ResultService) ensureAutomaticAssessments(ctx context.Context, task *model.Task, tenant, attempt, table string, dataset *model.ResultDataset) error {
 	if table != "snv-indel" || dataset.AutomaticAssessmentReady && dataset.AutomaticAssessmentProfile == automaticACMGProfile {
@@ -243,7 +271,7 @@ func (s *ResultService) ensureAutomaticAssessments(ctx context.Context, task *mo
 	}
 	requestBody, err := json.Marshal(map[string]string{
 		"table":        table,
-		"filePath":     filepath.Join(s.cfg.ResultQuery.CacheDir, dataset.ID+".parquet"),
+		"filePath":     filepath.Join(s.cfg.ResultQuery.CacheDir, dataset.ID+"-"+dataset.ObjectSHA256+".parquet"),
 		"datasetId":    dataset.ID,
 		"objectSha256": dataset.ObjectSHA256,
 	})
@@ -296,15 +324,18 @@ func (s *ResultService) ensureAutomaticAssessments(ctx context.Context, task *mo
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 1<<20)
 	tenant = model.TenantIDForTask(task)
-	err = database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = database.DB.WithContext(ctx).Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).Transaction(func(tx *gorm.DB) error {
 		var current model.ResultDataset
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND table=?", tenant, task.UUID, attempt, table).First(&current).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=?", tenant, task.UUID, attempt, table).First(&current).Error; err != nil {
 			return err
+		}
+		if current.DataVersion != dataset.DataVersion {
+			return ErrAdjustmentConflict
 		}
 		if current.AutomaticAssessmentReady && current.AutomaticAssessmentProfile == automaticACMGProfile {
 			return nil
 		}
-		if err := tx.Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND table=? AND profile_version=?", tenant, task.UUID, attempt, table, automaticACMGProfile).Delete(&model.ResultRowAutomaticAssessment{}).Error; err != nil {
+		if err := tx.Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND profile_version=?", tenant, task.UUID, attempt, table, automaticACMGProfile).Delete(&model.ResultRowAutomaticAssessment{}).Error; err != nil {
 			return err
 		}
 		batch := make([]model.ResultRowAutomaticAssessment, 0, 1000)
@@ -338,7 +369,7 @@ func (s *ResultService) ensureAutomaticAssessments(ctx context.Context, task *mo
 		if count != prepared.Rows {
 			return fmt.Errorf("automatic ACMG assessment row count is incomplete")
 		}
-		return tx.Model(&model.ResultDataset{}).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND table=?", tenant, task.UUID, attempt, table).
+		return tx.Model(&model.ResultDataset{}).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=?", tenant, task.UUID, attempt, table).
 			Updates(map[string]interface{}{"automatic_assessment_profile": automaticACMGProfile, "automatic_assessment_ready": true}).Error
 	})
 	if err != nil {
@@ -363,7 +394,7 @@ func applyStoredAutomaticAssessments(ctx context.Context, task *model.Task, data
 		return nil
 	}
 	var assessments []model.ResultRowAutomaticAssessment
-	if err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND table=? AND profile_version=? AND row_id IN ?", dataset.TenantID, task.UUID, dataset.ExecutionAttemptID, "snv-indel", automaticACMGProfile, ids).Find(&assessments).Error; err != nil {
+	if err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND profile_version=? AND row_id IN ?", dataset.TenantID, task.UUID, dataset.ExecutionAttemptID, "snv-indel", automaticACMGProfile, ids).Find(&assessments).Error; err != nil {
 		return fmt.Errorf("failed to load automatic ACMG assessments")
 	}
 	byID := make(map[string]map[string]interface{}, len(assessments))
@@ -463,7 +494,7 @@ func normalizeParquetAPIItem(table string, item map[string]interface{}) map[stri
 		"Spanning_Reads": "spanningReads", "Flanking_Reads": "flankingReads", "InRepeat_Reads": "inRepeatReads", "SweGen_Mean": "swegenMean", "SweGen_Std": "swegenStd",
 		"MEI_ID": "meiId", "TE_Type": "teType", "TE_Family": "teFamily", "Direction": "direction", "Support_Reads": "supportingReads", "Avg_SoftClip_Length": "avgSoftClipLength",
 		"MT_Gene": "mtGene", "MT_Gene_Type": "mtGeneType", "Mitophen_Variant": "mitophenVariant", "Mitophen_Phenotypes": "mitophenPhenotypes", "MT_HGVS": "mtHgvs",
-		"Heteroplasmy_Class": "heteroplasmyClass", "Protein_Position": "proteinPosition", "Size(Mb)": "sizeMb", "Nb_variants": "nbVariants", "Percentage_homozygosity": "percentageHomozygosity", "Recessive_Genes": "recessiveGenes",
+		"Heteroplasmy_Class": "heteroplasmyClass", "Protein_Position": "proteinPosition", "Size(Mb)": "sizeMb", "Size_Mb_": "sizeMb", "Nb_variants": "nbVariants", "Percentage_homozygosity": "percentageHomozygosity", "Recessive_Genes": "recessiveGenes",
 	}
 	for source, target := range commonAliases {
 		if value, exists := item[source]; exists {
@@ -516,7 +547,18 @@ func normalizeParquetAPIItem(table string, item map[string]interface{}) map[stri
 		row["vaf"] = item["VAF"]
 		row["alleleFrequency"] = item["VAF"]
 		row["reviewStatus"] = map[string]interface{}{"reviewed": row["reviewed"], "reported": row["reported"]}
-		row["acmgClassificationComputed"] = row["acmgClassification"]
+		if adjustment, ok := item["__adjustments"].(map[string]interface{}); ok {
+			if computed, exists := adjustment["acmgClassificationComputed"]; exists {
+				row["acmgClassificationComputed"] = computed
+			} else if _, manual := adjustment["acmgEvidence"]; manual {
+				row["acmgClassificationComputed"] = adjustment["acmgClassification"]
+			}
+		}
+		if _, exists := row["acmgClassificationComputed"]; !exists {
+			if auto, ok := item["__acmg"].(map[string]interface{}); ok {
+				row["acmgClassificationComputed"] = auto["classification"]
+			}
+		}
 	}
 	if table == "cnv-segment" || table == "cnv-exon" {
 		for source, target := range map[string]string{"Start": "startPosition", "End": "endPosition", "Col4": "type", "Col5": "gene", "Col6": "transcript", "Col7": "ensemblTranscript", "Col8": "exonCount", "Col9": "log2Ratio", "Col10": "copyRatio", "Col11": "weight", "Col12": "depthRatio", "Col13": "depth", "Col14": "quality", "Col15": "ratio2", "Col19": "impact", "Dosage_Genes": "dosageGenes", "GenCC_AD_Genes": "genccADGenes", "Copy_Number": "copyNumber", "Copy_Ratio": "copyRatio", "Log2_Ratio": "log2Ratio"} {
@@ -614,3 +656,101 @@ func validResultRowID(value string) bool {
 }
 
 func newAdjustmentEventID() string { return uuid.NewString() }
+
+func currentCacheName(id, hash string) string { return id + "-" + hash + ".parquet" }
+
+// Resolve a stable row against the current immutable object; hashes alone are not membership proof.
+func (s *ResultService) verifyParquetRow(ctx context.Context, task *model.Task, table, rowID string) (*model.ResultDataset, error) {
+	dataset, err := s.ensureParquetDataset(ctx, task, model.TenantIDForTask(task), executionAttempt(task), table)
+	if err != nil {
+		return nil, err
+	}
+	wire := parquetQueryWireRequest{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, currentCacheName(dataset.ID, dataset.ObjectSHA256)), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, RowID: rowID, Limit: 1}
+	body, _ := json.Marshal(wire)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.ResultQuery.ServiceURL+"/v1/query", strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 35 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("row identity verification unavailable")
+	}
+	defer resp.Body.Close()
+	var result model.ParquetQueryResponse
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result) != nil {
+		return nil, fmt.Errorf("row identity verification failed")
+	}
+	if dataset.ExpectedRows != nil && result.RowCount != *dataset.ExpectedRows {
+		return nil, ErrParquetIncomplete
+	}
+	if result.Total != 1 {
+		return nil, ErrAdjustmentConflict
+	}
+	return dataset, nil
+}
+
+// Export an effective table through the same structured query engine as the workspace.
+func (s *ResultService) ExportParquetTable(ctx context.Context, task *model.Task, table string, query model.ParquetQueryRequest) (*http.Response, error) {
+	if !validParquetTable(table) {
+		return nil, fmt.Errorf("invalid result table")
+	}
+	if _, err := s.QueryParquetTable(ctx, task, table, model.ParquetQueryRequest{Limit: 1}); err != nil {
+		return nil, err
+	}
+	dataset, err := s.ensureParquetDataset(ctx, task, model.TenantIDForTask(task), executionAttempt(task), table)
+	if err != nil {
+		return nil, err
+	}
+	if query.DatasetVersion != "" && dataset.DataVersion != query.DatasetVersion || query.AttemptID != "" && query.AttemptID != executionAttempt(task) {
+		return nil, ErrAdjustmentConflict
+	}
+	var overlays []model.ResultRowAdjustment
+	if err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=?", model.TenantIDForTask(task), task.UUID, executionAttempt(task), table).Find(&overlays).Error; err != nil {
+		return nil, err
+	}
+	wire := parquetQueryWireRequest{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, currentCacheName(dataset.ID, dataset.ObjectSHA256)), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, Search: query.Search, Sort: query.Sort, Direction: query.Direction, Filters: query.Filters}
+	for _, row := range overlays {
+		var payload map[string]interface{}
+		if err := json.Unmarshal([]byte(row.PayloadJSON), &payload); err != nil {
+			return nil, err
+		}
+		wire.Overlays = append(wire.Overlays, parquetOverlayWire{RowID: row.RowID, Payload: payload, Version: row.Version})
+	}
+	body, _ := json.Marshal(wire)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.ResultQuery.ServiceURL+"/v1/export", strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 35 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("effective result export unavailable")
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("effective result export failed")
+	}
+	return resp, nil
+}
+
+func archiveParquetRefKey(bucket, prefix, ref string) (string, error) {
+	key := strings.TrimSpace(ref)
+	if strings.Contains(key, "://") {
+		parsed, err := url.Parse(key)
+		ownedHost := err == nil && ((parsed.Scheme == "cos" || parsed.Scheme == "s3") && parsed.Host == bucket || parsed.Scheme == "https" && regexp.MustCompile("^"+regexp.QuoteMeta(bucket)+`\.cos\.[a-z0-9-]+\.myqcloud\.com$`).MatchString(parsed.Host))
+		if !ownedHost || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return "", fmt.Errorf("invalid archive object reference")
+		}
+		key = strings.TrimPrefix(parsed.Path, "/")
+	} else if !strings.HasPrefix(key, prefix+"/") {
+		if strings.HasPrefix(key, "/") {
+			return "", fmt.Errorf("absolute archive object reference")
+		}
+		key = prefix + "/" + key
+	}
+	if _, err := safeResultPackageRelativePath(prefix, key); err != nil {
+		return "", err
+	}
+	return key, nil
+}

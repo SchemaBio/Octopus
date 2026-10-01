@@ -58,10 +58,14 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 			if dataset.Rows > 0 {
 				count.Total = dataset.Rows
 			}
-			_ = database.DB.WithContext(ctx).Model(&model.ResultRowAdjustment{}).
-				Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND table = ? AND payload_json->>'reviewed' = 'true'", tenantID, task.UUID, attemptID, dataset.Table).Count(&count.Reviewed).Error
-			_ = database.DB.WithContext(ctx).Model(&model.ResultRowAdjustment{}).
-				Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND table = ? AND payload_json->>'reported' = 'true'", tenantID, task.UUID, attemptID, dataset.Table).Count(&count.Reported).Error
+			if err := database.DB.WithContext(ctx).Model(&model.ResultRowAdjustment{}).
+				Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND \"table\" = ? AND dataset_version = ? AND payload_json->>'reviewed' = 'true'", tenantID, task.UUID, attemptID, dataset.Table, dataset.DataVersion).Count(&count.Reviewed).Error; err != nil {
+				return nil, err
+			}
+			if err := database.DB.WithContext(ctx).Model(&model.ResultRowAdjustment{}).
+				Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND \"table\" = ? AND dataset_version = ? AND payload_json->>'reported' = 'true'", tenantID, task.UUID, attemptID, dataset.Table, dataset.DataVersion).Count(&count.Reported).Error; err != nil {
+				return nil, err
+			}
 			counts[dataset.Table] = count
 		}
 		sort.Strings(parquet.PreparedTables)
@@ -112,7 +116,7 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 }
 
 func (s *ResultService) parquetArchiveState(ctx context.Context, task *model.Task) model.ParquetResultState {
-	state := model.ParquetResultState{Tables: []string{}, FieldProfileVersion: "parquet-fields-v1"}
+	state := model.ParquetResultState{Tables: []string{}, FieldProfileVersion: "parquet-fields-v2"}
 	if s.cfg == nil || !supportsParquetObjectStorage(s.cfg.Storage.Provider) {
 		state.Reason = "结果对象存储未配置"
 		return state
@@ -130,14 +134,9 @@ func (s *ResultService) parquetArchiveState(ctx context.Context, task *model.Tas
 		state.Reason = "无法读取当前执行的归档清单"
 		return state
 	}
-	manifestKey, _, version, err := igvArchiveObjectIndex(prefix, objects)
+	manifest, version, err := readParquetResultManifest(ctx, storage, prefix, objects)
 	if err != nil {
-		state.Reason = "当前执行没有有效的归档清单"
-		return state
-	}
-	manifest, err := readIGVManifest(ctx, storage, manifestKey)
-	if err != nil {
-		state.Reason = "当前执行的归档清单不可读"
+		state.Reason = "当前执行的 Parquet 清单不可读"
 		return state
 	}
 	byKey := make(map[string]s3ObjectInfo, len(objects))
@@ -146,11 +145,8 @@ func (s *ResultService) parquetArchiveState(ctx context.Context, task *model.Tas
 	}
 	tableSet := map[string]bool{}
 	for _, ref := range manifestParquetRefs(manifest) {
-		key := ref
-		if !strings.HasPrefix(key, prefix+"/") {
-			key = path.Join(prefix, key)
-		}
-		if _, err := safeResultPackageRelativePath(prefix, key); err != nil {
+		key, err := archiveParquetRefKey(storage.bucket, prefix, ref)
+		if err != nil {
 			continue
 		}
 		object, ok := byKey[key]

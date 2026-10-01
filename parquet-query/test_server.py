@@ -23,14 +23,14 @@ class QueryServerTests(unittest.TestCase):
             CREATE TABLE source(
                 Chromosome VARCHAR, Position VARCHAR, Gene VARCHAR, Type VARCHAR,
                 Consequence VARCHAR, AlphaMissense_AM VARCHAR, ClinVar_Sig VARCHAR,
-                GnomAD_AF_EAS VARCHAR
+                GnomAD_AF_EAS VARCHAR, Transcript VARCHAR
             )
         """)
-        conn.executemany("INSERT INTO source VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [
-            ("chr2", "10", "GENE1", "SNP", "missense_variant", "0.995", "Pathogenic", "0.1&0.01"),
-            ("chr10", "2", "GENE2", "SNP", "missense_variant", "0.15", "Benign", "0.2"),
-            ("chrX", "6", "GENE3", "INDEL", "missense_variant", "0.999", "VUS", "0.3"),
-            ("chr1", "7", "GENE4", "SNP", "synonymous_variant", "0.99", "VUS", "."),
+        conn.executemany("INSERT INTO source VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+            ("chr2", "10", "GENE1", "SNP", "missense_variant", "0.995", "Pathogenic", "0.1&0.01", "ENST000001"),
+            ("chr10", "2", "GENE2", "SNP", "missense_variant", "0.15", "Benign", "0.2", "ENST000001"),
+            ("chrX", "6", "GENE3", "INDEL", "missense_variant", "0.999", "VUS", "0.3", "ENST000001"),
+            ("chr1", "7", "GENE4", "SNP", "synonymous_variant", "0.99", "VUS", ".", "ENST000001"),
         ])
         conn.execute("COPY source TO ? (FORMAT PARQUET)", [str(self.file)])
         self.ordinals = dict(conn.execute("SELECT Gene, file_row_number FROM read_parquet(?, file_row_number=true)", [str(self.file)]).fetchall())
@@ -91,13 +91,59 @@ class QueryServerTests(unittest.TestCase):
     def test_prepare_persists_versioned_assessment_for_every_source_row(self):
         prepared = server.prepare_automatic_acmg(self.request())
         lines = Path(prepared["assessmentFile"]).read_text(encoding="utf-8").splitlines()
-        self.assertEqual(prepared["profile"], "acmg-snv-points-v1")
+        self.assertEqual(prepared["profile"], "acmg-snv-points-v2")
         self.assertEqual(len(lines), 4)
         records = [__import__("json").loads(line) for line in lines]
         by_id = {record["rowId"]: record for record in records}
         pathogenic_candidate = by_id[server.row_id(self.dataset, self.fingerprint, self.ordinals["GENE1"])]
         self.assertEqual(pathogenic_candidate["assessment"]["criteria"][0]["code"], "PP3")
         self.assertTrue(all(record["profileVersion"] == prepared["profile"] for record in records))
+
+    def test_unadjusted_boolean_and_automatic_fields_are_filterable(self):
+        self.assertEqual(server.execute(self.request(filters=[{"column": "reviewed", "operator": "equals", "value": False}]))["total"], 4)
+        self.assertEqual(server.execute(self.request(filters=[{"column": "acmgScore", "operator": "gte", "value": 1}]))["total"], 1)
+
+    def test_invalid_transcript_and_score_are_never_scored(self):
+        for transcript in (None, "", "ENST1&ENST2", "."):
+            self.assertEqual(server.auto_acmg({"Type": "SNP", "Consequence": "missense_variant", "Transcript": transcript, "AlphaMissense_AM": "0.995"})["score"], 0)
+        for value in ("nan", "inf", "1.5", "-0.1", "0.8&0.9"):
+            self.assertEqual(server.auto_acmg({"Type": "SNP", "Consequence": "missense_variant", "Transcript": "ENST000001", "AlphaMissense_AM": value})["score"], 0)
+
+    def test_row_membership_and_effective_export(self):
+        import csv
+        row = server.row_id(self.dataset, self.fingerprint, self.ordinals["GENE1"])
+        self.assertEqual(server.execute(self.request(rowId=row))["total"], 1)
+        self.assertEqual(server.execute(self.request(rowId="c" * 64))["total"], 0)
+        path = server.execute(self.request(filters=[{"column": "acmgScore", "operator": "gte", "value": 1}]), export=True)
+        try:
+            with path.open(encoding="utf-8") as stream: rows = list(csv.DictReader(stream))
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["reviewed"], "false")
+            self.assertEqual(rows[0]["acmgScore"], "4")
+            self.assertEqual(rows[0]["row_id"], row)
+        finally: path.unlink()
+
+    def test_cnv_assessment_is_filterable_and_exported(self):
+        row = server.row_id(self.dataset, self.fingerprint, self.ordinals["GENE1"])
+        request = self.request(table="cnv-segment", overlays=[{"rowId":row,"version":1,"payload":{"cnvAssessment":{"cnvId":row,"classification":"Pathogenic","totalScore":1.2}}}], filters=[{"column":"cnvClassification","operator":"equals","value":"Pathogenic"}])
+        self.assertEqual(server.execute(request)["total"], 1)
+        self.assertEqual(server.execute({**request,"filters":[{"column":"cnvScore","operator":"gte","value":1}]})["total"], 1)
+
+    def test_go_wire_null_lists_are_treated_as_empty(self):
+        self.assertEqual(server.execute(self.request(filters=None, overlays=None))["total"],4)
+        row=server.row_id(self.dataset,self.fingerprint,self.ordinals["GENE1"])
+        self.assertEqual(server.execute(self.request(filters=None, overlays=None, rowId=row))["total"],1)
+
+    def test_sql_and_python_assessments_have_identical_gates(self):
+        for transcript,score in [("ENST000001.1","0.995"),("ENST1&ENST2","0.995"),("ENST000001","inf"),("ENST000001","-0.1"),("ENST000001","0.15")]:
+            conn=duckdb.connect(":memory:")
+            conn.execute("CREATE TABLE t(Type VARCHAR,Consequence VARCHAR,Transcript VARCHAR,AlphaMissense_AM VARCHAR)")
+            conn.execute("INSERT INTO t VALUES ('SNP','missense_variant',?,?)",[transcript,score])
+            actual=__import__('json').loads(conn.execute("SELECT "+server.automatic_expr({"Type","Consequence","Transcript","AlphaMissense_AM"},"snv-indel")+" FROM t").fetchone()[0])
+            expected=server.auto_acmg({"Type":"SNP","Consequence":"missense_variant","Transcript":transcript,"AlphaMissense_AM":score})
+            self.assertEqual(actual['score'],expected['score'])
+            self.assertEqual(actual['state'],expected['state'])
+            conn.close()
 
     def test_query_rejects_arbitrary_paths(self):
         outside = self.root.parent / "outside.parquet"

@@ -88,6 +88,7 @@ func AutoMigrate() error {
 		&model.ResultImportBatch{},
 		&model.VariantReviewEvent{},
 		&model.ResultDataset{},
+		&model.ResultLegacyRowMapping{},
 		&model.ResultRowAutomaticAssessment{},
 		&model.ResultRowAdjustment{},
 		&model.ResultRowAdjustmentEvent{},

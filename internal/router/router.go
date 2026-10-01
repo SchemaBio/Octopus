@@ -218,6 +218,7 @@ func New(cfg *config.Config) *gin.Engine {
 			results.GET("/qc", resultHandler.GetQC)
 			results.GET("/snv-indel", resultHandler.ListSNVIndels)
 			results.POST("/tables/:table/query", resultHandler.QueryParquetTable)
+			results.POST("/tables/:table/export", resultHandler.ExportParquetTable)
 			results.GET("/rows/:table/:vid", resultHandler.GetParquetRowAdjustment)
 			results.GET("/rows/:table/:vid/history", resultHandler.ListParquetRowHistory)
 			results.PUT("/rows/:table/:vid", resultHandler.SaveParquetRowAdjustment)

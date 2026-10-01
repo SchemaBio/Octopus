@@ -34,3 +34,18 @@ func TestParquetTableMatchUsesWorkflowOutputNames(t *testing.T) {
 		t.Fatal("gene-level CNV file must not match the segment table")
 	}
 }
+
+func TestArchiveParquetReferencesRequireExactBucketAndAttempt(t *testing.T) {
+	prefix := "organizations/org/workflows/task/attempts/attempt"
+	for _, ref := range []string{prefix + "/result.parquet", "cos://bucket/" + prefix + "/result.parquet", "s3://bucket/" + prefix + "/result.parquet", "https://bucket.cos.ap-guangzhou.myqcloud.com/" + prefix + "/result.parquet", "result.parquet"} {
+		key, err := archiveParquetRefKey("bucket", prefix, ref)
+		if err != nil || key != prefix+"/result.parquet" {
+			t.Fatalf("valid reference rejected: %s %v", ref, err)
+		}
+	}
+	for _, ref := range []string{"cos://other/" + prefix + "/result.parquet", "cos://bucket/organizations/other/result.parquet", "../result.parquet", "/tmp/result.parquet", "https://bucket/" + prefix + "/result.parquet", "cos://bucket/" + prefix + "/result.parquet?secret=redacted"} {
+		if _, err := archiveParquetRefKey("bucket", prefix, ref); err == nil {
+			t.Fatal("unowned reference accepted")
+		}
+	}
+}

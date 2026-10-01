@@ -1,3 +1,5 @@
+import math
+import tempfile
 import hashlib
 import json
 import os
@@ -17,12 +19,14 @@ TABLES = {"snv-indel", "cnv-segment", "cnv-exon", "str", "mei", "mt", "upd", "ro
 MAX_BODY = 16 << 20
 MAX_LIMIT = 200
 MAX_FILTERS = 40
-FIELD_PROFILE_VERSION = "parquet-fields-v1"
+FIELD_PROFILE_VERSION = "parquet-fields-v2"
+ACMG_PROFILE = "acmg-snv-points-v2"
 OVERLAY_FIELDS = {
     "reviewed", "reported", "interpretation", "acmgClassification", "acmgEvidence",
-    "acmgScore", "acmgProfile", "acmgState", "acmgOverride", "acmgOverrideReason",
+    "cnvAssessment", "cnvClassification", "cnvScore", "acmgScore", "acmgProfile", "acmgState", "acmgOverride", "acmgOverrideReason",
 }
 NUMERIC_FIELDS = {
+    "acmgScore", "cnvScore",
     "Position", "Start", "End", "Quality", "Depth", "VAF", "GnomAD_AF", "GnomAD_AF_EAS",
     "GnomAD_nhomalt_XX", "GnomAD_nhomalt_XY", "Pangolin_Gain", "Pangolin_Loss", "EVOScore",
     "AlphaMissense_AM", "copy_number", "score", "size", "Repeat_Count", "RepeatCount",
@@ -45,24 +49,33 @@ def overlay_expr(column):
     return "json_extract_string(o.payload, '$." + column + "')"
 
 
-def auto_classification_expr(columns):
-    if "AlphaMissense_AM" not in columns or "Type" not in columns or "Consequence" not in columns:
-        return "NULL::VARCHAR"
-    value = "TRY_CAST(NULLIF(t." + ident("AlphaMissense_AM") + ", '.') AS DOUBLE)"
-    variant_type = "lower(CAST(t." + ident("Type") + " AS VARCHAR)) IN ('snp', 'snv')"
-    missense = "contains(lower(CAST(t." + ident("Consequence") + " AS VARCHAR)), 'missense_variant')"
-    return (
-        "CASE WHEN " + variant_type + " AND " + missense + " AND " + value + " >= 0.792 THEN 'VUS' "
-        "WHEN " + variant_type + " AND " + missense + " AND " + value + " < 0.170 THEN 'Likely_Benign' "
-        "ELSE NULL END"
-    )
+def automatic_expr(columns, table):
+    if table != "snv-indel" or not {"Type", "Consequence", "Transcript", "AlphaMissense_AM"}.issubset(columns):
+        return "'" + json.dumps({"profile": ACMG_PROFILE, "state": "insufficient_evidence", "score": 0, "criteria": []}) + "'"
+    value = "TRY_CAST(t." + ident("AlphaMissense_AM") + " AS DOUBLE)"
+    valid = ("lower(trim(t." + ident("Type") + ")) IN ('snp','snv') AND contains(lower(t." + ident("Consequence") + "), 'missense_variant') AND "
+             "regexp_full_match(trim(t." + ident("Transcript") + "), 'ENST[0-9]+(\\.[0-9]+)?') AND isfinite(" + value + ") AND " + value + " BETWEEN 0 AND 1")
+    points = "(CASE WHEN " + valid + " THEN CASE WHEN " + value + ">=0.990 THEN 4 WHEN " + value + ">=0.906 THEN 2 WHEN " + value + ">=0.792 THEN 1 WHEN " + value + "<0.100 THEN -2 WHEN " + value + "<0.170 THEN -1 ELSE 0 END ELSE 0 END)"
+    classification = "CASE WHEN " + points + ">0 THEN 'VUS' WHEN " + points + "<0 THEN 'Likely_Benign' ELSE '' END"
+    criteria = "CASE WHEN " + points + "=0 THEN json_array() ELSE json_array(json_object('code',CASE WHEN " + points + ">0 THEN 'PP3' ELSE 'BP4' END,'strength',CASE WHEN abs(" + points + ")=4 THEN 'strong' WHEN abs(" + points + ")=2 THEN 'moderate' ELSE 'supporting' END,'source','AlphaMissense','value'," + value + ")) END"
+    return "json_object('profile','" + ACMG_PROFILE + "','score'," + points + ",'classification'," + classification + ",'state',CASE WHEN " + points + "=0 THEN 'insufficient_evidence' ELSE 'classified' END,'criteria'," + criteria + ")"
 
 
 def field_expr(column, columns, table):
-    if column == "acmgClassification":
-        base = auto_classification_expr(columns) if table == "snv-indel" else "NULL::VARCHAR"
-        manual = "CASE WHEN json_exists(o.payload, '$.acmgEvidence') THEN NULLIF(" + overlay_expr("acmgClassification") + ", '') ELSE " + base + " END"
-        return "CASE WHEN json_exists(o.payload, '$.acmgOverride') AND NULLIF(" + overlay_expr("acmgOverride") + ", '') IS NOT NULL THEN " + overlay_expr("acmgOverride") + " ELSE " + manual + " END"
+    if column in {"cnvClassification", "cnvScore", "cnvAssessment"}:
+        if column == "cnvAssessment": return overlay_expr(column)
+        key = "classification" if column == "cnvClassification" else "totalScore"
+        return "json_extract_string(o.payload, '$.cnvAssessment." + key + "')"
+    if column in {"reviewed", "reported"}:
+        return "COALESCE(" + overlay_expr(column) + ", 'false')"
+    baseline_names = {"acmgClassification": "classification", "acmgScore": "score",
+                      "acmgProfile": "profile", "acmgState": "state", "acmgEvidence": "criteria"}
+    if column in baseline_names:
+        base = "json_extract_string(" + automatic_expr(columns, table) + ", '$." + baseline_names[column] + "')"
+        if column == "acmgClassification":
+            manual = "CASE WHEN json_exists(o.payload, '$.acmgEvidence') THEN NULLIF(" + overlay_expr(column) + ", '') ELSE " + base + " END"
+            return "COALESCE(NULLIF(" + overlay_expr("acmgOverride") + ", ''), " + manual + ")"
+        return "CASE WHEN json_exists(o.payload, '$.acmgEvidence') THEN " + overlay_expr(column) + " ELSE " + base + " END"
     if column in OVERLAY_FIELDS:
         return overlay_expr(column)
     if column not in columns:
@@ -85,7 +98,7 @@ def predicate(column, operator, value, columns, table):
             needle = str(values[0])
             return f"contains(lower({value_text}), lower(?))", [needle]
         if operator == "equals":
-            return f"EXISTS (SELECT 1 FROM UNNEST(string_split({value_text}, '&')) AS u(v) WHERE v = ?)", [str(values[0])]
+            return f"EXISTS (SELECT 1 FROM UNNEST(string_split({value_text}, '&')) AS u(v) WHERE v = ?)", [str(values[0]).lower() if isinstance(values[0], bool) else str(values[0])]
         placeholders = ",".join("?" for _ in values)
         return (
             f"EXISTS (SELECT 1 FROM UNNEST(string_split({value_text}, '&')) AS u(v) WHERE v IN ({placeholders}))",
@@ -156,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(404, {"error": "not_found"})
 
     def do_POST(self):
-        if self.path not in {"/v1/query", "/v1/prepare"}:
+        if self.path not in {"/v1/query", "/v1/prepare", "/v1/export"}:
             self.send_json(404, {"error": "not_found"})
             return
         try:
@@ -176,6 +189,18 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/v1/prepare":
                 with PREPARE_LOCK:
                     self.send_json(200, prepare_automatic_acmg(request))
+            elif self.path == "/v1/export":
+                output = execute(request, export=True)
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/csv; charset=utf-8")
+                    self.send_header("Content-Length", str(output.stat().st_size))
+                    self.end_headers()
+                    with output.open("rb") as stream:
+                        while chunk := stream.read(65536):
+                            self.wfile.write(chunk)
+                finally:
+                    output.unlink(missing_ok=True)
             else:
                 self.send_json(200, execute(request))
         except (ValueError, TypeError, KeyError, duckdb.Error, OSError) as exc:
@@ -184,7 +209,7 @@ class Handler(BaseHTTPRequestHandler):
             SLOTS.release()
 
 
-def execute(request):
+def execute(request, export=False):
     table = request.get("table")
     if table not in TABLES:
         raise ValueError("unsupported table")
@@ -205,6 +230,8 @@ def execute(request):
         conn.execute("SET TimeZone='UTC'")
         conn.execute("CREATE TEMP TABLE overlays(row_id VARCHAR PRIMARY KEY, payload JSON, version BIGINT)")
         overlays = request.get("overlays", [])
+        if overlays is None: overlays = []
+        if not isinstance(overlays, list): raise ValueError("invalid row adjustments")
         if len(overlays) > 100000:
             raise ValueError("too many row adjustments")
         if overlays:
@@ -223,6 +250,7 @@ def execute(request):
         described = conn.execute("DESCRIBE SELECT * FROM " + source, [str(path)]).fetchall()
         columns = {row[0] for row in described if row[0] != "file_row_number"}
         filters = request.get("filters", [])
+        if filters is None: filters = []
         if not isinstance(filters, list) or len(filters) > MAX_FILTERS:
             raise ValueError("too many filters")
         where, params = [], []
@@ -241,6 +269,12 @@ def execute(request):
         identity = "sha256(? || '/' || ? || '/' || CAST(t.file_row_number AS VARCHAR))"
         joined = f"FROM {source} t LEFT JOIN overlays o ON o.row_id = {identity}"
         base_params = [str(path), dataset, object_hash]
+        requested_row = request.get("rowId")
+        if requested_row is not None:
+            if not re.fullmatch(r"[0-9a-f]{64}", str(requested_row)):
+                raise ValueError("invalid row identity")
+            where.append("sha256(? || '/' || ? || '/' || CAST(t.file_row_number AS VARCHAR)) = ?")
+            params.extend([dataset, object_hash, requested_row])
         where_sql = " WHERE " + " AND ".join(where) if where else ""
         total = conn.execute("SELECT count(*) " + joined + where_sql, base_params + params).fetchone()[0]
         row_count = int(request.get("rowCount") or 0)
@@ -252,6 +286,19 @@ def execute(request):
             field = sort_expression(sort, columns, table)
             direction = "DESC" if request.get("direction") == "desc" else "ASC"
             order = f"CASE WHEN {field} IS NULL OR CAST({field} AS VARCHAR) IN ('', '.') THEN 1 ELSE 0 END ASC, {field} {direction}, t.file_row_number ASC"
+        if export:
+            handle, filename = tempfile.mkstemp(prefix="octopus-effective-", suffix=".csv")
+            os.close(handle)
+            output = Path(filename)
+            effective = [field_expr(column, columns, table) + " AS " + ident(column) for column in sorted(OVERLAY_FIELDS)]
+            selection = "SELECT t.* EXCLUDE(file_row_number), " + identity + " AS row_id, " + ",".join(effective)
+            try:
+                conn.execute("COPY (" + selection + " " + joined + where_sql + " ORDER BY " + order + ") TO '" + str(output).replace("'", "''") + "' (FORMAT CSV, HEADER TRUE)",
+                             [dataset, object_hash] + base_params + params)
+                return output
+            except Exception:
+                output.unlink(missing_ok=True)
+                raise
         rows = conn.execute(
         "SELECT t.*, t.file_row_number AS __ordinal, " + identity + " AS __row_id, o.payload AS __adjustments, o.version AS __adjustment_version " +
             joined + where_sql + " ORDER BY " + order + " LIMIT ? OFFSET ?",
@@ -294,7 +341,7 @@ def prepare_automatic_acmg(request):
     object_hash = str(request.get("objectSha256", ""))
     if not re.fullmatch(r"[0-9a-f]{64}", dataset) or not re.fullmatch(r"[0-9a-f]{64}", object_hash):
         raise ValueError("invalid dataset identity")
-    profile = "acmg-snv-points-v1"
+    profile = ACMG_PROFILE
     ASSESSMENT_ROOT.mkdir(parents=True, exist_ok=True)
     output = ASSESSMENT_ROOT / f"{dataset}-{object_hash}-{profile}.jsonl"
     if output.is_file():
@@ -343,14 +390,19 @@ def prepare_automatic_acmg(request):
 
 def auto_acmg(row):
     if str(row.get("Type", "")).strip().lower() not in {"snp", "snv"} or "missense_variant" not in str(row.get("Consequence", "")).lower():
-        return {"profile": "acmg-snv-points-v1", "state": "insufficient_evidence", "score": 0, "criteria": [], "pending": ["自动 PP3/BP4 仅适用于有明确错义后果的 SNP"]}
+        return {"profile": ACMG_PROFILE, "state": "insufficient_evidence", "score": 0, "criteria": [], "pending": ["自动 PP3/BP4 仅适用于有明确错义后果的 SNP"]}
+    transcript = str(row.get("Transcript") or "").strip()
+    if not re.fullmatch(r"ENST[0-9]+(?:\.[0-9]+)?", transcript):
+        return {"profile": ACMG_PROFILE, "state": "insufficient_evidence", "score": 0, "criteria": [], "pending": ["当前转录本缺失、多值或无法对应 AlphaMissense"]}
     raw = row.get("AlphaMissense_AM")
     try:
         if raw is None or "&" in str(raw):
-            return {"profile": "acmg-snv-points-v1", "state": "insufficient_evidence", "score": 0, "criteria": [], "pending": ["AlphaMissense 分值缺失或多值无法对应当前转录本"]}
+            return {"profile": ACMG_PROFILE, "state": "insufficient_evidence", "score": 0, "criteria": [], "pending": ["AlphaMissense 分值缺失或多值无法对应当前转录本"]}
         score = float(raw)
     except (TypeError, ValueError):
-        return {"profile": "acmg-snv-points-v1", "state": "insufficient_evidence", "score": 0, "criteria": [], "pending": ["AlphaMissense 分值不可解析"]}
+        return {"profile": ACMG_PROFILE, "state": "insufficient_evidence", "score": 0, "criteria": [], "pending": ["AlphaMissense 分值不可解析"]}
+    if not math.isfinite(score) or not 0 <= score <= 1:
+        return {"profile": ACMG_PROFILE, "state": "insufficient_evidence", "score": 0, "criteria": [], "pending": ["AlphaMissense 分值超出有效范围"]}
     if score >= 0.990:
         evidence, points = "PP3_Strong", 4
     elif score >= 0.906:
@@ -375,7 +427,7 @@ def auto_acmg(row):
     elif evidence:
         classification = "VUS"
     return {
-        "profile": "acmg-snv-points-v1",
+        "profile": ACMG_PROFILE,
         "state": "classified" if classification else "insufficient_evidence",
         "score": points,
         "criteria": ([{"code": evidence.split("_")[0], "strength": evidence.split("_")[1].lower(), "source": "AlphaMissense", "value": score}] if evidence else []),

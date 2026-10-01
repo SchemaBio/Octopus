@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -82,6 +83,10 @@ func (h *ResultHandler) QueryParquetTable(c *gin.Context) {
 		return
 	}
 	result, err := h.svc.QueryParquetTable(c.Request.Context(), task, c.Param("table"), query)
+	if errors.Is(err, service.ErrParquetIncomplete) {
+		ErrorConflict(c, "归档 Parquet 与原始报告行数不一致，需要恢复数据集")
+		return
+	}
 	if err != nil {
 		ErrorInternal(c, "failed to query the attempt Parquet dataset")
 		return
@@ -102,6 +107,10 @@ func (h *ResultHandler) SaveParquetRowAdjustment(c *gin.Context) {
 	var request model.ResultRowAdjustmentRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		ErrorBadRequest(c, "invalid result adjustment")
+		return
+	}
+	if request.DatasetVersion == "" || request.AttemptID == "" {
+		ErrorBadRequest(c, "datasetVersion and attemptId are required")
 		return
 	}
 	item, event, err := h.svc.SaveParquetRowAdjustment(c.Request.Context(), task, c.Param("table"), c.Param("vid"), email, request)
@@ -476,23 +485,10 @@ func (h *ResultHandler) ReviewVariant(c *gin.Context) {
 		return
 	}
 	if isStableResultRowID(vid) {
-		current, err := h.svc.GetParquetRowAdjustment(c.Request.Context(), task, variantType, vid)
-		if err != nil {
-			ErrorBadRequest(c, err.Error())
-			return
-		}
-		adjustment, event, err := h.svc.SaveParquetRowAdjustment(c.Request.Context(), task, variantType, vid, email, model.ResultRowAdjustmentRequest{ExpectedVersion: current.Version, Adjustments: map[string]interface{}{"reviewed": *request.Reviewed}, Reason: "review status updated"})
-		if errors.Is(err, service.ErrAdjustmentConflict) {
-			ErrorConflict(c, "result adjustment changed; reload the row")
-			return
-		}
-		if err != nil {
-			ErrorBadRequest(c, err.Error())
-			return
-		}
-		Success(c, gin.H{"reviewed": *request.Reviewed, "changed": true, "adjustmentVersion": adjustment.Version, "event": event})
+		ErrorBadRequest(c, "use the versioned result row adjustment endpoint")
 		return
 	}
+
 	mutation, err := h.svc.ReviewVariantWithEvent(c.Request.Context(), task, variantType, vid, *request.Reviewed, userID, email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -522,7 +518,7 @@ func (h *ResultHandler) ReportVariant(c *gin.Context) {
 	variantType := c.Param("type")
 	vid := c.Param("vid")
 
-	task, ok := requireTaskAccess(c, h.taskRepo, taskID)
+	_, ok := requireTaskAccess(c, h.taskRepo, taskID)
 	if !ok {
 		return
 	}
@@ -533,21 +529,7 @@ func (h *ResultHandler) ReportVariant(c *gin.Context) {
 		return
 	}
 	if isStableResultRowID(vid) {
-		current, err := h.svc.GetParquetRowAdjustment(c.Request.Context(), task, variantType, vid)
-		if err != nil {
-			ErrorBadRequest(c, err.Error())
-			return
-		}
-		adjustment, event, err := h.svc.SaveParquetRowAdjustment(c.Request.Context(), task, variantType, vid, email, model.ResultRowAdjustmentRequest{ExpectedVersion: current.Version, Adjustments: map[string]interface{}{"reported": true}, Reason: "variant marked as reported"})
-		if errors.Is(err, service.ErrAdjustmentConflict) {
-			ErrorConflict(c, "result adjustment changed; reload the row")
-			return
-		}
-		if err != nil {
-			ErrorBadRequest(c, err.Error())
-			return
-		}
-		Success(c, gin.H{"reported": true, "adjustmentVersion": adjustment.Version, "event": event})
+		ErrorBadRequest(c, "use the versioned result row adjustment endpoint")
 		return
 	}
 
@@ -629,4 +611,28 @@ func setQueryDefaults(page, pageSize *int) {
 	if *pageSize == 0 {
 		*pageSize = 20
 	}
+}
+
+func (h *ResultHandler) ExportParquetTable(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	var query model.ParquetQueryRequest
+	if c.ShouldBindJSON(&query) != nil || len(query.Filters) > 40 || len(query.Search) > 256 || len(query.Sort) > 256 || query.DatasetVersion == "" || query.AttemptID == "" {
+		ErrorBadRequest(c, "invalid export query or missing dataset snapshot")
+		return
+	}
+	resp, err := h.svc.ExportParquetTable(c.Request.Context(), task, c.Param("table"), query)
+	if errors.Is(err, service.ErrAdjustmentConflict) {
+		ErrorConflict(c, "dataset changed; refresh before exporting")
+		return
+	}
+	if err != nil {
+		ErrorInternal(c, "effective result export failed")
+		return
+	}
+	defer resp.Body.Close()
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=results-%s.csv", c.Param("table")))
+	c.DataFromReader(200, resp.ContentLength, "text/csv; charset=utf-8", io.LimitReader(resp.Body, 1<<30), nil)
 }
