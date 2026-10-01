@@ -120,6 +120,11 @@ func migrateResultImportStorage() error {
 	if DB == nil {
 		return fmt.Errorf("database not initialized")
 	}
+	for _, column := range []string{"pangolin_an", "evo_score_an"} {
+		if err := DB.Exec(fmt.Sprintf(`ALTER TABLE result_snv_indels ALTER COLUMN %s TYPE TEXT USING %s::text`, column, column)).Error; err != nil {
+			return fmt.Errorf("failed to preserve functional annotation labels: %w", err)
+		}
+	}
 	if err := DB.Exec(`ALTER TABLE result_snv_indels ALTER COLUMN alpha_missense_amc TYPE TEXT USING alpha_missense_amc::text`).Error; err != nil {
 		return fmt.Errorf("failed to expand AlphaMissense annotation storage: %w", err)
 	}

@@ -18,6 +18,7 @@ func runResultsImportCommand(args []string) error {
 	taskUUID := flags.String("task", "", "completed CVM task UUID")
 	attemptID := flags.String("attempt", "", "current execution attempt UUID")
 	execute := flags.Bool("execute", false, "perform the result import; without this flag only inspect")
+	annotationsOnly := flags.Bool("annotations-only", false, "restore SNV source annotations while preserving result IDs and review state")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -35,6 +36,13 @@ func runResultsImportCommand(args []string) error {
 	defer database.CloseDB()
 
 	taskService := service.NewTaskService(cfg)
+	if *annotationsOnly {
+		result, err := taskService.RecoverArchivedSNVAnnotations(context.Background(), *taskUUID, *attemptID, *execute)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
 	if !*execute {
 		check, err := taskService.InspectArchivedTaskResults(*taskUUID, *attemptID)
 		if err != nil {

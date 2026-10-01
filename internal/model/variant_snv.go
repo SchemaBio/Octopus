@@ -38,11 +38,12 @@ type SNVIndel struct {
 	GnomadNhomaltXY     *float64           `json:"gnomadNhomaltXY,omitempty" gorm:"type:numeric"`
 	PangolinGain        *float64           `json:"pangolinGain,omitempty" gorm:"type:numeric"`
 	PangolinLoss        *float64           `json:"pangolinLoss,omitempty" gorm:"type:numeric"`
-	PangolinAN          *float64           `json:"pangolinAN,omitempty" gorm:"type:numeric"`
+	PangolinAN          string             `json:"pangolinAN,omitempty" gorm:"type:text"`
 	EVOScore            *float64           `json:"evoScore,omitempty" gorm:"type:numeric"`
-	EVOScoreAN          *float64           `json:"evoScoreAN,omitempty" gorm:"type:numeric"`
+	EVOScoreAN          string             `json:"evoScoreAN,omitempty" gorm:"type:text"`
 	AlphaMissenseAM     *float64           `json:"alphaMissenseAM,omitempty" gorm:"type:numeric"`
 	AlphaMissenseAMC    string             `json:"alphaMissenseAMC,omitempty" gorm:"type:text"`
+	AnnotationValues    map[string]string  `json:"annotationValues,omitempty" gorm:"serializer:json;type:jsonb"`
 	HgncID              string             `json:"hgncId,omitempty" gorm:"size:50"`
 	RsID                string             `json:"rsId,omitempty" gorm:"size:200"`
 	MaxAF               *float64           `json:"maxAF,omitempty" gorm:"type:numeric"`

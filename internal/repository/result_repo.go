@@ -91,6 +91,7 @@ func (r *ResultRepository) PaginateSNVIndels(query *model.SNVIndelListQuery) ([]
 		"classification": acmgClassificationOrder, "gene": "gene", "chromosome": naturalChromosomeOrder("chromosome"),
 		"position": "position", "depth": "depth", "vaf": "vaf", "alleleFrequency": "vaf", "zygosity": "zygosity",
 		"acmgClassification": acmgClassificationOrder, "reviewed": "reviewed", "reported": "reported",
+		"gnomadAF": "gnomad_af", "gnomadEasAF": "gnomad_eas_af", "clinvarSignificance": "clinvar_significance",
 	}, acmgClassificationOrder+" ASC", "gene ASC")
 	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
