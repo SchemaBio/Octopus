@@ -503,6 +503,7 @@ func normalizeParquetAPIItem(table string, item map[string]interface{}) map[stri
 	}
 	rowID, _ := item["__row_id"].(string)
 	row["id"] = rowID
+	row["rowOrdinal"] = item["__ordinal"]
 	row["rowId"] = rowID
 	row["adjustments"] = item["__adjustments"]
 	row["adjustmentVersion"] = item["__adjustment_version"]

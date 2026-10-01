@@ -1,6 +1,6 @@
 services:
   octopus:
-    image: ${OCTOPUS_IMAGE:-schemabio/octopus:parquet-results-2}
+    image: ${OCTOPUS_IMAGE:-schemabio/octopus:browser-results-3}
     environment:
       PARQUET_ENABLED: 'true'
       PARQUET_QUERY_URL: http://parquet-query:9100
@@ -63,7 +63,7 @@ services:
       retries: 12
 
   yijian:
-    image: ${YIJIAN_IMAGE:-schemabio/yijian:parquet-workspace-2}
+    image: ${YIJIAN_IMAGE:-schemabio/yijian:browser-workspace-3}
 
 networks:
   parquet-query-internal:

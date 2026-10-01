@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"gorm.io/gorm/logger"
 )
 
 var ErrAdjustmentConflict = errors.New("RESULT_ADJUSTMENT_VERSION_CONFLICT")
@@ -152,6 +155,17 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if len(request.Reason) > 4000 {
 		return nil, nil, fmt.Errorf("adjustment reason is too long")
 	}
+	if request.ClientMutationID != "" {
+		if _, err := uuid.Parse(request.ClientMutationID); err != nil {
+			return nil, nil, fmt.Errorf("invalid mutation identity")
+		}
+	}
+	encoded, _ := json.Marshal(struct {
+		Actor, Task, Table, Row string
+		Request                 model.ResultRowAdjustmentRequest
+	}{actor, task.UUID, table, rowID, request})
+	fingerprint := sha256.Sum256(encoded)
+	requestHash := hex.EncodeToString(fingerprint[:])
 	if len(request.Adjustments) == 0 {
 		return nil, nil, fmt.Errorf("at least one adjustment is required")
 	}
@@ -212,7 +226,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			return nil, nil, fmt.Errorf("manual ACMG override requires a reason")
 		}
 	}
-	dataset, err := s.verifyParquetRow(ctx, task, table, rowID)
+	dataset, err := s.verifyBrowserRow(ctx, task, table, rowID, request.RowOrdinal)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -222,7 +236,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	tenant, attempt := model.TenantIDForTask(task), executionAttempt(task)
 	var saved model.ResultRowAdjustment
 	var event model.ResultRowAdjustmentEvent
-	err = database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = database.DB.WithContext(ctx).Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).Transaction(func(tx *gorm.DB) error {
 		var lockedTask model.Task
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid=?", task.UUID).First(&lockedTask).Error; err != nil {
 			return err
@@ -237,6 +251,21 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		if lockedDataset.DataVersion != dataset.DataVersion {
 			return ErrAdjustmentConflict
 		}
+		if request.ClientMutationID != "" {
+			var prior model.ResultRowAdjustmentEvent
+			err := tx.Where("tenant_id=? AND client_mutation_id=?", tenant, request.ClientMutationID).First(&prior).Error
+			if err == nil {
+				if prior.RequestSHA256 != requestHash {
+					return ErrAdjustmentConflict
+				}
+				event = prior
+				return tx.Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND row_id=?", tenant, task.UUID, attempt, table, rowID).First(&saved).Error
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		}
+		nextRevision := lockedDataset.AdjustmentRevision + 1
 		var current model.ResultRowAdjustment
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND row_id=?", tenant, task.UUID, attempt, table, rowID).First(&current).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -292,10 +321,19 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			return err
 		}
 		saved = model.ResultRowAdjustment{DatasetVersion: dataset.DataVersion, TenantID: tenant, TaskUUID: task.UUID, ExecutionAttemptID: attempt, Table: table, RowID: rowID, PayloadJSON: string(after), Version: version + 1, UpdatedBy: actor, UpdatedAt: time.Now().UTC()}
+		saved.Revision = nextRevision
 		if err := persistParquetAdjustment(tx, &saved, version); err != nil {
 			return err
 		}
 		event = model.ResultRowAdjustmentEvent{ID: uuid.NewString(), TenantID: tenant, TaskUUID: task.UUID, ExecutionAttemptID: attempt, Table: table, RowID: rowID, BeforeJSON: string(before), AfterJSON: string(after), Reason: strings.TrimSpace(request.Reason), Actor: actor, CreatedAt: time.Now().UTC()}
+		event.Revision, event.DatasetVersion = nextRevision, dataset.DataVersion
+		if request.ClientMutationID != "" {
+			event.ClientMutationID = &request.ClientMutationID
+			event.RequestSHA256 = requestHash
+		}
+		if err := tx.Model(&model.ResultDataset{}).Where("id=?", dataset.ID).Update("adjustment_revision", nextRevision).Error; err != nil {
+			return err
+		}
 		return tx.Create(&event).Error
 	})
 	if err != nil {
@@ -352,7 +390,7 @@ func persistParquetAdjustment(tx *gorm.DB, saved *model.ResultRowAdjustment, ver
 		write = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(saved)
 	} else {
 		write = tx.Model(&model.ResultRowAdjustment{}).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND row_id=? AND version=?", saved.TenantID, saved.TaskUUID, saved.ExecutionAttemptID, saved.Table, saved.RowID, version).
-			Updates(map[string]interface{}{"dataset_version": saved.DatasetVersion, "payload_json": saved.PayloadJSON, "version": saved.Version, "updated_by": saved.UpdatedBy, "updated_at": saved.UpdatedAt})
+			Updates(map[string]interface{}{"revision": saved.Revision, "dataset_version": saved.DatasetVersion, "payload_json": saved.PayloadJSON, "version": saved.Version, "updated_by": saved.UpdatedBy, "updated_at": saved.UpdatedAt})
 	}
 	if write.Error != nil {
 		return write.Error

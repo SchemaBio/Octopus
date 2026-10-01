@@ -7,6 +7,7 @@ import (
 
 // ResultDataset describes one immutable Parquet object for one task attempt.
 type ResultDataset struct {
+	AdjustmentRevision         uint64    `json:"adjustmentRevision" gorm:"not null;default:0"`
 	ID                         string    `json:"id" gorm:"primaryKey;size:64"`
 	TenantID                   string    `json:"-" gorm:"size:160;index;uniqueIndex:idx_result_dataset_scope,priority:1"`
 	TaskUUID                   string    `json:"taskUuid" gorm:"size:36;index;uniqueIndex:idx_result_dataset_scope,priority:2"`
@@ -43,6 +44,7 @@ func (ResultRowAutomaticAssessment) TableName() string { return "result_row_auto
 
 // ResultRowAdjustment is the current user-authored overlay for one stable row.
 type ResultRowAdjustment struct {
+	Revision           uint64    `json:"revision" gorm:"not null;default:0"`
 	DatasetVersion     string    `json:"datasetVersion" gorm:"size:64;not null;default:''"`
 	TenantID           string    `json:"-" gorm:"size:160;primaryKey"`
 	TaskUUID           string    `json:"taskUuid" gorm:"size:36;primaryKey;index"`
@@ -58,8 +60,12 @@ type ResultRowAdjustment struct {
 func (ResultRowAdjustment) TableName() string { return "result_row_adjustments" }
 
 type ResultRowAdjustmentEvent struct {
+	ClientMutationID   *string   `json:"clientMutationId,omitempty" gorm:"size:36;uniqueIndex:idx_result_mutation,priority:2"`
+	RequestSHA256      string    `json:"-" gorm:"size:64"`
+	Revision           uint64    `json:"revision" gorm:"not null;default:0"`
+	DatasetVersion     string    `json:"datasetVersion" gorm:"size:64;not null;default:''"`
 	ID                 string    `json:"id" gorm:"primaryKey;size:36"`
-	TenantID           string    `json:"-" gorm:"size:160;index"`
+	TenantID           string    `json:"-" gorm:"size:160;index;uniqueIndex:idx_result_mutation,priority:1"`
 	TaskUUID           string    `json:"taskUuid" gorm:"size:36;index"`
 	ExecutionAttemptID string    `json:"executionAttemptId" gorm:"size:36;index"`
 	Table              string    `json:"table" gorm:"size:64"`
@@ -74,11 +80,13 @@ type ResultRowAdjustmentEvent struct {
 func (ResultRowAdjustmentEvent) TableName() string { return "result_row_adjustment_events" }
 
 type ResultRowAdjustmentRequest struct {
-	DatasetVersion  string                 `json:"datasetVersion"`
-	AttemptID       string                 `json:"attemptId"`
-	ExpectedVersion uint64                 `json:"expectedVersion"`
-	Adjustments     map[string]interface{} `json:"adjustments" binding:"required"`
-	Reason          string                 `json:"reason"`
+	RowOrdinal       *int64                 `json:"rowOrdinal,omitempty"`
+	ClientMutationID string                 `json:"clientMutationId"`
+	DatasetVersion   string                 `json:"datasetVersion"`
+	AttemptID        string                 `json:"attemptId"`
+	ExpectedVersion  uint64                 `json:"expectedVersion"`
+	Adjustments      map[string]interface{} `json:"adjustments" binding:"required"`
+	Reason           string                 `json:"reason"`
 }
 
 // Keep JSONB storage private while returning a JSON object to API clients.

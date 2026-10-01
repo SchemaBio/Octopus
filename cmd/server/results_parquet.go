@@ -22,6 +22,7 @@ func runResultsParquetCommand(args []string) error {
 	backfill := flags.Bool("backfill", false, "convert missing manifest-declared archived text tables and publish a separate catalogue; requires --execute")
 	inspect := flags.Bool("inspect-archive", false, "inspect archive object metadata and manifest references without mutation")
 	execute := flags.Bool("execute", false, "prepare the dataset and migrate proven legacy adjustments")
+	browserOutput := flags.String("browser-output", "", "write a short-lived browser descriptor and adjustment snapshot to a new private file; requires --execute")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -38,6 +39,28 @@ func runResultsParquetCommand(args []string) error {
 		return fmt.Errorf("current task attempt not found")
 	}
 	svc := service.NewResultService(cfg)
+	if *browserOutput != "" {
+		if !*execute {
+			return fmt.Errorf("--browser-output requires --execute")
+		}
+		descriptor, err := svc.BrowserDataset(context.Background(), &task, *table)
+		if err != nil {
+			return err
+		}
+		snapshot, err := svc.BrowserAdjustments(context.Background(), &task, *table, *attempt, descriptor.Dataset.DataVersion, nil)
+		if err != nil {
+			return err
+		}
+		f, err := os.OpenFile(*browserOutput, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if err = json.NewEncoder(f).Encode(map[string]interface{}{"browser": descriptor, "adjustments": snapshot}); err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"mode": "browser_authorized", "rows": descriptor.Dataset.Rows})
+	}
 	if *repairTable != "" && (!*backfill || !*execute) {
 		return fmt.Errorf("--repair-table requires --execute --backfill")
 	}

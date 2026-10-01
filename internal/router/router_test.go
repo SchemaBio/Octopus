@@ -135,3 +135,14 @@ func TestWorkflowTemplateCatalogRequiresAuthentication(t *testing.T) {
 		}
 	}
 }
+
+func TestBrowserResultsRequireAuthentication(t *testing.T) {
+	router := New(testRouterConfig())
+	for _, path := range []string{"/api/v1/tasks/task/results/tables/snv-indel/browser", "/api/v1/tasks/task/results/tables/snv-indel/adjustments", "/api/v1/tasks/task/results/tables/snv-indel/views"} {
+		r := httptest.NewRecorder()
+		router.ServeHTTP(r, httptest.NewRequest(http.MethodGet, path, nil))
+		if r.Code != http.StatusUnauthorized {
+			t.Fatalf("%s: expected authentication, got %d", path, r.Code)
+		}
+	}
+}

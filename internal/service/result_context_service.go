@@ -29,10 +29,7 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 	if err != nil {
 		return nil, err
 	}
-	counts, err := s.repo.CountWorkspaceResults(task.UUID, tenantID, attemptID)
-	if err != nil {
-		return nil, err
-	}
+	var counts map[string]model.ResultCount
 	reference := resultReferenceForTask(s.cfg, task)
 	parquet := model.ParquetResultState{Tables: []string{}}
 	if task.Status != model.TaskStatusRunning && task.Status != model.TaskStatusQueued && task.Status != model.TaskStatusWaitingData {
@@ -69,6 +66,11 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 			counts[dataset.Table] = count
 		}
 		sort.Strings(parquet.PreparedTables)
+	} else {
+		counts, err = s.repo.CountWorkspaceResults(task.UUID, tenantID, attemptID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	members, qc := resultMembersAndQC(qcs)
 	importBatchID := uint(0)

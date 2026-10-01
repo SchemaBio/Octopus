@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -21,6 +22,51 @@ type ResultHandler struct {
 	svc       *service.ResultService
 	taskRepo  *repository.TaskRepository
 	eventRepo *repository.VariantReviewEventRepository
+}
+
+func (h *ResultHandler) GetBrowserDataset(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	result, err := h.svc.BrowserDataset(c.Request.Context(), task, c.Param("table"))
+	if errors.Is(err, service.ErrParquetIncomplete) {
+		ErrorConflict(c, "归档数据不完整，需要恢复数据集")
+		return
+	}
+	if err != nil {
+		ErrorInternal(c, "browser dataset preparation failed")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	Success(c, result)
+}
+
+func (h *ResultHandler) GetBrowserAdjustments(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	var since *uint64
+	if raw, present := c.GetQuery("since"); present {
+		value, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			ErrorBadRequest(c, "invalid adjustment cursor")
+			return
+		}
+		since = &value
+	}
+	result, err := h.svc.BrowserAdjustments(c.Request.Context(), task, c.Param("table"), c.Query("attemptId"), c.Query("datasetVersion"), since)
+	if errors.Is(err, service.ErrAdjustmentConflict) {
+		ErrorConflict(c, "result dataset changed; reload the dataset")
+		return
+	}
+	if err != nil {
+		ErrorInternal(c, "adjustment synchronization failed")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	Success(c, result)
 }
 
 func executionAttemptID(task *model.Task) string {
