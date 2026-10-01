@@ -1,0 +1,70 @@
+services:
+  octopus:
+    image: ${OCTOPUS_IMAGE:-schemabio/octopus:parquet-results-1}
+    environment:
+      PARQUET_ENABLED: 'true'
+      PARQUET_QUERY_URL: http://parquet-query:9100
+      PARQUET_CACHE_DIR: /data/parquet-cache
+      PARQUET_ASSESSMENT_DIR: /data/parquet-assessments
+    volumes:
+      - ./parquet-cache:/data/parquet-cache
+      - ./parquet-assessments:/data/parquet-assessments:ro
+    networks:
+      - default
+      - sepiida
+      - parquet-query-internal
+    depends_on:
+      parquet-cache-init:
+        condition: service_completed_successfully
+      parquet-query:
+        condition: service_healthy
+
+  parquet-cache-init:
+    image: alpine:3.22
+    restart: 'no'
+    user: '0:0'
+    command:
+      - sh
+      - -c
+      - chown 1000:1000 /cache && chmod 0750 /cache && chown 10001:1000 /assessments && chmod 0750 /assessments
+    volumes:
+      - ./parquet-cache:/cache
+      - ./parquet-assessments:/assessments
+
+  parquet-query:
+    image: ${PARQUET_QUERY_IMAGE:-schemabio/parquet-query:parquet-results-1}
+    build:
+      context: ../Octopus/parquet-query
+    restart: unless-stopped
+    user: '10001:1000'
+    mem_limit: 1g
+    cpus: 2.0
+    environment:
+      PARQUET_CACHE_ROOT: /data/parquet-cache
+      PARQUET_ASSESSMENT_ROOT: /data/parquet-assessments
+      PORT: '9100'
+      PYTHONUNBUFFERED: '1'
+    volumes:
+      - ./parquet-cache:/data/parquet-cache:ro
+      - ./parquet-assessments:/data/parquet-assessments
+    networks:
+      - parquet-query-internal
+    depends_on:
+      parquet-cache-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:9100/health', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  yijian:
+    image: ${YIJIAN_IMAGE:-schemabio/yijian:parquet-workspace-1}
+
+networks:
+  parquet-query-internal:
+    internal: true

@@ -38,6 +38,25 @@ initialization.
 Use `sudo bash ./deploy.sh up|down`, `bash ./deploy.sh status`, and
 `bash ./deploy.sh credentials` for ongoing operation.
 
+## COS Parquet query service
+
+SaaS deployments can merge `saas-parquet-query.override.yaml` with their
+existing Compose file. The override adds a DuckDB sidecar on a private Docker
+network, a read-only Parquet cache mount, and a separate assessment directory.
+The Octopus application container must use UID 1000; the sidecar runs as
+UID 10001 with group 1000 so it can read the cache and Octopus can read the
+versioned ACMG assessment files. The one-shot cache initializer sets these
+permissions without exposing a host port.
+
+Build and apply it from the SaaS deployment directory with
+`PARQUET_QUERY_IMAGE` set to the image tag built from this repository:
+
+```sh
+docker compose -f compose.yaml \
+  -f ../Octopus/deploy/saas-parquet-query.override.yaml \
+  up -d --build octopus parquet-query
+```
+
 ## Reverse proxy contract
 
 The deployment does not manage DNS, TLS, or a reverse proxy. Route `/api/*` to

@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
 	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
 )
 
@@ -32,6 +34,38 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 		return nil, err
 	}
 	reference := resultReferenceForTask(s.cfg, task)
+	parquet := model.ParquetResultState{Tables: []string{}}
+	if task.Status != model.TaskStatusRunning && task.Status != model.TaskStatusQueued && task.Status != model.TaskStatusWaitingData {
+		parquet = s.parquetArchiveState(ctx, task)
+	}
+	if parquet.Available {
+		// Once Parquet is available it is the only source of result counts. Do
+		// not leak the previous relational-import snapshot into this workspace.
+		counts = make(map[string]model.ResultCount, len(parquet.Tables))
+		for _, table := range parquet.Tables {
+			counts[table] = model.ResultCount{}
+		}
+		var datasets []model.ResultDataset
+		if err := database.DB.WithContext(ctx).Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ?", tenantID, task.UUID, attemptID).Find(&datasets).Error; err != nil {
+			return nil, err
+		}
+		for _, dataset := range datasets {
+			parquet.PreparedTables = append(parquet.PreparedTables, dataset.Table)
+			if dataset.Table == "snv-indel" && dataset.AutomaticAssessmentReady {
+				parquet.AutomaticAssessmentProfile = dataset.AutomaticAssessmentProfile
+			}
+			count := counts[dataset.Table]
+			if dataset.Rows > 0 {
+				count.Total = dataset.Rows
+			}
+			_ = database.DB.WithContext(ctx).Model(&model.ResultRowAdjustment{}).
+				Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND table = ? AND payload_json->>'reviewed' = 'true'", tenantID, task.UUID, attemptID, dataset.Table).Count(&count.Reviewed).Error
+			_ = database.DB.WithContext(ctx).Model(&model.ResultRowAdjustment{}).
+				Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND table = ? AND payload_json->>'reported' = 'true'", tenantID, task.UUID, attemptID, dataset.Table).Count(&count.Reported).Error
+			counts[dataset.Table] = count
+		}
+		sort.Strings(parquet.PreparedTables)
+	}
 	members, qc := resultMembersAndQC(qcs)
 	importBatchID := uint(0)
 	if len(qcs) > 0 {
@@ -49,19 +83,96 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 			}
 		}
 	}
+	if parquet.PreparedTables == nil {
+		parquet.PreparedTables = []string{}
+	}
+	state := resultWorkspaceState(task)
+	version := resultWorkspaceVersion(task, attemptID)
+	if parquet.Available {
+		state = "ready"
+		version = attemptID + ":parquet:" + parquet.ManifestVersion
+		if parquet.AutomaticAssessmentProfile != "" {
+			version += ":" + parquet.AutomaticAssessmentProfile
+		}
+	}
 	return &model.ResultContextResponse{
 		TaskUUID:           task.UUID,
 		ExecutionAttemptID: attemptID,
 		ImportBatchID:      importBatchID,
 		ImportStatus:       task.ResultImportStatus,
-		State:              resultWorkspaceState(task),
-		Version:            resultWorkspaceVersion(task, attemptID),
+		State:              state,
+		Version:            version,
 		Reference:          reference,
 		Members:            members,
 		Types:              counts,
 		QC:                 qc,
 		Permissions:        model.ResultPermissions{CanReview: true, CanReport: true},
+		Parquet:            parquet,
 	}, nil
+}
+
+func (s *ResultService) parquetArchiveState(ctx context.Context, task *model.Task) model.ParquetResultState {
+	state := model.ParquetResultState{Tables: []string{}, FieldProfileVersion: "parquet-fields-v1"}
+	if s.cfg == nil || !supportsParquetObjectStorage(s.cfg.Storage.Provider) {
+		state.Reason = "结果对象存储未配置"
+		return state
+	}
+	resolvedTask := *task
+	resolvedTask.ExecutionAttemptID = executionAttempt(task)
+	storage, err := newS3Storage(ctx, s.cfg.Storage)
+	if err != nil {
+		state.Reason = "结果对象存储暂不可用"
+		return state
+	}
+	prefix := resultPackagePrefix(&resolvedTask)
+	objects, err := storage.list(ctx, prefix+"/")
+	if err != nil {
+		state.Reason = "无法读取当前执行的归档清单"
+		return state
+	}
+	manifestKey, _, version, err := igvArchiveObjectIndex(prefix, objects)
+	if err != nil {
+		state.Reason = "当前执行没有有效的归档清单"
+		return state
+	}
+	manifest, err := readIGVManifest(ctx, storage, manifestKey)
+	if err != nil {
+		state.Reason = "当前执行的归档清单不可读"
+		return state
+	}
+	byKey := make(map[string]s3ObjectInfo, len(objects))
+	for _, object := range objects {
+		byKey[object.Key] = object
+	}
+	tableSet := map[string]bool{}
+	for _, ref := range manifestParquetRefs(manifest) {
+		key := ref
+		if !strings.HasPrefix(key, prefix+"/") {
+			key = path.Join(prefix, key)
+		}
+		if _, err := safeResultPackageRelativePath(prefix, key); err != nil {
+			continue
+		}
+		object, ok := byKey[key]
+		if !ok || object.Size <= 0 {
+			continue
+		}
+		for _, table := range []string{"snv-indel", "cnv-segment", "cnv-exon", "str", "mei", "mt", "upd", "roh"} {
+			if parquetTableMatch(table, path.Base(key)) {
+				tableSet[table] = true
+			}
+		}
+	}
+	for table := range tableSet {
+		state.Tables = append(state.Tables, table)
+	}
+	sort.Strings(state.Tables)
+	state.Available = len(state.Tables) > 0
+	state.ManifestVersion = version
+	if !state.Available {
+		state.Reason = "归档中未找到已声明的结果 Parquet 文件"
+	}
+	return state
 }
 
 func resultWorkspaceState(task *model.Task) string {

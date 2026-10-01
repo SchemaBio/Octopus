@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ type Config struct {
 	Task         TaskConfig
 	Sepiida      SepiidaConfig
 	Parquet      ParquetConfig
+	ResultQuery  ResultQueryConfig
 	JWT          JWTConfig
 	ExternalAuth ExternalAuthConfig
 	Overlay      OverlayConfig
@@ -60,6 +62,12 @@ type ParquetConfig struct {
 	Enabled      bool     // Enable parquet generation
 	OutputDir    string   // Parquet output directory (default: same as archive)
 	FilePatterns []string // File patterns to convert (e.g: "*.csv", "*.tsv", "*.txt")
+}
+
+type ResultQueryConfig struct {
+	ServiceURL    string
+	CacheDir      string
+	AssessmentDir string
 }
 
 type JWTConfig struct {
@@ -168,6 +176,7 @@ func Load() *Config {
 	s3AccessKey, s3SecretKey := firstCredentialPair(
 		[2]string{"S3_ACCESS_KEY", "S3_SECRET_KEY"},
 	)
+	parquetCacheDir := strings.TrimSpace(getEnv("PARQUET_CACHE_DIR", "/data/parquet-cache"))
 	if storageProvider == "cos" {
 		if cosRegion == "" {
 			cosRegion = "ap-guangzhou"
@@ -224,6 +233,11 @@ func Load() *Config {
 			Enabled:      getEnv("PARQUET_ENABLED", "true") == "true",
 			OutputDir:    getEnv("PARQUET_DIR", ""),           // empty means same as archive
 			FilePatterns: []string{"*.csv", "*.tsv", "*.txt"}, // default patterns
+		},
+		ResultQuery: ResultQueryConfig{
+			ServiceURL:    strings.TrimRight(strings.TrimSpace(getEnv("PARQUET_QUERY_URL", "http://parquet-query:9100")), "/"),
+			CacheDir:      parquetCacheDir,
+			AssessmentDir: strings.TrimSpace(getEnv("PARQUET_ASSESSMENT_DIR", filepath.Join(parquetCacheDir, "assessments"))),
 		},
 		JWT: JWTConfig{
 			Secret:                    getEnvOrFile("JWT_SECRET", "octopus-secret-key-change-in-production"),

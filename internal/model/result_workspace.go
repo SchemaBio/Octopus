@@ -15,6 +15,17 @@ type ResultContextResponse struct {
 	Types              map[string]ResultCount `json:"types"`
 	QC                 []QCMemberSummary      `json:"qc"`
 	Permissions        ResultPermissions      `json:"permissions"`
+	Parquet            ParquetResultState     `json:"parquet"`
+}
+
+type ParquetResultState struct {
+	Available                  bool     `json:"available"`
+	Tables                     []string `json:"tables"`
+	PreparedTables             []string `json:"preparedTables"`
+	ManifestVersion            string   `json:"manifestVersion,omitempty"`
+	FieldProfileVersion        string   `json:"fieldProfileVersion,omitempty"`
+	AutomaticAssessmentProfile string   `json:"automaticAssessmentProfile,omitempty"`
+	Reason                     string   `json:"reason,omitempty"`
 }
 
 type ResultReference struct {

@@ -87,6 +87,10 @@ func AutoMigrate() error {
 		// Import audit models
 		&model.ResultImportBatch{},
 		&model.VariantReviewEvent{},
+		&model.ResultDataset{},
+		&model.ResultRowAutomaticAssessment{},
+		&model.ResultRowAdjustment{},
+		&model.ResultRowAdjustmentEvent{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)

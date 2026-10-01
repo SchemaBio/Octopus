@@ -16,6 +16,8 @@
 coverage.*
 *.coverprofile
 profile.cov
+__pycache__/
+*.py[cod]
 .cache/
 .gocache/
 .gotmp/

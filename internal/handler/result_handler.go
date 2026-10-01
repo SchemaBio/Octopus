@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -30,6 +32,14 @@ func executionAttemptID(task *model.Task) string {
 	return task.ExecutionAttemptID
 }
 
+func isStableResultRowID(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
 func NewResultHandler(cfg *config.Config) *ResultHandler {
 	return &ResultHandler{
 		svc:       service.NewResultService(cfg),
@@ -52,6 +62,88 @@ func (h *ResultHandler) GetContext(c *gin.Context) {
 		return
 	}
 	Success(c, context)
+}
+
+func (h *ResultHandler) QueryParquetTable(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	var query model.ParquetQueryRequest
+	if err := c.ShouldBindJSON(&query); err != nil {
+		ErrorBadRequest(c, "invalid table query")
+		return
+	}
+	if query.Limit <= 0 {
+		query.Limit = 50
+	}
+	if query.Limit > 200 || query.Offset < 0 || len(query.Filters) > 40 || len(query.Search) > 256 || len(query.Sort) > 256 {
+		ErrorBadRequest(c, "table query exceeds its limits")
+		return
+	}
+	result, err := h.svc.QueryParquetTable(c.Request.Context(), task, c.Param("table"), query)
+	if err != nil {
+		ErrorInternal(c, "failed to query the attempt Parquet dataset")
+		return
+	}
+	Success(c, result)
+}
+
+func (h *ResultHandler) SaveParquetRowAdjustment(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	_, email, _, ok := middleware.GetCurrentUser(c)
+	if !ok {
+		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	var request model.ResultRowAdjustmentRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		ErrorBadRequest(c, "invalid result adjustment")
+		return
+	}
+	item, event, err := h.svc.SaveParquetRowAdjustment(c.Request.Context(), task, c.Param("table"), c.Param("vid"), email, request)
+	if errors.Is(err, service.ErrAdjustmentConflict) {
+		ErrorConflict(c, "result adjustment changed; reload the row")
+		return
+	}
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, gin.H{"adjustment": item, "event": event})
+}
+
+func (h *ResultHandler) ListParquetRowHistory(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	rows, err := h.svc.ListParquetRowAdjustmentEvents(c.Request.Context(), task, c.Param("table"), c.Param("vid"))
+	if err != nil {
+		ErrorBadRequest(c, "invalid result history query")
+		return
+	}
+	Success(c, rows)
+}
+
+func (h *ResultHandler) GetParquetRowAdjustment(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	item, err := h.svc.GetParquetRowAdjustment(c.Request.Context(), task, c.Param("table"), c.Param("vid"))
+	if err != nil {
+		ErrorBadRequest(c, "invalid result row identity")
+		return
+	}
+	var payload json.RawMessage = json.RawMessage(`{}`)
+	if item.PayloadJSON != "" {
+		payload = json.RawMessage(item.PayloadJSON)
+	}
+	Success(c, gin.H{"version": item.Version, "adjustments": payload})
 }
 
 // GetIGVSession returns safe evidence descriptors. Object keys and short-lived
@@ -383,6 +475,24 @@ func (h *ResultHandler) ReviewVariant(c *gin.Context) {
 		ErrorBadRequest(c, "reviewed must be explicitly provided")
 		return
 	}
+	if isStableResultRowID(vid) {
+		current, err := h.svc.GetParquetRowAdjustment(c.Request.Context(), task, variantType, vid)
+		if err != nil {
+			ErrorBadRequest(c, err.Error())
+			return
+		}
+		adjustment, event, err := h.svc.SaveParquetRowAdjustment(c.Request.Context(), task, variantType, vid, email, model.ResultRowAdjustmentRequest{ExpectedVersion: current.Version, Adjustments: map[string]interface{}{"reviewed": *request.Reviewed}, Reason: "review status updated"})
+		if errors.Is(err, service.ErrAdjustmentConflict) {
+			ErrorConflict(c, "result adjustment changed; reload the row")
+			return
+		}
+		if err != nil {
+			ErrorBadRequest(c, err.Error())
+			return
+		}
+		Success(c, gin.H{"reviewed": *request.Reviewed, "changed": true, "adjustmentVersion": adjustment.Version, "event": event})
+		return
+	}
 	mutation, err := h.svc.ReviewVariantWithEvent(c.Request.Context(), task, variantType, vid, *request.Reviewed, userID, email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -412,13 +522,32 @@ func (h *ResultHandler) ReportVariant(c *gin.Context) {
 	variantType := c.Param("type")
 	vid := c.Param("vid")
 
-	if _, ok := requireTaskAccess(c, h.taskRepo, taskID); !ok {
+	task, ok := requireTaskAccess(c, h.taskRepo, taskID)
+	if !ok {
 		return
 	}
 
 	_, email, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
+		return
+	}
+	if isStableResultRowID(vid) {
+		current, err := h.svc.GetParquetRowAdjustment(c.Request.Context(), task, variantType, vid)
+		if err != nil {
+			ErrorBadRequest(c, err.Error())
+			return
+		}
+		adjustment, event, err := h.svc.SaveParquetRowAdjustment(c.Request.Context(), task, variantType, vid, email, model.ResultRowAdjustmentRequest{ExpectedVersion: current.Version, Adjustments: map[string]interface{}{"reported": true}, Reason: "variant marked as reported"})
+		if errors.Is(err, service.ErrAdjustmentConflict) {
+			ErrorConflict(c, "result adjustment changed; reload the row")
+			return
+		}
+		if err != nil {
+			ErrorBadRequest(c, err.Error())
+			return
+		}
+		Success(c, gin.H{"reported": true, "adjustmentVersion": adjustment.Version, "event": event})
 		return
 	}
 
