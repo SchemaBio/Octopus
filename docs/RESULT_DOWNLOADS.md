@@ -4,7 +4,7 @@
 
 - Interpretation tabs no longer include runtime/status. Old `tab=runtime` links normalize to overview. Task list status is preserved.
 - `GET /tasks/:id/downloads` describes the current attempt's manifest-declared outputs.
-- `POST .../downloads/prepare` creates an immutable ZIP asynchronously; it never charges. ZIP includes final VCF/index, SNP/InDel, MT, CNV region/exon, MEI, UPD, ROH, STR and QC outputs where present. Inline resolved QC becomes `reports/QC.json`. Missing outputs are recorded in `download-manifest.json`; no BAM/intermediate/reference/input files are included.
+- `POST .../downloads/prepare` creates an immutable ZIP asynchronously; it never charges. ZIP includes final VCF/index, SNP/InDel, MT, CNV region/exon, MEI, UPD, ROH, STR and QC outputs where present. Original report text is preferred where the Parquet catalogue proves its conversion source; otherwise the immutable archived Parquet remains the report source. Inline resolved QC becomes `reports/QC.json`. Missing outputs are recorded in `download-manifest.json`; no BAM/intermediate/reference/input files are included.
 - `POST .../downloads/quote` HEADs the object and snapshots size, ETag, user, organization, attempt and IP. Quote validity is ten minutes.
 - `POST .../downloads/issue` prepares IP-restricted COS STS authorization before charging. ZIP costs 1 credit; BAM costs ceil(bytes / 1,000,000,000), minimum 1. Squid prices the billing codes independently and writes its normal ledger.
 - A confirmed request has a durable three-hour deadline. Retries use `download:<quote UUID>` as the idempotent reference. Recovering a paid request retains its deadline and costs nothing extra. Explicit new requests charge separately.
@@ -30,9 +30,14 @@ For task 73ac68fd / attempt 5298563b:
 - Same-IP single-byte GET: **206**, `bytes 0-0/5428396048`.
 - Grant bound to a different IP: **403**.
 - Actual SaaS-to-COS traffic uses the internal source IP; binding the SaaS public IP correctly yielded 403. Browser downloads use their own verified public IP.
+- Final ZIP prepared from this archive: **9,632,140 bytes**, **11 entries**, including VCF/index and QC. All entry CRC checks passed. Five original text reports and two immutable Parquet reports are included. ZIP preparation and verification charged **0** credits.
 - Credits charged during these checks: **0**.
 - Existing single archive has an MT report but no declared MT VCF; UPD was not produced. Both remain explicitly unavailable, not synthesized or substituted. A future workflow output change must expose/archive MT VCF for that file to be included.
 
 ## Checks
 
 Octopus and Squid Go builds pass; YiJian production build and TypeScript check pass. Existing CSS `focusbutton` and Next middleware deprecation warnings remain. No unit/integration suite or paid user download was executed in this request. UI payment confirmation and real user browser download still require acceptance with an authenticated interpretation account.
+
+## Deployment
+
+Squid `3d153e6` and YiJian `370c7c2` deployed healthy. The Octopus follow-up commit selects original report provenance and versions the ZIP cache. Backup directory: `/home/ubuntu/schema/backups/result-downloads-20261006`. Image tags are persisted; no compute image or instance was changed.

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -124,6 +125,18 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	if err != nil {
 		return nil, err
 	}
+	parquetManifest, _, parquetErr := readParquetResultManifest(ctx, storage, prefix, objects)
+	provenance := map[string]interface{}{}
+	if parquetErr == nil {
+		if rows, ok := parquetManifest["conversion_sources"].(map[string]interface{}); ok {
+			provenance = rows
+		}
+	}
+	byKey := map[string]s3ObjectInfo{}
+	for _, object := range objects {
+		byKey[object.Key] = object
+	}
+	fieldTables := map[string]string{"snp_indel": "snv-indel", "mt": "mt", "cnv_region": "cnv-segment", "cnv_gene": "cnv-exon", "mei": "mei", "upd": "upd", "roh": "roh", "str": "str"}
 	var embeddedQC []interface{}
 	var findQC func(interface{})
 	findQC = func(value interface{}) {
@@ -187,6 +200,21 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 			if !ok {
 				return nil, fmt.Errorf("原始结果 %s 未归档或名称不唯一", field)
 			}
+			if strings.HasSuffix(strings.ToLower(object.Key), ".parquet") {
+				if record, ok := provenance[fieldTables[field]].(map[string]interface{}); ok {
+					if source, ok := record["source"].(string); ok && source != "" {
+						key, err := archiveParquetRefKey(storage.bucket, prefix, source)
+						if err != nil {
+							return nil, fmt.Errorf("原始报告来源身份无效")
+						}
+						original, exists := byKey[key]
+						if !exists {
+							return nil, fmt.Errorf("原始报告 %s 未归档", field)
+						}
+						object = original
+					}
+				}
+			}
 			if object.Size <= 0 {
 				return nil, fmt.Errorf("原始结果 %s 为空", field)
 			}
@@ -202,6 +230,7 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	}
 	sort.Strings(keys)
 	hash := sha256.New()
+	hash.Write([]byte("raw-results-zip-v2\n"))
 	var total int64
 	for _, key := range keys {
 		o := sources[key]
@@ -285,7 +314,11 @@ func (s *ResultDownloadService) buildRawZIP(storage *s3Storage, key, prefix stri
 			if err != nil {
 				return err
 			}
-			writer, err := zw.CreateHeader(&zip.FileHeader{Name: rel, Method: zip.Store})
+			method := uint16(zip.Deflate)
+			if strings.HasSuffix(strings.ToLower(rel), ".gz") {
+				method = zip.Store
+			}
+			writer, err := zw.CreateHeader(&zip.FileHeader{Name: rel, Method: method})
 			var n int64
 			if err == nil {
 				n, err = io.Copy(writer, io.LimitReader(reader, sources[source].Size+1))
