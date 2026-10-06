@@ -87,6 +87,12 @@ func ValidateStartup(cfg *Config) error {
 	if err := validateDatabaseTLS(cfg.Database.DSN); err != nil {
 		return err
 	}
+	if cfg.Storage.BAMRetentionDays != 0 && cfg.Storage.BAMRetentionDays != 7 {
+		return fmt.Errorf("BAM_RETENTION_DAYS must be 0 or 7")
+	}
+	if cfg.Storage.BAMCleanupEnabled && (cfg.Storage.BAMRetentionDays != 7 || cfg.Storage.Provider != "s3") {
+		return fmt.Errorf("BAM cleanup requires the 7-day policy and COS/S3 storage")
+	}
 	if cfg.Storage.RetentionDays < 0 {
 		return fmt.Errorf("DATA_RETENTION_DAYS must be zero or greater")
 	}

@@ -562,7 +562,7 @@ func normalizeParquetAPIItem(table string, item map[string]interface{}) map[stri
 		}
 	}
 	if table == "cnv-segment" || table == "cnv-exon" {
-		for source, target := range map[string]string{"Start": "startPosition", "End": "endPosition", "Col4": "type", "Col5": "gene", "Col6": "transcript", "Col7": "ensemblTranscript", "Col8": "exonCount", "Col9": "log2Ratio", "Col10": "copyRatio", "Col11": "weight", "Col12": "depthRatio", "Col13": "depth", "Col14": "quality", "Col15": "ratio2", "Col19": "impact", "Dosage_Genes": "dosageGenes", "GenCC_AD_Genes": "genccADGenes", "Copy_Number": "copyNumber", "Copy_Ratio": "copyRatio", "Log2_Ratio": "log2Ratio"} {
+		for source, target := range map[string]string{"Start": "startPosition", "End": "endPosition", "Dosage_Genes": "dosageGenes", "GenCC_AD_Genes": "genccADGenes", "Copy_Number": "copyNumber", "Copy_Ratio": "copyRatio", "Log2_Ratio": "log2Ratio", "ISCN": "iscn"} {
 			if value, exists := item[source]; exists {
 				row[target] = value
 			}
@@ -590,7 +590,7 @@ func normalizeParquetAPIItem(table string, item map[string]interface{}) map[stri
 		}
 	}
 	if table == "cnv-exon" {
-		for source, target := range map[string]string{"Col4": "type", "Col5": "gene", "Col6": "transcript", "Col7": "ensemblTranscript", "Col8": "exonCount", "Col9": "log2Ratio", "Col10": "copyRatio", "Col11": "weight", "Col12": "depthRatio", "Col13": "depth", "Col14": "quality", "Col15": "ratio2", "Col19": "impact"} {
+		for source, target := range map[string]string{"Col4": "type", "Col5": "gene", "Col6": "transcript", "Col7": "ensemblTranscript", "Col8": "exonCount", "Col9": "log2Ratio", "Col10": "log2Median", "Col11": "log2Std", "Col12": "copyNumber", "Col13": "depth", "Col14": "weight", "Col15": "binCount", "Col16": "segmentCount", "Col17": "coverageRatio", "Col18": "confidenceLabel", "Col19": "pValue"} {
 			if value, ok := item[source]; ok {
 				row[target] = value
 			}

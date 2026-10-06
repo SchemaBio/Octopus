@@ -3,6 +3,8 @@ services:
     image: ${OCTOPUS_IMAGE:-schemabio/octopus:browser-results-3}
     environment:
       PARQUET_ENABLED: 'true'
+      BAM_RETENTION_DAYS: ${BAM_RETENTION_DAYS:-7}
+      BAM_CLEANUP_ENABLED: ${BAM_CLEANUP_ENABLED:-false}
       PARQUET_QUERY_URL: http://parquet-query:9100
       PARQUET_CACHE_DIR: /data/parquet-cache
       PARQUET_ASSESSMENT_DIR: /data/parquet-assessments

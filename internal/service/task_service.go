@@ -142,6 +142,9 @@ func NewTaskService(cfg *config.Config) *TaskService {
 		running:         make(map[string]*exec.Cmd),
 	}
 
+	if cfg.Storage.BAMRetentionDays == 7 {
+		svc.repo.EnableBAMRetention(cfg.Storage.S3Bucket)
+	}
 	return svc
 }
 

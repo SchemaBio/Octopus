@@ -27,6 +27,13 @@ const (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "bam-retention" {
+		if err := runBAMRetentionCommand(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "BAM retention command failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "results-parquet" {
 		if err := runResultsParquetCommand(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "Parquet preparation failed: %v\n", err)
@@ -96,6 +103,7 @@ func main() {
 
 	// Start Sepiida status sync for running tasks (every 30s)
 	taskSvc := service.NewTaskService(cfg)
+	service.NewBAMRetentionService(cfg).Start(ctx)
 	taskSvc.StartSepiidaSync(ctx, 30*time.Second)
 	taskSvc.StartExecutionDelivery(ctx)
 	fmt.Println("Sepiida status sync started (interval: 30s)")

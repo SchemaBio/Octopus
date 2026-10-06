@@ -95,6 +95,23 @@ func (s *ResultService) SignIGVTracks(ctx context.Context, task *model.Task, req
 	if expiry <= 0 {
 		expiry = 10 * time.Minute
 	}
+	deadline, err := bamRetentionDeadline(ctx, s.cfg, task)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	for _, id := range request.TrackIDs {
+		if candidate, ok := byID[id]; ok && candidate.descriptor.Format == "bam" && deadline != nil {
+			remaining := deadline.Sub(now)
+			if remaining < time.Second {
+				return nil, fmt.Errorf("BAM retention expired")
+			}
+			if remaining < expiry {
+				expiry = remaining
+			}
+		}
+	}
+	validUntil := now.Add(expiry)
 	selected := make([]model.IGVTrackURL, 0, len(request.TrackIDs))
 	seen := make(map[string]struct{}, len(request.TrackIDs))
 	for _, id := range request.TrackIDs {
@@ -109,13 +126,21 @@ func (s *ResultService) SignIGVTracks(ctx context.Context, task *model.Task, req
 		if candidate.descriptor.Format != "cnr" && !archive.reference.Available {
 			return nil, fmt.Errorf("IGV reference unavailable: %s", archive.reference.Reason)
 		}
-		trackURL, err := archive.storage.presignRead(ctx, candidate.objectKey, expiry)
+		remaining := time.Until(validUntil) - time.Second
+		if remaining < time.Second {
+			return nil, fmt.Errorf("IGV authorization window expired")
+		}
+		trackURL, err := archive.storage.presignRead(ctx, candidate.objectKey, remaining)
 		if err != nil {
 			return nil, err
 		}
 		item := model.IGVTrackURL{ID: id, URL: trackURL}
 		if candidate.indexKey != "" {
-			indexURL, err := archive.storage.presignRead(ctx, candidate.indexKey, expiry)
+			remaining = time.Until(validUntil) - time.Second
+			if remaining < time.Second {
+				return nil, fmt.Errorf("IGV authorization window expired")
+			}
+			indexURL, err := archive.storage.presignRead(ctx, candidate.indexKey, remaining)
 			if err != nil {
 				return nil, err
 			}
@@ -126,7 +151,7 @@ func (s *ResultService) SignIGVTracks(ctx context.Context, task *model.Task, req
 	if len(selected) == 0 {
 		return nil, fmt.Errorf("no IGV tracks selected")
 	}
-	expiresAt := time.Now().UTC().Add(expiry).Format(time.RFC3339)
+	expiresAt := validUntil.Format(time.RFC3339)
 	return &model.IGVURLResponse{Tracks: selected, ExpiresAt: expiresAt}, nil
 }
 
@@ -167,10 +192,23 @@ func (s *ResultService) loadIGVArchive(ctx context.Context, task *model.Task) (*
 	if err != nil {
 		return nil, err
 	}
+	deadline, err := bamRetentionDeadline(ctx, s.cfg, task)
+	if err != nil {
+		return nil, err
+	}
+	candidates := igvCandidatesFromManifest(manifest, objectByBase)
+	if deadline != nil && !time.Now().Before(*deadline) {
+		for i := range candidates {
+			if candidates[i].descriptor.Format == "bam" {
+				candidates[i].descriptor.Available = false
+				candidates[i].descriptor.Reason = "BAM 已超过任务完成后 7 天保留期限，无法复核 reads"
+			}
+		}
+	}
 	ref := igvReferenceForTask(s.cfg, &resolvedTask)
 	return &igvArchive{
 		storage: storage, version: version, reference: ref,
-		candidates: igvCandidatesFromManifest(manifest, objectByBase),
+		candidates: candidates,
 	}, nil
 }
 
@@ -269,6 +307,8 @@ func igvCandidatesFromManifest(manifest map[string]interface{}, objectByBase map
 	for index, raw := range bams {
 		bam, ok := archiveObjectForRef(raw, objectByBase)
 		if !ok {
+			role := manifestMemberRole(members, index, len(bams) > 1)
+			tracks = append(tracks, igvTrackCandidate{descriptor: model.IGVTrackDescriptor{ID: fmt.Sprintf("bam:%d", index), Name: evidenceTrackName(role, "BAM"), Type: "alignment", Format: "bam", MemberID: role, MemberRole: role, Available: false, Reason: "BAM 未归档、名称不唯一或已删除"}})
 			continue
 		}
 		role := manifestMemberRole(members, index, len(bams) > 1)

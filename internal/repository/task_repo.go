@@ -32,6 +32,14 @@ func (r *TaskRepository) Update(task *model.Task) error {
 		task.ResultImportFingerprint = current.ResultImportFingerprint
 		task.ResultImportAttempts = current.ResultImportAttempts
 		task.Version++
+		if r.bamRetentionBucket != "" {
+			if err := RegisterBAMRetention(tx, &current, r.bamRetentionBucket); err != nil {
+				return err
+			}
+			if err := RegisterBAMRetention(tx, task, r.bamRetentionBucket); err != nil {
+				return err
+			}
+		}
 		return tx.Save(task).Error
 	})
 }
@@ -167,6 +175,7 @@ func (r *TaskRepository) FinishResultImport(task *model.Task, attemptNumber int,
 // TaskRepository provides task-specific operations
 type TaskRepository struct {
 	*Repository[model.Task]
+	bamRetentionBucket string
 }
 
 // NewTaskRepository creates a new task repository

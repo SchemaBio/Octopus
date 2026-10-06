@@ -38,12 +38,15 @@ type ResultDownloadFile struct {
 	key       string
 }
 type ResultDownloadCatalog struct {
-	AttemptID string               `json:"attempt_id"`
-	ZIPStatus string               `json:"zip_status"`
-	ZIPError  string               `json:"zip_error,omitempty"`
-	ZIP       *ResultDownloadFile  `json:"zip,omitempty"`
-	BAMs      []ResultDownloadFile `json:"bams"`
-	Missing   []string             `json:"missing"`
+	AttemptID        string               `json:"attempt_id"`
+	BAMExpiresAt     *time.Time           `json:"bam_expires_at,omitempty"`
+	BAMRetentionDays int                  `json:"bam_retention_days"`
+	BAMStatus        string               `json:"bam_status"`
+	ZIPStatus        string               `json:"zip_status"`
+	ZIPError         string               `json:"zip_error,omitempty"`
+	ZIP              *ResultDownloadFile  `json:"zip,omitempty"`
+	BAMs             []ResultDownloadFile `json:"bams"`
+	Missing          []string             `json:"missing"`
 }
 
 func NewResultDownloadService(cfg *config.Config) *ResultDownloadService {
@@ -96,7 +99,23 @@ func (s *ResultDownloadService) reconcileAbandonedDownloads() {
 func (s *ResultDownloadService) Active(ctx context.Context, task *model.Task, actor model.OverlayActor, ip string) ([]model.ResultDownload, error) {
 	rows := []model.ResultDownload{}
 	err := database.DB.WithContext(ctx).Where("task_uuid = ? AND attempt_id = ? AND user_id = ? AND org_id = ? AND client_ip = ? AND link_expires_at > ? AND refunded_at IS NULL", task.UUID, task.ExecutionAttemptID, actor.UserID, actor.OrgID, ip, time.Now()).Order("created_at DESC").Limit(10).Find(&rows).Error
-	return rows, err
+	if err != nil {
+		return rows, err
+	}
+	deadline, e := bamRetentionDeadline(ctx, s.cfg, task)
+	if e != nil {
+		return nil, e
+	}
+	if deadline != nil && !time.Now().Before(*deadline) {
+		filtered := rows[:0]
+		for _, row := range rows {
+			if row.Kind != "bam" {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
+	}
+	return rows, nil
 }
 
 // Catalog reads only this execution's final output manifest. It never accepts
@@ -167,8 +186,30 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	findQC(manifest)
 	qcJSON, _ := json.Marshal(embeddedQC)
 	catalog := &ResultDownloadCatalog{AttemptID: task.ExecutionAttemptID, ZIPStatus: "pending", BAMs: []ResultDownloadFile{}, Missing: []string{}}
+	deadline, err := bamRetentionDeadline(ctx, s.cfg, task)
+	if err != nil {
+		return nil, err
+	}
+	catalog.BAMExpiresAt = deadline
+	catalog.BAMRetentionDays = s.cfg.Storage.BAMRetentionDays
+	catalog.BAMStatus = "available"
+	expired := deadline != nil && !time.Now().Before(*deadline)
+	if expired {
+		catalog.BAMStatus = "expired"
+		var cleanup model.BAMRetentionJob
+		if err := database.DB.WithContext(ctx).Where("task_uuid = ? AND org_id = ? AND attempt_id = ?", task.UUID, task.ExternalOrgID, task.ExecutionAttemptID).First(&cleanup).Error; err == nil {
+			if cleanup.Status == "deleted" {
+				catalog.BAMStatus = "deleted"
+			} else if cleanup.Status == "retry" {
+				catalog.BAMStatus = "cleanup_pending"
+			}
+		}
+	}
 	members := manifestStringValues(manifest, "members")
 	for i, ref := range manifestFileRefs(manifest, "bam") {
+		if expired {
+			continue
+		}
 		object, ok := archiveObjectForRef(ref, byBase)
 		if !ok {
 			catalog.Missing = append(catalog.Missing, fmt.Sprintf("BAM %d 未归档或名称不唯一", i+1))
@@ -183,15 +224,25 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	// Explicit final outputs only; intermediate BAMs, reads and databases are
 	// excluded. Existing workflows without an MT VCF cannot manufacture one.
 	fields := []string{"vcf_raw", "vcf_raw_tbi", "mt_vcf", "mt_vcf_tbi", "snp_indel", "mt", "cnv_region", "cnv_gene", "mei", "upd", "roh", "qc_result", "str"}
+	mtRefs, mtIndexRefs := archivedMitochondrialVCFRefs(manifest, byBase)
 	sources := map[string]s3ObjectInfo{}
 	for _, field := range fields {
 		refs := manifestFileRefs(manifest, field)
+		if field == "mt_vcf" {
+			refs = mtRefs
+		} else if field == "mt_vcf_tbi" {
+			refs = mtIndexRefs
+		}
 		if len(refs) == 0 {
 			if field == "qc_result" && len(embeddedQC) > 0 {
 				continue
 			}
 			if field != "vcf_raw_tbi" && field != "mt_vcf_tbi" {
-				catalog.Missing = append(catalog.Missing, field+" 未产生或未声明")
+				if field == "mt_vcf" {
+					catalog.Missing = append(catalog.Missing, "mt_vcf 未归档（旧版工作流未声明线粒体 VCF 时无法恢复原始文件）")
+				} else {
+					catalog.Missing = append(catalog.Missing, field+" 未产生或未声明")
+				}
 			}
 			continue
 		}
@@ -230,7 +281,7 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	}
 	sort.Strings(keys)
 	hash := sha256.New()
-	hash.Write([]byte("raw-results-zip-v2\n"))
+	hash.Write([]byte("raw-results-zip-v3\n"))
 	var total int64
 	for _, key := range keys {
 		o := sources[key]
@@ -245,6 +296,9 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	if total > maxBytes {
 		return nil, fmt.Errorf("原始结果包超过配置的大小限制")
 	}
+	// Missing-output disclosure is part of this immutable ZIP snapshot.
+	missingJSON, _ := json.Marshal(catalog.Missing)
+	hash.Write(missingJSON)
 	fingerprint := hex.EncodeToString(hash.Sum(nil))
 	if len(embeddedQC) > 0 {
 		hash.Write(qcJSON)
@@ -290,6 +344,39 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	catalog.ZIPStatus = "building"
 	catalog.ZIPError = ""
 	return catalog, nil
+}
+
+// Resolve only the raw Mutect2 output used by MtVEP. A legacy archive may
+// contain that exact filename despite missing summary fields; never select an
+// annotated, filtered/pass-only VCF or a file from a different attempt.
+func archivedMitochondrialVCFRefs(manifest map[string]interface{}, byBase map[string]s3ObjectInfo) ([]string, []string) {
+	refs := manifestFileRefs(manifest, "mt_vcf")
+	indexes := manifestFileRefs(manifest, "mt_vcf_tbi")
+	if len(refs) == 0 {
+		prefixes := map[string]bool{}
+		for _, prefix := range manifestStringValues(manifest, "prefix") {
+			if prefix != "" && prefix != "." && prefix != ".." && !strings.ContainsAny(prefix, "/\\\r\n") {
+				prefixes[prefix] = true
+			}
+		}
+		if len(prefixes) == 1 {
+			for prefix := range prefixes {
+				name := prefix + ".mt.vcf.gz"
+				if object, ok := byBase[strings.ToLower(name)]; ok && object.Size > 0 {
+					refs = []string{name}
+				}
+			}
+		}
+	}
+	if len(indexes) == 0 {
+		for _, ref := range refs {
+			name := archiveReferenceBaseName(ref) + ".tbi"
+			if object, ok := byBase[strings.ToLower(name)]; ok && object.Size > 0 {
+				indexes = append(indexes, name)
+			}
+		}
+	}
+	return refs, indexes
 }
 
 func (s *ResultDownloadService) buildRawZIP(storage *s3Storage, key, prefix string, keys []string, sources map[string]s3ObjectInfo, missing []string, qcJSON []byte) {
@@ -422,6 +509,10 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 	if s.overlay == nil {
 		return nil, fmt.Errorf("积分服务未配置，无法申请下载")
 	}
+	deadline, err := bamRetentionDeadline(ctx, s.cfg, task)
+	if err != nil {
+		return nil, err
+	}
 	var link string
 	var quote model.ResultDownload
 	// Commit the validity window before crossing the billing service boundary.
@@ -438,11 +529,25 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 			return fmt.Errorf("下载申请已关闭")
 		}
 		now := time.Now().UTC()
+		if quote.Kind == "bam" && deadline != nil {
+			if !now.Before(*deadline) {
+				return fmt.Errorf("BAM 保留期已到期，无法申请下载")
+			}
+			if quote.LinkExpiresAt != nil && quote.LinkExpiresAt.After(*deadline) {
+				quote.LinkExpiresAt = deadline
+				if err := tx.Save(&quote).Error; err != nil {
+					return err
+				}
+			}
+		}
 		if quote.LinkExpiresAt == nil {
 			if now.After(quote.QuoteExpiresAt) {
 				return fmt.Errorf("下载报价已过期，请重新申请")
 			}
 			expires := now.Add(3 * time.Hour)
+			if quote.Kind == "bam" && deadline != nil && expires.After(*deadline) {
+				expires = *deadline
+			}
 			quote.LinkExpiresAt = &expires
 			return tx.Save(&quote).Error
 		}
@@ -451,7 +556,7 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 	if reserveErr != nil {
 		return nil, reserveErr
 	}
-	err := database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND task_uuid = ? AND attempt_id = ? AND user_id = ? AND org_id = ?", id, task.UUID, task.ExecutionAttemptID, actor.UserID, actor.OrgID).First(&quote).Error; err != nil {
 			return fmt.Errorf("下载申请不存在")
 		}
@@ -459,11 +564,25 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 			return fmt.Errorf("网络 IP 已改变，请重新申请下载")
 		}
 		now := time.Now().UTC()
+		if quote.Kind == "bam" && deadline != nil {
+			if !now.Before(*deadline) {
+				return fmt.Errorf("BAM 保留期已到期，无法申请下载")
+			}
+			if quote.LinkExpiresAt != nil && quote.LinkExpiresAt.After(*deadline) {
+				quote.LinkExpiresAt = deadline
+				if err := tx.Save(&quote).Error; err != nil {
+					return err
+				}
+			}
+		}
 		if quote.LinkExpiresAt == nil && now.After(quote.QuoteExpiresAt) {
 			return fmt.Errorf("下载报价已过期，请重新申请")
 		}
 		if quote.LinkExpiresAt == nil {
 			expires := now.Add(3 * time.Hour)
+			if quote.Kind == "bam" && deadline != nil && expires.After(*deadline) {
+				expires = *deadline
+			}
 			quote.LinkExpiresAt = &expires
 		}
 		if !now.Before(*quote.LinkExpiresAt) {
@@ -481,7 +600,13 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 		if err != nil {
 			return err
 		}
+		if quote.Kind == "bam" && deadline != nil && !time.Now().Before(*deadline) {
+			return fmt.Errorf("BAM 保留期已到，本次未签发链接")
+		}
 		if quote.ChargedAt == nil {
+			if quote.Kind == "bam" && deadline != nil && time.Until(*deadline) < time.Minute {
+				return fmt.Errorf("BAM 即将到期，已停止新申请；本次未扣费")
+			}
 			code := model.BillingCodeResultZIP
 			if quote.Kind == "bam" {
 				code = model.BillingCodeResultBAM

@@ -74,6 +74,8 @@ func AutoMigrate() error {
 		&model.ReportTemplate{},
 		&model.ResultPackage{},
 		&model.ResultDownload{},
+		&model.BAMRetentionJob{},
+		&model.BAMRetentionEvent{},
 		&model.RawResultPackage{},
 		// Upload models
 		&model.UploadJob{},
