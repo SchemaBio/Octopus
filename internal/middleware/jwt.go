@@ -57,6 +57,7 @@ func applyExternalAuth(c *gin.Context, cfg *config.Config) bool {
 			c.Abort()
 			return true
 		}
+		c.Set("download_client_ip", claims.ClientIP)
 		applyExternalIdentity(c, claims.UserID, claims.Email, mapExternalRole(claims.Role, boolBreakGlass(claims.BreakGlass)), claims.OrgID, claims.StorageQuotaBytes, true)
 		return true
 	}

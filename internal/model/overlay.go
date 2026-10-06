@@ -232,3 +232,6 @@ type OverlayCreditResponse struct {
 }
 
 const BillingCodeCNVBaselineInput = "cnv_baseline_input_gib"
+
+const BillingCodeResultZIP = "result_zip_download"
+const BillingCodeResultBAM = "result_bam_download_gb"

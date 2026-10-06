@@ -73,6 +73,8 @@ func AutoMigrate() error {
 		&model.Report{},
 		&model.ReportTemplate{},
 		&model.ResultPackage{},
+		&model.ResultDownload{},
+		&model.RawResultPackage{},
 		// Upload models
 		&model.UploadJob{},
 		&model.UploadFile{},

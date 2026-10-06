@@ -148,6 +148,7 @@ func New(cfg *config.Config) *gin.Engine {
 		v1.POST("/internal/storage/tenants", middleware.IPRateLimit(120, time.Minute), storageHandler.InitializeTenant)
 		aiHandler := handler.NewAIHandler(cfg)
 		exportHandler := handler.NewExportHandler(cfg)
+		resultDownloadHandler := handler.NewResultDownloadHandler(cfg)
 		reportHandler := handler.NewReportHandler(cfg)
 		resultPackageHandler := handler.NewResultPackageHandler(cfg)
 		tasks := v1.Group("/tasks")
@@ -180,6 +181,13 @@ func New(cfg *config.Config) *gin.Engine {
 			{
 				aiProxy.Any("/*path", aiHandler.ProxyAgent)
 			}
+			// Charged raw downloads: quotes never deduct credits.
+			tasks.GET("/:id/downloads", resultDownloadHandler.Catalog)
+			tasks.GET("/:id/downloads/active", resultDownloadHandler.Active)
+			tasks.POST("/:id/downloads/prepare", resultDownloadHandler.Catalog)
+			tasks.POST("/:id/downloads/quote", resultDownloadHandler.Quote)
+			tasks.POST("/:id/downloads/issue", resultDownloadHandler.Issue)
+
 			// Export
 			tasks.GET("/:id/export/excel", exportHandler.ExportExcel)
 			tasks.GET("/:id/export/parquet", exportHandler.ExportParquet)

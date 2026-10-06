@@ -26,22 +26,22 @@ func NewExportHandler(cfg *config.Config) *ExportHandler {
 
 // ExportExcel serves the Excel export file
 func (h *ExportHandler) ExportExcel(c *gin.Context) {
-	h.serveFile(c, "excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	h.retiredRawDownload(c)
 }
 
 // ExportParquet serves the Parquet export file
 func (h *ExportHandler) ExportParquet(c *gin.Context) {
-	h.serveFile(c, "parquet", "application/octet-stream")
+	h.retiredRawDownload(c)
 }
 
 // ExportVCF serves the SNP/InDel VCF file
 func (h *ExportHandler) ExportVCF(c *gin.Context) {
-	h.serveFile(c, "vcf", "text/x-vcard")
+	h.retiredRawDownload(c)
 }
 
 // ExportMTVCF serves the mitochondrial VCF file
 func (h *ExportHandler) ExportMTVCF(c *gin.Context) {
-	h.serveFile(c, "mt-vcf", "text/x-vcard")
+	h.retiredRawDownload(c)
 }
 
 // serveFile is a generic file serving helper
@@ -161,4 +161,12 @@ func resolveRegularFileInsideBase(base, filePath string) (string, error) {
 		return "", fmt.Errorf("file is not regular")
 	}
 	return fileEval, nil
+}
+
+// Raw exports are now delivered through the quoted/charged ZIP endpoint.
+func (h *ExportHandler) retiredRawDownload(c *gin.Context) {
+	if _, ok := requireTaskAccess(c, h.taskRepo, c.Param("id")); !ok {
+		return
+	}
+	ErrorGone(c, "原始文件下载已改为 ZIP，请通过报告与文件页面申请下载")
 }
