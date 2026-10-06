@@ -58,7 +58,7 @@ func (s *ResultService) GetIGVSession(ctx context.Context, task *model.Task) (*m
 	usableTracks := 0
 	for i := range archive.candidates {
 		tracks[i] = archive.candidates[i].descriptor
-		if tracks[i].Available {
+		if tracks[i].Available && tracks[i].Format != "cnr" {
 			usableTracks++
 		}
 	}
@@ -87,9 +87,6 @@ func (s *ResultService) SignIGVTracks(ctx context.Context, task *model.Task, req
 	if request.Version != archive.version {
 		return nil, ErrIGVEvidenceChanged
 	}
-	if !archive.reference.Available {
-		return nil, fmt.Errorf("IGV reference unavailable: %s", archive.reference.Reason)
-	}
 	byID := make(map[string]igvTrackCandidate, len(archive.candidates))
 	for _, candidate := range archive.candidates {
 		byID[candidate.descriptor.ID] = candidate
@@ -108,6 +105,9 @@ func (s *ResultService) SignIGVTracks(ctx context.Context, task *model.Task, req
 		candidate, ok := byID[id]
 		if !ok || !candidate.descriptor.Available || candidate.objectKey == "" {
 			return nil, fmt.Errorf("requested IGV track is unavailable")
+		}
+		if candidate.descriptor.Format != "cnr" && !archive.reference.Available {
+			return nil, fmt.Errorf("IGV reference unavailable: %s", archive.reference.Reason)
 		}
 		trackURL, err := archive.storage.presignRead(ctx, candidate.objectKey, expiry)
 		if err != nil {
@@ -307,6 +307,15 @@ func igvCandidatesFromManifest(manifest map[string]interface{}, objectByBase map
 			}, objectKey: bed.Key})
 		}
 	}
+	// CNR is consumed by the browser CNV plot, never loaded as an IGV track.
+	if raw, ok := firstManifestFileRef(manifest, "cnv_raw"); ok {
+		if cnr, exists := archiveObjectForRef(raw, objectByBase); exists && strings.HasSuffix(strings.ToLower(cnr.Key), ".cnr") {
+			tracks = append(tracks, igvTrackCandidate{descriptor: model.IGVTrackDescriptor{
+				ID: "cnr:primary", Name: "原始 CNVkit CNR", Type: "cnv-signal", Format: "cnr", Available: cnr.Size > 0 && cnr.Size <= 32<<20,
+			}, objectKey: cnr.Key})
+		}
+	}
+
 	return tracks
 }
 

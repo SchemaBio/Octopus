@@ -175,7 +175,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if _, hasOverride := request.Adjustments["acmgOverride"]; hasOverride && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("ACMG override changes require an adjustment reason")
 	}
-	allowed := map[string]bool{"resetAcmg": true, "reviewed": true, "reported": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
+	allowed := map[string]bool{"resetAcmg": true, "pinned": true, "reviewed": true, "reported": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
 	for key, value := range request.Adjustments {
 		if (strings.HasPrefix(key, "acmg") || key == "resetAcmg") && table != "snv-indel" {
 			return nil, nil, fmt.Errorf("ACMG small-variant evidence is only valid for SNP/InDel")
@@ -184,7 +184,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			return nil, nil, fmt.Errorf("unsupported adjustment field")
 		}
 		switch key {
-		case "resetAcmg", "reviewed", "reported":
+		case "resetAcmg", "pinned", "reviewed", "reported":
 			if _, ok := value.(bool); !ok {
 				return nil, nil, fmt.Errorf("review and report values must be boolean")
 			}

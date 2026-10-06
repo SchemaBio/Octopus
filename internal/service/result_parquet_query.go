@@ -597,7 +597,7 @@ func normalizeParquetAPIItem(table string, item map[string]interface{}) map[stri
 		}
 	}
 	if table == "cnv-segment" {
-		for source, target := range map[string]string{"Col4": "type", "Col5": "log2Ratio", "Col6": "depth", "Col7": "weight", "Col8": "copyRatio", "Dosage_Genes": "dosageGenes", "GenCC_AD_Genes": "genccADGenes"} {
+		for source, target := range map[string]string{"Col4": "type", "Col5": "log2Ratio", "Col6": "depth", "Col7": "weight", "Col8": "copyNumber", "Dosage_Genes": "dosageGenes", "GenCC_AD_Genes": "genccADGenes"} {
 			if value, ok := item[source]; ok {
 				row[target] = value
 			}
@@ -608,7 +608,19 @@ func normalizeParquetAPIItem(table string, item map[string]interface{}) map[stri
 			row["clinvarSignificance"] = value
 		}
 	}
-	row["reviewStatus"] = map[string]interface{}{"reviewed": row["reviewed"], "reported": row["reported"]}
+	// A false manual value also overrides an automatically important variant.
+	classification, _ := row["acmgClassification"].(string)
+	row["pinned"] = table == "snv-indel" && (classification == "Pathogenic" || classification == "Likely_Pathogenic")
+	if adjustment, ok := item["__adjustments"].(map[string]interface{}); ok {
+		if pinned, exists := adjustment["pinned"].(bool); exists {
+			row["pinned"] = pinned
+			row["pinSource"] = "manual"
+		}
+	}
+	if row["pinned"] == true && row["pinSource"] == nil {
+		row["pinSource"] = "automatic"
+	}
+	row["reviewStatus"] = map[string]interface{}{"pinned": row["pinned"], "reviewed": row["reviewed"], "reported": row["reported"]}
 	return row
 }
 
