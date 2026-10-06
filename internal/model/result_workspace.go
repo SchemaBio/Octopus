@@ -54,10 +54,14 @@ type ResultPermissions struct {
 }
 
 type QCMemberSummary struct {
-	MemberID   string     `json:"memberId"`
-	MemberRole string     `json:"memberRole"`
-	SampleID   string     `json:"sampleId,omitempty"`
-	Metrics    []QCMetric `json:"metrics"`
+	DeclaredGender   string     `json:"declaredGender"`
+	PredictedGender  string     `json:"predictedGender"`
+	GenderComparison string     `json:"genderComparison"`
+	SRYCutoff        *float64   `json:"sryCutoff,omitempty"`
+	MemberID         string     `json:"memberId"`
+	MemberRole       string     `json:"memberRole"`
+	SampleID         string     `json:"sampleId,omitempty"`
+	Metrics          []QCMetric `json:"metrics"`
 }
 
 // QCMetric represents source-backed data. Value is nil when the source did

@@ -294,6 +294,9 @@ func (imp *Importer) parseQCResult(taskID string, qc map[string]interface{}) *mo
 
 	// fastp.after_filtering
 	if fastp, ok := qc["fastp"].(map[string]interface{}); ok {
+		if before, ok := fastp["before_filtering"].(map[string]interface{}); ok {
+			r.BeforeTotalReads = int64(getInt(before, "total_reads"))
+		}
 		if af, ok := fastp["after_filtering"].(map[string]interface{}); ok {
 			r.TotalReads = int64(getInt(af, "total_reads"))
 			r.TotalBases = int64(getInt(af, "total_bases"))
@@ -310,6 +313,7 @@ func (imp *Importer) parseQCResult(taskID string, qc map[string]interface{}) *mo
 		r.AverageDepth = getFloat(xd, "average_depth")
 		r.DedupDepth = getFloat(xd, "average_depth_rmdup")
 		r.CoverageGt0x = getFloat(xd, "coverage_gt_0x")
+		r.CoverageGt02Avg = getFloat(xd, "coverage_gt_0_2_avg")
 		r.CoverageGte30x = getFloat(xd, "coverage_gte_30x")
 		r.CoverageGte100x = getFloat(xd, "coverage_gte_100x")
 		r.MappedReads = int64(getInt(xd, "mapped_reads"))
@@ -379,6 +383,13 @@ func qcMetricAvailability(qc map[string]interface{}) string {
 			}
 		}
 	}
+	if fastp, ok := qc["fastp"].(map[string]interface{}); ok {
+		if before, ok := fastp["before_filtering"].(map[string]interface{}); ok {
+			if value, ok := before["total_reads"].(float64); ok && value >= 0 {
+				available["beforeTotalReads"] = true
+			}
+		}
+	}
 	mark("fastp", "total_reads", "totalReads")
 	mark("fastp", "q30_rate", "q30Rate")
 	mark("fastp", "gc_content", "gcContent")
@@ -387,6 +398,7 @@ func qcMetricAvailability(qc map[string]interface{}) string {
 	mark("xamdst", "average_depth", "averageDepth")
 	mark("xamdst", "average_depth_rmdup", "dedupDepth")
 	mark("xamdst", "coverage_gte_30x", "coverageGte30x")
+	mark("xamdst", "coverage_gt_0_2_avg", "coverageGt02Avg")
 	mark("xamdst", "insert_size_median", "insertSizeMedian")
 	mark("xamdst", "target_data_fraction_all", "targetDataFraction")
 	mark("hs_metrics", "mean_target_coverage", "meanTargetCoverage")
@@ -395,6 +407,7 @@ func qcMetricAvailability(qc map[string]interface{}) string {
 	mark("mt_xamdst", "mt_average_depth", "mtAverageDepth")
 	mark("mt_xamdst", "mt_coverage_gt_0x", "mtCoverageGt0x")
 	mark("sry", "predicted_gender", "predictedGender")
+	mark("sry", "sry_count", "sryCount")
 	encoded, err := json.Marshal(available)
 	if err != nil {
 		return "{}"

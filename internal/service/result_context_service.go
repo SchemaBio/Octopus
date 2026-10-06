@@ -72,7 +72,11 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 			return nil, err
 		}
 	}
+	qcs = s.enrichArchivedQC(task, qcs)
 	members, qc := resultMembersAndQC(qcs)
+	if err := s.addQCGenderComparison(ctx, task, qc); err != nil {
+		return nil, err
+	}
 	importBatchID := uint(0)
 	if len(qcs) > 0 {
 		importBatchID = qcs[0].ImportBatchID
@@ -289,6 +293,7 @@ func resultMembersAndQC(rows []model.QCResult) ([]model.ResultMember, []model.QC
 		members = append(members, model.ResultMember{ID: memberID, Role: role, SampleID: row.SampleID})
 		qc = append(qc, model.QCMemberSummary{
 			MemberID: memberID, MemberRole: role, SampleID: row.SampleID, Metrics: qcMetrics(row),
+			PredictedGender: normalizeQCGender(row.PredictedGender),
 		})
 	}
 	return members, qc
@@ -318,21 +323,26 @@ func qcMetrics(row model.QCResult) []model.QCMetric {
 		}
 		return model.QCMetric{Key: key, Value: output, Unit: unit, Source: source}
 	}
+	// xamdst stores percentage points (0–100); fastp and Picard store fractions.
+	// Preserve archived values and describe their actual unit at the API boundary.
 	return []model.QCMetric{
+		metric("beforeTotalReads", float64(row.BeforeTotalReads), "reads", "fastp.before_filtering"),
 		metric("totalReads", float64(row.TotalReads), "reads", "fastp.after_filtering"),
 		metric("mappedReads", float64(row.MappedReads), "reads", "xamdst"),
-		metric("mappedReadsFraction", row.MappedReadsFraction, "fraction", "xamdst"),
+		metric("mappedReadsFraction", row.MappedReadsFraction, "percent", "xamdst"),
 		metric("averageDepth", row.AverageDepth, "×", "xamdst"),
 		metric("dedupDepth", row.DedupDepth, "×", "xamdst"),
-		metric("coverageGte30x", row.CoverageGte30x, "fraction", "xamdst"),
+		metric("coverageGt02Avg", row.CoverageGt02Avg, "percent", "xamdst"),
+		metric("coverageGte30x", row.CoverageGte30x, "percent", "xamdst"),
 		metric("meanTargetCoverage", row.MeanTargetCoverage, "×", "hs_metrics"),
 		metric("pctTargetBases30x", row.PctTargetBases30x, "fraction", "hs_metrics"),
 		metric("duplicateRate", row.DuplicateRate, "fraction", "sambamba"),
 		metric("q30Rate", row.Q30Rate, "fraction", "fastp.after_filtering"),
 		metric("gcContent", row.GcContent, "fraction", "fastp.after_filtering"),
 		metric("insertSizeMedian", float64(row.InsertSizeMedian), "bp", "xamdst"),
-		metric("targetDataFraction", row.TargetDataFraction, "fraction", "xamdst"),
+		metric("targetDataFraction", row.TargetDataFraction, "percent", "xamdst"),
+		metric("sryCount", float64(row.SryCount), "reads", "SRY"),
 		metric("mtAverageDepth", row.MtAverageDepth, "×", "mt_xamdst"),
-		metric("mtCoverageGt0x", row.MtCoverageGt0x, "fraction", "mt_xamdst"),
+		metric("mtCoverageGt0x", row.MtCoverageGt0x, "percent", "mt_xamdst"),
 	}
 }

@@ -21,18 +21,20 @@ type QCResult struct {
 	// consumers can distinguish a reported zero from an unavailable metric.
 	MetricAvailability string `json:"metricAvailability,omitempty" gorm:"type:jsonb"`
 
-	// fastp - after filtering
-	TotalReads      int64   `json:"totalReads"`
-	TotalBases      int64   `json:"totalBases"`
-	Q20Rate         float64 `json:"q20Rate" gorm:"type:numeric"`
-	Q30Rate         float64 `json:"q30Rate" gorm:"type:numeric"`
-	GcContent       float64 `json:"gcContent" gorm:"type:numeric"`
-	Read1MeanLength int     `json:"read1MeanLength" gorm:"type:integer"`
-	Read2MeanLength int     `json:"read2MeanLength" gorm:"type:integer"`
+	// fastp - before and after filtering
+	BeforeTotalReads int64   `json:"beforeTotalReads"`
+	TotalReads       int64   `json:"totalReads"`
+	TotalBases       int64   `json:"totalBases"`
+	Q20Rate          float64 `json:"q20Rate" gorm:"type:numeric"`
+	Q30Rate          float64 `json:"q30Rate" gorm:"type:numeric"`
+	GcContent        float64 `json:"gcContent" gorm:"type:numeric"`
+	Read1MeanLength  int     `json:"read1MeanLength" gorm:"type:integer"`
+	Read2MeanLength  int     `json:"read2MeanLength" gorm:"type:integer"`
 
 	// xamdst
 	AverageDepth        float64 `json:"averageDepth" gorm:"type:numeric"`
 	DedupDepth          float64 `json:"dedupDepth" gorm:"type:numeric"`
+	CoverageGt02Avg     float64 `json:"coverageGt02Avg" gorm:"type:numeric"`
 	CoverageGt0x        float64 `json:"coverageGt0x" gorm:"type:numeric"`
 	CoverageGte30x      float64 `json:"coverageGte30x" gorm:"type:numeric"`
 	CoverageGte100x     float64 `json:"coverageGte100x" gorm:"type:numeric"`
