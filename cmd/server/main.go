@@ -27,6 +27,13 @@ const (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "history-backfill" {
+		if err := runHistoryBackfill(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "history backfill failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "bam-retention" {
 		if err := runBAMRetentionCommand(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "BAM retention command failed: %v\n", err)

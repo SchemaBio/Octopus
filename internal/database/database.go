@@ -97,6 +97,8 @@ func AutoMigrate() error {
 		&model.ResultRowAutomaticAssessment{},
 		&model.ResultRowAdjustment{},
 		&model.ResultRowAdjustmentEvent{},
+		&model.HistoryScopeRevision{},
+		&model.HistoryReport{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)

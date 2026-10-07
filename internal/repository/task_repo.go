@@ -13,6 +13,20 @@ import (
 
 var ErrResultImportAlreadyRunning = errors.New("result import is already running")
 
+// DeleteByID publishes cache tombstones atomically with soft deletion.
+func (r *TaskRepository) DeleteByID(id string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var task model.Task
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).First(&task).Error; err != nil {
+			return err
+		}
+		if err := model.DeleteHistoryReports(tx, &task); err != nil {
+			return err
+		}
+		return tx.Delete(&task).Error
+	})
+}
+
 // Update rejects stale task snapshots, including callbacks racing cancellation.
 func (r *TaskRepository) Update(task *model.Task) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {

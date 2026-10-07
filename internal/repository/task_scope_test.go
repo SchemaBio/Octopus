@@ -59,7 +59,11 @@ func TestTaskRepositoryDeleteByIDUsesSoftDelete(t *testing.T) {
 	repo.Repository.db = db
 
 	mock.ExpectBegin()
-	mock.ExpectExec(`UPDATE "tasks" SET "deleted_at"=\$1 WHERE id = \$2 AND "tasks"\."deleted_at" IS NULL`).
+	mock.ExpectQuery(`SELECT \* FROM "tasks" WHERE id=\$1.*FOR UPDATE`).WithArgs("task-row-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "uuid", "created_by"}).AddRow("task-row-1", "task-uuid", 42))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "history_reports" WHERE task_uuid=\$1 AND deleted=false`).WithArgs("task-uuid").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectExec(`UPDATE "tasks" SET "deleted_at"=\$1 WHERE "tasks"\."id" = \$2 AND "tasks"\."deleted_at" IS NULL`).
 		WithArgs(sqlmock.AnyArg(), "task-row-1").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()

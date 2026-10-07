@@ -596,9 +596,20 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 		if err != nil || aws.ToInt64(meta.ContentLength) != quote.SizeBytes || aws.ToString(meta.ETag) != quote.ETag {
 			return fmt.Errorf("文件发生变化或不可用，请重新申请；本次未扣费")
 		}
-		link, err = ipBoundCOSDownload(ctx, s.cfg.Storage, quote.ObjectKey, quote.Filename, ip, *quote.LinkExpiresAt)
-		if err != nil {
-			return err
+		if quote.Kind == "zip" {
+			// Check readability before billing. ZIP delivery uses the authenticated
+			// site transport, whose observed IP is checked again by OpenZIP.
+			reader, openErr := storage.open(ctx, quote.ObjectKey)
+			if openErr != nil {
+				return fmt.Errorf("ZIP 暂时无法读取，本次未扣费")
+			}
+			reader.Close()
+			link = "/v1/tasks/" + task.UUID + "/downloads/" + quote.ID + "/file"
+		} else {
+			link, err = ipBoundCOSDownload(ctx, s.cfg.Storage, quote.ObjectKey, quote.Filename, ip, *quote.LinkExpiresAt)
+			if err != nil {
+				return err
+			}
 		}
 		if quote.Kind == "bam" && deadline != nil && !time.Now().Before(*deadline) {
 			return fmt.Errorf("BAM 保留期已到，本次未签发链接")
@@ -626,4 +637,33 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 		return nil, err
 	}
 	return map[string]interface{}{"id": quote.ID, "url": link, "filename": quote.Filename, "size_bytes": quote.SizeBytes, "credits_charged": quote.Credits, "expires_at": quote.LinkExpiresAt, "ip_bound": true}, nil
+}
+
+// OpenZIP never charges. A paid grant is restricted to its original user,
+// organisation, attempt and site-observed IP within its original validity window.
+func (s *ResultDownloadService) OpenZIP(ctx context.Context, task *model.Task, actor model.OverlayActor, ip, id, byteRange string) (*s3.GetObjectOutput, string, error) {
+	var grant model.ResultDownload
+	if err := database.DB.WithContext(ctx).Where("id = ? AND task_uuid = ? AND attempt_id = ? AND user_id = ? AND org_id = ? AND client_ip = ? AND kind = ? AND charged_at IS NOT NULL AND refunded_at IS NULL AND link_expires_at > ?", id, task.UUID, task.ExecutionAttemptID, actor.UserID, actor.OrgID, ip, "zip", time.Now().UTC()).First(&grant).Error; err != nil {
+		return nil, "", fmt.Errorf("ZIP 下载申请不存在、已到期或当前网络 IP 已改变")
+	}
+	storage, err := newS3Storage(ctx, s.cfg.Storage)
+	if err != nil {
+		return nil, "", fmt.Errorf("ZIP 存储暂时不可用，请稍后重试同一申请")
+	}
+	input := &s3.GetObjectInput{Bucket: aws.String(storage.bucket), Key: aws.String(grant.ObjectKey), IfMatch: aws.String(grant.ETag)}
+	if byteRange != "" {
+		if !strings.HasPrefix(byteRange, "bytes=") || strings.ContainsAny(byteRange, ",\r\n") || len(byteRange) > 80 {
+			return nil, "", fmt.Errorf("无效的续传区间")
+		}
+		input.Range = aws.String(byteRange)
+	}
+	output, err := storage.client.GetObject(ctx, input)
+	if err != nil {
+		return nil, "", fmt.Errorf("ZIP 读取失败，请重试同一申请，不会重复扣费")
+	}
+	if byteRange == "" && aws.ToInt64(output.ContentLength) != grant.SizeBytes {
+		output.Body.Close()
+		return nil, "", fmt.Errorf("ZIP 文件已变化，请联系管理员")
+	}
+	return output, grant.Filename, nil
 }

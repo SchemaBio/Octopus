@@ -187,6 +187,7 @@ func New(cfg *config.Config) *gin.Engine {
 			tasks.POST("/:id/downloads/prepare", resultDownloadHandler.Catalog)
 			tasks.POST("/:id/downloads/quote", resultDownloadHandler.Quote)
 			tasks.POST("/:id/downloads/issue", resultDownloadHandler.Issue)
+			tasks.GET("/:id/downloads/:grant/file", resultDownloadHandler.File)
 
 			// Export
 			tasks.GET("/:id/export/excel", exportHandler.ExportExcel)
@@ -349,6 +350,8 @@ func New(cfg *config.Config) *gin.Engine {
 		history := v1.Group("/history")
 		history.Use(middleware.JWTAuth(cfg))
 		{
+			history.GET("/sync", historyHandler.SyncReports)
+			history.GET("/reports/:id", historyHandler.ReportDetail)
 			history.GET("/snv-indel", historyHandler.ListGroupedSNVIndels)
 			history.GET("/cnv-segment", historyHandler.ListGroupedCNVSegments)
 			history.GET("/cnv-exon", historyHandler.ListGroupedCNVExons)

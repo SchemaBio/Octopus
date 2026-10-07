@@ -30,6 +30,24 @@ func TestHistoryApplyScopeUsesOrgForNonAdminOverlayUser(t *testing.T) {
 	}
 }
 
+func TestHistorySyncAdminDoesNotAggregateAllTenants(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("user_id", uint(1))
+	c.Set("email", "admin@example.com")
+	c.Set("role", string(model.SystemRoleSuperAdmin))
+	c.Set("org_id", "org-a")
+	tenant, ok := historyTenant(c)
+	if !ok || tenant != "org:org-a" {
+		t.Fatal("admin scope not explicit")
+	}
+	c.Set("org_id", "")
+	tenant, ok = historyTenant(c)
+	if !ok || tenant != "user:1" {
+		t.Fatal("standalone scope includes organizations")
+	}
+}
+
 func TestHistoryApplyScopeUsesCreatedByForStandaloneUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

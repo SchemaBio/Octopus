@@ -234,6 +234,19 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		return nil, nil, ErrAdjustmentConflict
 	}
 	tenant, attempt := model.TenantIDForTask(task), executionAttempt(task)
+	var historySource *model.HistoryReport
+	if request.Adjustments["reported"] == true {
+		var existing model.HistoryReport
+		lookup := database.DB.WithContext(ctx).Where("id=?", historyReportID(dataset, rowID)).First(&existing).Error
+		if errors.Is(lookup, gorm.ErrRecordNotFound) {
+			historySource, err = s.historySource(ctx, dataset, rowID, request.RowOrdinal)
+			if err != nil {
+				return nil, nil, err
+			}
+		} else if lookup != nil {
+			return nil, nil, lookup
+		}
+	}
 	var saved model.ResultRowAdjustment
 	var event model.ResultRowAdjustmentEvent
 	err = database.DB.WithContext(ctx).Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).Transaction(func(tx *gorm.DB) error {
@@ -334,7 +347,10 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		if err := tx.Model(&model.ResultDataset{}).Where("id=?", dataset.ID).Update("adjustment_revision", nextRevision).Error; err != nil {
 			return err
 		}
-		return tx.Create(&event).Error
+		if err := tx.Create(&event).Error; err != nil {
+			return err
+		}
+		return persistHistoryReport(tx, &lockedTask, &lockedDataset, &saved, &event, historySource)
 	})
 	if err != nil {
 		return nil, nil, err
