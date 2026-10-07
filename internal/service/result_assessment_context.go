@@ -394,6 +394,8 @@ func expandAssessmentArtifacts(tx *gorm.DB, c *BrowserAssessmentContext) error {
 		if err := tx.First(&artifact, "id=?", marker.ID).Error; err != nil {
 			return err
 		}
+		// Unmarshal merges into a non-nil map; discard the storage marker first.
+		c.Proofs = nil
 		if json.Unmarshal([]byte(artifact.PayloadJSON), &c.Proofs) != nil {
 			return fmt.Errorf("invalid proof content")
 		}
