@@ -22,11 +22,13 @@ func NewGeneListRepository() *GeneListRepository {
 // merely from the actor's organization membership.
 func (r *GeneListRepository) FindScopedByStringID(id string, actor model.OverlayActor) (*model.GeneList, error) {
 	db := r.db.Where("id = ?", id)
-	if actor.Role != string(model.SystemRoleSuperAdmin) {
+	if actor.OrgID != "" {
+		db = db.Where("external_org_id = ? OR (external_org_id = '' AND created_by = ?)", actor.OrgID, actor.UserID)
+	} else if actor.Role != string(model.SystemRoleSuperAdmin) {
 		if actor.UserID == 0 {
 			db = db.Where("1 = 0")
 		} else {
-			db = db.Where("created_by = ?", actor.UserID)
+			db = db.Where("external_org_id = '' AND created_by = ?", actor.UserID)
 		}
 	}
 	var geneList model.GeneList
@@ -41,8 +43,10 @@ func (r *GeneListRepository) PaginateByQuery(query *model.GeneListListQuery) ([]
 	db := r.db.Model(&model.GeneList{})
 
 	if !query.IncludeAll {
-		if query.CreatedBy != 0 {
-			db = db.Where("created_by = ?", query.CreatedBy)
+		if query.OrgID != "" {
+			db = db.Where("external_org_id = ? OR (external_org_id = '' AND created_by = ?)", query.OrgID, query.CreatedBy)
+		} else if query.CreatedBy != 0 {
+			db = db.Where("external_org_id = '' AND created_by = ?", query.CreatedBy)
 		} else {
 			db = db.Where("1 = 0")
 		}

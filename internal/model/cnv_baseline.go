@@ -25,6 +25,7 @@ type CNVBaseline struct {
 	OutputPath      string    `json:"output_path,omitempty" gorm:"size:1000"`
 	InputBytes      int64     `json:"input_bytes" gorm:"not null;default:0"`
 	CreditsCharged  int       `json:"credits_charged" gorm:"not null;default:0"`
+	StartError      string    `json:"start_error,omitempty" gorm:"type:text"`
 	ExternalOrgID   string    `json:"-" gorm:"size:100;index"`
 	CreatedBy       uint      `json:"-" gorm:"index;not null"`
 	CreatedAt       time.Time `json:"created_at" gorm:"type:timestamptz"`
@@ -86,6 +87,7 @@ type CNVBaselineResponse struct {
 	CreditCost      int                           `json:"credit_cost"`
 	CreditsCharged  int                           `json:"credits_charged"`
 	Error           string                        `json:"error,omitempty"`
+	StartError      string                        `json:"start_error,omitempty"`
 	CreatedAt       string                        `json:"created_at"`
 	UpdatedAt       string                        `json:"updated_at"`
 }

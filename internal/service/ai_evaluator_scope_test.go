@@ -37,7 +37,7 @@ func newAIEvaluatorScopeTest(t *testing.T) (*AIEvaluator, sqlmock.Sqlmock) {
 
 func TestAIEvaluatorResolvesOnlyOwnedGeneList(t *testing.T) {
 	evaluator, mock := newAIEvaluatorScopeTest(t)
-	query := `SELECT * FROM "gene_lists" WHERE id = $1 AND created_by = $2 ORDER BY "gene_lists"."id" LIMIT $3`
+	query := `SELECT * FROM "gene_lists" WHERE id = $1 AND (external_org_id = '' AND created_by = $2) ORDER BY "gene_lists"."id" LIMIT $3`
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs("list-1", uint(42), 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_by", "genes_json"}).
@@ -62,7 +62,7 @@ func TestAIEvaluatorResolvesOnlyOwnedGeneList(t *testing.T) {
 
 func TestAIEvaluatorRejectsAnotherUsersGeneList(t *testing.T) {
 	evaluator, mock := newAIEvaluatorScopeTest(t)
-	query := `SELECT * FROM "gene_lists" WHERE id = $1 AND created_by = $2 ORDER BY "gene_lists"."id" LIMIT $3`
+	query := `SELECT * FROM "gene_lists" WHERE id = $1 AND (external_org_id = '' AND created_by = $2) ORDER BY "gene_lists"."id" LIMIT $3`
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs("other-list", uint(42), 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
@@ -81,7 +81,7 @@ func TestAIEvaluatorRejectsAnotherUsersGeneList(t *testing.T) {
 
 func TestAIEvaluatorRejectsMalformedGeneListData(t *testing.T) {
 	evaluator, mock := newAIEvaluatorScopeTest(t)
-	query := `SELECT * FROM "gene_lists" WHERE id = $1 AND created_by = $2 ORDER BY "gene_lists"."id" LIMIT $3`
+	query := `SELECT * FROM "gene_lists" WHERE id = $1 AND (external_org_id = '' AND created_by = $2) ORDER BY "gene_lists"."id" LIMIT $3`
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs("broken-list", uint(42), 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_by", "genes_json"}).

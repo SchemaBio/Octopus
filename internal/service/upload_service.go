@@ -421,6 +421,7 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, actor model.OverlayAc
 		NewSampleMatcher().run(context.Background())
 	}
 
+	scheduleUploadedBED(s.cfg, existingFile)
 	return existingFile, nil
 }
 
@@ -503,6 +504,7 @@ func (s *UploadService) CompleteS3File(ctx context.Context, actor model.OverlayA
 	if allComplete {
 		NewSampleMatcher().run(context.Background())
 	}
+	scheduleUploadedBED(s.cfg, file)
 	return file, nil
 }
 
@@ -566,6 +568,7 @@ func (s *UploadService) StartUploadFile(ctx context.Context, actor model.Overlay
 	if err != nil {
 		return nil, err
 	}
+	scheduleUploadedBED(s.cfg, file)
 	return file, nil
 }
 
@@ -905,6 +908,7 @@ func (s *UploadService) CompleteMultipart(ctx context.Context, actor model.Overl
 			// A client may retry the final request after a response timeout. The
 			// object and database are already committed, so completion is
 			// idempotent and should simply return the durable file state.
+			scheduleUploadedBED(s.cfg, file)
 			return file, nil
 		}
 		return nil, fmt.Errorf("multipart session is not active")
@@ -995,6 +999,7 @@ func (s *UploadService) CompleteMultipart(ctx context.Context, actor model.Overl
 	}); err != nil {
 		return nil, err
 	}
+	scheduleUploadedBED(s.cfg, file)
 	return file, nil
 }
 
@@ -1370,4 +1375,14 @@ func safeLocalUploadPath(localDir, storageKey string) (string, error) {
 		return "", fmt.Errorf("upload file is not a regular file")
 	}
 	return resolvedPath, nil
+}
+
+func scheduleUploadedBED(cfg *config.Config, f *model.UploadFile) {
+	if f.ReadType != model.ReadTypeBed || f.Status != model.FileStatusCompleted {
+		return
+	}
+	var a model.DataAsset
+	if database.GetDB().Where("upload_file_id=?", f.ID).First(&a).Error == nil {
+		scheduleBEDValidation(cfg, &a)
+	}
 }

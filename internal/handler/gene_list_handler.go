@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -33,9 +34,11 @@ func (h *GeneListHandler) List(c *gin.Context) {
 	if query.PageSize == 0 {
 		query.PageSize = 10
 	}
-	if !applyCreatedByListScope(c, &query.CreatedBy, &query.IncludeAll) {
-		return
-	}
+	a := taskActorFromContext(c)
+	query.CreatedBy = a.UserID
+	query.OrgID = a.OrgID
+	query.ActorRole = a.Role
+	query.ActorOrgRole = a.OrgRole
 
 	resp, err := h.svc.List(&query)
 	if err != nil {
@@ -50,12 +53,9 @@ func (h *GeneListHandler) List(c *gin.Context) {
 func (h *GeneListHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 
-	geneList, err := h.svc.GetModel(id)
+	geneList, err := h.svc.GetScoped(id, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, err.Error())
-		return
-	}
-	if !requireOwnerAccess(c, geneList.CreatedBy, "Gene list") {
 		return
 	}
 
@@ -65,6 +65,7 @@ func (h *GeneListHandler) Get(c *gin.Context) {
 		return
 	}
 
+	resp.CanMaintain = taskActorFromContext(c).ResourceMaintenance(geneList.CreatedBy)
 	Success(c, resp)
 }
 
@@ -82,7 +83,7 @@ func (h *GeneListHandler) Create(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.svc.Create(&req, userID)
+	resp, err := h.svc.Create(&req, userID, taskActorFromContext(c))
 	if err != nil {
 		if err.Error() == "gene list name already exists" {
 			ErrorConflict(c, err.Error())
@@ -104,40 +105,66 @@ func (h *GeneListHandler) Update(c *gin.Context) {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	geneList, err := h.svc.GetModel(id)
+	geneList, err := h.svc.GetScoped(id, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, err.Error())
 		return
 	}
-	if !requireOwnerAccess(c, geneList.CreatedBy, "Gene list") {
+	if !taskActorFromContext(c).ResourceMaintenance(geneList.CreatedBy) {
+		ErrorNotFound(c, "Gene list not found")
 		return
 	}
 
-	resp, err := h.svc.Update(id, &req)
+	resp, err := h.svc.Update(id, &req, taskActorFromContext(c))
 	if err != nil {
-		ErrorNotFound(c, err.Error())
+		writeResourceError(c, err)
 		return
 	}
-
 	Success(c, resp)
 }
 
 // Delete deletes a gene list
 func (h *GeneListHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
-	geneList, err := h.svc.GetModel(id)
+	geneList, err := h.svc.GetScoped(id, taskActorFromContext(c))
 	if err != nil {
 		ErrorNotFound(c, err.Error())
 		return
 	}
-	if !requireOwnerAccess(c, geneList.CreatedBy, "Gene list") {
+	if !taskActorFromContext(c).ResourceMaintenance(geneList.CreatedBy) {
+		ErrorNotFound(c, "Gene list not found")
 		return
 	}
 
-	if err := h.svc.Delete(id); err != nil {
+	if err := h.svc.Delete(id, taskActorFromContext(c)); err != nil {
 		ErrorNotFound(c, err.Error())
 		return
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func (h *GeneListHandler) Publish(c *gin.Context) {
+	var req struct {
+		ExpectedRevision uint64 `json:"expected_revision"`
+	}
+	if c.ShouldBindJSON(&req) != nil {
+		ErrorBadRequest(c, "expected_revision required")
+		return
+	}
+	r, err := h.svc.Publish(c.Param("id"), taskActorFromContext(c), req.ExpectedRevision)
+	if err != nil {
+		writeResourceError(c, err)
+		return
+	}
+	Success(c, r)
+}
+func writeResourceError(c *gin.Context, err error) {
+	if errors.Is(err, service.ErrResourceConflict) || err.Error() == "gene list name already exists" {
+		ErrorConflict(c, err.Error())
+	} else if errors.Is(err, service.ErrResourceForbidden) {
+		ErrorNotFound(c, err.Error())
+	} else {
+		ErrorBadRequest(c, err.Error())
+	}
 }

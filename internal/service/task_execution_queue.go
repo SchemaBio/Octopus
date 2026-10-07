@@ -38,6 +38,9 @@ func (s *TaskService) claimLocalStart(ctx context.Context, id string) (*model.Ta
 				return fmt.Errorf("data not ready: %s", reason)
 			}
 		}
+		if err := validateSavedTaskResources(tx, &task); err != nil {
+			return err
+		}
 		previous = task.Status
 		if task.ExecutionAttemptID == "" || previous == model.TaskStatusFailed || previous == model.TaskStatusCancelled {
 			task.ExecutionAttemptID = uuid.New().String()
@@ -94,6 +97,9 @@ func (s *TaskService) enqueueCVM(ctx context.Context, id string, actor model.Ove
 			if ready, reason := s.checkDataReady(&task); !ready {
 				return fmt.Errorf("data not ready: %s", reason)
 			}
+		}
+		if err := validateSavedTaskResources(tx, &task); err != nil {
+			return err
 		}
 		// Legacy live attempts are adopted without changing their identity.
 		if task.ExecutionAttemptID == "" || cvmAttemptStateTerminal(task.VMStatus) || task.ExecutionPhase == "terminal" {

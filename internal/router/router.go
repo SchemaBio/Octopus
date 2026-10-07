@@ -197,6 +197,8 @@ func New(cfg *config.Config) *gin.Engine {
 			// Reports
 			tasks.GET("/:id/reports", reportHandler.ListReports)
 			tasks.POST("/:id/reports", reportHandler.CreateReport)
+			tasks.GET("/:id/report-generations", reportHandler.Generations)
+			tasks.GET("/:id/report-preview", reportHandler.Preview)
 			tasks.POST("/:id/reports/upload", reportHandler.UploadReport)
 			tasks.PATCH("/:id/reports/:reportId/status", reportHandler.UpdateReportStatus)
 			tasks.DELETE("/:id/reports/:reportId", reportHandler.DeleteReport)
@@ -211,6 +213,7 @@ func New(cfg *config.Config) *gin.Engine {
 			reportTemplates.POST("", reportHandler.CreateTemplate)
 			reportTemplates.POST("/validate-endpoint", reportHandler.ValidateTemplateEndpoint)
 			reportTemplates.PUT("/:id", reportHandler.UpdateTemplate)
+			reportTemplates.POST("/:id/publish", reportHandler.PublishTemplate)
 			reportTemplates.PUT("/:id/status", reportHandler.UpdateTemplateStatus)
 			reportTemplates.DELETE("/:id", reportHandler.DeleteTemplate)
 		}
@@ -321,6 +324,7 @@ func New(cfg *config.Config) *gin.Engine {
 			geneLists.GET("", geneListHandler.List)
 			geneLists.GET("/:id", geneListHandler.Get)
 			geneLists.PUT("/:id", geneListHandler.Update)
+			geneLists.POST("/:id/publish", geneListHandler.Publish)
 			geneLists.DELETE("/:id", geneListHandler.Delete)
 		}
 
@@ -400,6 +404,7 @@ func New(cfg *config.Config) *gin.Engine {
 			data.GET("/config", dataAssetHandler.Config)
 			data.GET("/assets", dataAssetHandler.List)
 			data.GET("/assets/:uuid", dataAssetHandler.Get)
+			data.POST("/assets/:uuid/validate", dataAssetHandler.ValidateBED)
 			data.PUT("/assets/:uuid", dataAssetHandler.Update)
 			data.GET("/assets/:uuid/download", dataAssetHandler.Download)
 			data.DELETE("/assets/:uuid", dataAssetHandler.Delete)

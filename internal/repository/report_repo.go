@@ -79,3 +79,19 @@ func (r *ReportTemplateRepository) findOne(query string, args ...interface{}) (*
 	}
 	return &tmpl, nil
 }
+
+func (r *ReportTemplateRepository) Scoped(a model.OverlayActor) *gorm.DB {
+	db := r.db.Model(&model.ReportTemplate{})
+	if a.OrgID != "" {
+		return db.Where("(external_org_id=? OR (external_org_id='' AND owner_user_id=?))", a.OrgID, a.UserID)
+	}
+	return db.Where("external_org_id='' AND owner_user_id=?", a.UserID)
+}
+func (r *ReportTemplateRepository) FindScoped(id string, a model.OverlayActor) (*model.ReportTemplate, error) {
+	var t model.ReportTemplate
+	e := r.Scoped(a).Where("id=?", id).First(&t).Error
+	if e == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	return &t, e
+}

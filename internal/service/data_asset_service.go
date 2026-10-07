@@ -53,6 +53,7 @@ func (s *DataAssetService) List(query *model.DataAssetListQuery) ([]model.DataAs
 	}
 	items := make([]model.DataAssetResponse, len(assets))
 	for i := range assets {
+		scheduleBEDValidation(s.cfg, &assets[i])
 		items[i] = model.DataAssetToResponse(&assets[i])
 	}
 	return items, total, nil
@@ -216,6 +217,9 @@ func markAssetDeleting(db *gorm.DB, asset *model.DataAsset) (assetDeletionState,
 		var locked model.DataAsset
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, asset.ID).Error; err != nil {
 			return fmt.Errorf("data asset not found: %w", err)
+		}
+		if err := checkBEDReferences(tx, &locked); err != nil {
+			return err
 		}
 		state.assetStatus = locked.Status
 		if locked.Status == model.FileStatusDeleted {

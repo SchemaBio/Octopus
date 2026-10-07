@@ -39,15 +39,18 @@ func (Report) TableName() string {
 
 // ReportTemplate represents an available report generation template/API
 type ReportTemplate struct {
-	ID          string    `json:"id" gorm:"primaryKey;size:36"`
-	OwnerUserID uint      `json:"-" gorm:"index:idx_report_templates_owner_name,unique"`
-	Name        string    `json:"name" gorm:"size:200;not null;index:idx_report_templates_owner_name,unique"`
-	Description string    `json:"description" gorm:"type:text"`
-	APIEndpoint string    `json:"apiEndpoint" gorm:"size:500;not null"` // User's report generation API
-	APIKey      string    `json:"-" gorm:"size:500;not null"`
-	IsActive    bool      `json:"isActive" gorm:"default:true"`
-	CreatedAt   time.Time `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"type:timestamptz"`
+	ExternalOrgID   string    `json:"-" gorm:"size:100;not null;default:'';index"`
+	ContractVersion string    `json:"contractVersion" gorm:"size:40;not null;default:'legacy-v1'"`
+	Revision        uint64    `json:"revision" gorm:"not null;default:1"`
+	ID              string    `json:"id" gorm:"primaryKey;size:36"`
+	OwnerUserID     uint      `json:"-" gorm:"index:idx_report_templates_owner_name,unique"`
+	Name            string    `json:"name" gorm:"size:200;not null"`
+	Description     string    `json:"description" gorm:"type:text"`
+	APIEndpoint     string    `json:"apiEndpoint" gorm:"size:500;not null"` // User's report generation API
+	APIKey          string    `json:"-" gorm:"size:500;not null"`
+	IsActive        bool      `json:"isActive" gorm:"default:true"`
+	CreatedAt       time.Time `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt       time.Time `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 func (ReportTemplate) TableName() string {
@@ -56,9 +59,13 @@ func (ReportTemplate) TableName() string {
 
 // ReportCreateRequest is the request for creating a report
 type ReportCreateRequest struct {
-	Name         string `json:"name" binding:"required"`
-	TemplateID   string `json:"templateId"`
-	TemplateName string `json:"templateName"`
+	GenerationID    string `json:"-"`
+	SnapshotJSON    string `json:"-"`
+	SnapshotSHA256  string `json:"-"`
+	ClientRequestID string `json:"clientRequestId"`
+	Name            string `json:"name" binding:"required"`
+	TemplateID      string `json:"templateId"`
+	TemplateName    string `json:"templateName"`
 }
 
 // ReportUploadRequest is a legacy request shape. Uploaded reports are disabled.
@@ -112,20 +119,23 @@ func (r *Report) ToResponse() ReportResponse {
 
 // ReportTemplateCreateRequest is the request for creating a report template
 type ReportTemplateCreateRequest struct {
-	Name        string `json:"name" binding:"required"`
-	Description string `json:"description"`
-	APIEndpoint string `json:"apiEndpoint" binding:"required"`
-	APIKey      string `json:"apiKey"`
+	ContractVersion string `json:"contractVersion"`
+	Name            string `json:"name" binding:"required"`
+	Description     string `json:"description"`
+	APIEndpoint     string `json:"apiEndpoint" binding:"required"`
+	APIKey          string `json:"apiKey"`
 }
 
 // ReportTemplateUpdateRequest is the request for updating a report template.
 // APIKey is optional and only rotated when present and non-empty.
 type ReportTemplateUpdateRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	APIEndpoint string `json:"apiEndpoint"`
-	APIKey      string `json:"apiKey"`
-	IsActive    *bool  `json:"isActive"`
+	ContractVersion  string `json:"contractVersion"`
+	ExpectedRevision uint64 `json:"expectedRevision"`
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	APIEndpoint      string `json:"apiEndpoint"`
+	APIKey           string `json:"apiKey"`
+	IsActive         *bool  `json:"isActive"`
 }
 
 // ReportTemplateStatusRequest toggles template availability.
@@ -141,40 +151,47 @@ type ReportEndpointValidateRequest struct {
 
 // ReportTemplateResponse is the public-safe template payload (omits APIEndpoint and APIKey)
 type ReportTemplateResponse struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	IsActive    bool   `json:"isActive"`
-	CreatedAt   string `json:"createdAt,omitempty"`
-	UpdatedAt   string `json:"updatedAt,omitempty"`
+	ContractVersion string `json:"contractVersion"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Description     string `json:"description,omitempty"`
+	IsActive        bool   `json:"isActive"`
+	CreatedAt       string `json:"createdAt,omitempty"`
+	UpdatedAt       string `json:"updatedAt,omitempty"`
 }
 
 // ReportTemplateAdminResponse is the template payload for admins.
 type ReportTemplateAdminResponse struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	APIEndpoint string `json:"apiEndpoint"`
-	HasAPIKey   bool   `json:"hasApiKey"`
-	IsActive    bool   `json:"isActive"`
-	CreatedAt   string `json:"createdAt,omitempty"`
-	UpdatedAt   string `json:"updatedAt,omitempty"`
+	ContractVersion string `json:"contractVersion"`
+	Revision        uint64 `json:"revision"`
+	Scope           string `json:"scope"`
+	CanMaintain     bool   `json:"canMaintain"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Description     string `json:"description,omitempty"`
+	APIEndpoint     string `json:"apiEndpoint"`
+	HasAPIKey       bool   `json:"hasApiKey"`
+	IsActive        bool   `json:"isActive"`
+	CreatedAt       string `json:"createdAt,omitempty"`
+	UpdatedAt       string `json:"updatedAt,omitempty"`
 }
 
 // ToResponse converts a ReportTemplate to a public-safe response (omits sensitive fields)
 func (t *ReportTemplate) ToResponse() ReportTemplateResponse {
 	return ReportTemplateResponse{
-		ID:          t.ID,
-		Name:        t.Name,
-		Description: t.Description,
-		IsActive:    t.IsActive,
-		CreatedAt:   t.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:   t.UpdatedAt.Format(time.RFC3339),
+		ContractVersion: t.ContractVersion,
+		ID:              t.ID,
+		Name:            t.Name,
+		Description:     t.Description,
+		IsActive:        t.IsActive,
+		CreatedAt:       t.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:       t.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
 func (t *ReportTemplate) ToAdminResponse() ReportTemplateAdminResponse {
 	return ReportTemplateAdminResponse{
+		ContractVersion: t.ContractVersion, Revision: t.Revision, Scope: resourceScope(t.ExternalOrgID),
 		ID:          t.ID,
 		Name:        t.Name,
 		Description: t.Description,
@@ -184,4 +201,27 @@ func (t *ReportTemplate) ToAdminResponse() ReportTemplateAdminResponse {
 		CreatedAt:   t.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:   t.UpdatedAt.Format(time.RFC3339),
 	}
+}
+
+// ReportGeneration holds an immutable report input snapshot and an idempotent
+// external invocation. Stored file/object locations never leave this service.
+type ReportGeneration struct {
+	ID              string    `json:"id" gorm:"primaryKey;size:36"`
+	TenantID        string    `json:"-" gorm:"size:160;uniqueIndex:idx_report_request,priority:1"`
+	TaskUUID        string    `json:"taskUuid" gorm:"size:36;index"`
+	AttemptID       string    `json:"attemptId" gorm:"size:36"`
+	ClientRequestID string    `json:"-" gorm:"size:36;uniqueIndex:idx_report_request,priority:2"`
+	TemplateID      string    `json:"templateId" gorm:"size:36"`
+	ServiceRevision uint64    `json:"serviceRevision"`
+	ContractVersion string    `json:"contractVersion" gorm:"size:40"`
+	SnapshotSHA256  string    `json:"snapshotSha256" gorm:"size:64"`
+	SnapshotJSON    string    `json:"-" gorm:"type:jsonb;not null"`
+	State           string    `json:"state" gorm:"size:20"`
+	ErrorCode       string    `json:"errorCode" gorm:"size:80"`
+	FileName        string    `json:"fileName" gorm:"size:500"`
+	ContentType     string    `json:"contentType" gorm:"size:200"`
+	ObjectKey       string    `json:"-" gorm:"type:text"`
+	CreatedBy       uint      `json:"createdBy"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }

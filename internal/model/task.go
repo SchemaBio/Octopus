@@ -41,6 +41,7 @@ const (
 
 // Task represents a workflow task
 type Task struct {
+	PipelineSnapshotJSON         string     `json:"-" gorm:"type:jsonb;not null;default:'{}'"`
 	Version                      uint64     `json:"-" gorm:"default:0"`
 	LastCVMEventVersion          uint64     `json:"-" gorm:"default:0"`
 	ExecutionPhase               string     `json:"execution_phase,omitempty" gorm:"size:32"`

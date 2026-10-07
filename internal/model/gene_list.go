@@ -16,6 +16,8 @@ const (
 
 // GeneList represents a gene panel/list
 type GeneList struct {
+	ExternalOrgID   string           `json:"-" gorm:"size:100;index;not null;default:''"`
+	Revision        uint64           `json:"revision" gorm:"not null;default:1"`
 	ID              string           `json:"id" gorm:"primaryKey;size:36"`
 	Name            string           `json:"name" gorm:"size:200;not null"`
 	Description     string           `json:"description" gorm:"type:text"`
@@ -29,6 +31,9 @@ type GeneList struct {
 
 // GeneListResponse is the API response for a gene list
 type GeneListResponse struct {
+	Revision        uint64           `json:"revision"`
+	Scope           string           `json:"scope"`
+	CanMaintain     bool             `json:"can_maintain"`
 	ID              string           `json:"id"`
 	Name            string           `json:"name"`
 	Description     string           `json:"description,omitempty"`
@@ -51,20 +56,24 @@ type GeneListCreateRequest struct {
 
 // GeneListUpdateRequest is the request body for updating a gene list
 type GeneListUpdateRequest struct {
-	Name            string           `json:"name"`
-	Description     string           `json:"description"`
-	Genes           []string         `json:"genes"`
-	Category        GeneListCategory `json:"category"`
-	DiseaseCategory string           `json:"disease_category"`
+	ExpectedRevision uint64           `json:"expected_revision"`
+	Name             string           `json:"name"`
+	Description      *string          `json:"description"`
+	Genes            []string         `json:"genes"`
+	Category         GeneListCategory `json:"category"`
+	DiseaseCategory  *string          `json:"disease_category"`
 }
 
 // GeneListListQuery is the query parameters for listing gene lists
 type GeneListListQuery struct {
-	Page       int    `form:"page" binding:"omitempty,min=1"`
-	PageSize   int    `form:"page_size" binding:"omitempty,min=1,max=100"`
-	Search     string `form:"search"`
-	CreatedBy  uint   `json:"-"`
-	IncludeAll bool   `json:"-"`
+	ActorRole    string `json:"-"`
+	ActorOrgRole string `json:"-"`
+	OrgID        string `json:"-"`
+	Page         int    `form:"page" binding:"omitempty,min=1"`
+	PageSize     int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+	Search       string `form:"search"`
+	CreatedBy    uint   `json:"-"`
+	IncludeAll   bool   `json:"-"`
 }
 
 // GeneListListResponse is the response for listing gene lists
@@ -108,6 +117,7 @@ func (g *GeneList) SetGenes(genes []string) {
 func (g *GeneList) ToResponse() GeneListResponse {
 	genes := g.GetGenes()
 	return GeneListResponse{
+		Revision: g.Revision, Scope: resourceScope(g.ExternalOrgID),
 		ID:              g.ID,
 		Name:            g.Name,
 		Description:     g.Description,
@@ -118,4 +128,11 @@ func (g *GeneList) ToResponse() GeneListResponse {
 		CreatedAt:       g.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:       g.UpdatedAt.Format(time.RFC3339),
 	}
+}
+
+func resourceScope(org string) string {
+	if org != "" {
+		return "organization"
+	}
+	return "personal"
 }

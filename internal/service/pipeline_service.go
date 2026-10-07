@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // PipelineService handles organization-scoped custom pipelines and the four
@@ -39,7 +41,7 @@ func builtinPipelineResponses() []model.PipelineResponse {
 			Description: "系统内置 hg19 单样本 WES 分析流程", BEDFile: "内置 WES BED（hg19）",
 			BEDAssetID: model.BuiltinBEDHG19ID, ReferenceGenome: "hg19",
 			CNVBaseline: "内置 WES CNV 基线（hg19）", CNVBaselineID: model.BuiltinCNVBaselineHG19ID,
-			Template: "single", IsBuiltin: true, Status: model.PipelineStatusActive,
+			Template: "single", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive,
 		},
 		{
 			ID: model.BuiltinPipelineWESFamilyID, Name: "WES家系分析",
@@ -48,7 +50,7 @@ func builtinPipelineResponses() []model.PipelineResponse {
 			Description: "系统内置 hg19 家系 WES 分析流程", BEDFile: "内置 WES BED（hg19）",
 			BEDAssetID: model.BuiltinBEDHG19ID, ReferenceGenome: "hg19",
 			CNVBaseline: "内置 WES CNV 基线（hg19）", CNVBaselineID: model.BuiltinCNVBaselineHG19ID,
-			Template: "trio", IsBuiltin: true, Status: model.PipelineStatusActive,
+			Template: "trio", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive,
 		},
 		{
 			ID: model.BuiltinPipelineWESSingleHG38ID, Name: "WES单样本分析（hg38）",
@@ -57,7 +59,7 @@ func builtinPipelineResponses() []model.PipelineResponse {
 			Description: "系统内置 hg38 单样本 WES 分析流程", BEDFile: "内置 WES BED（hg38）",
 			BEDAssetID: model.BuiltinBEDHG38ID, ReferenceGenome: "hg38",
 			CNVBaseline: "内置 WES CNV 基线（hg38）", CNVBaselineID: model.BuiltinCNVBaselineHG38ID,
-			Template: "single", IsBuiltin: true, Status: model.PipelineStatusActive,
+			Template: "single", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive,
 		},
 		{
 			ID: model.BuiltinPipelineWESFamilyHG38ID, Name: "WES家系分析（hg38）",
@@ -66,7 +68,7 @@ func builtinPipelineResponses() []model.PipelineResponse {
 			Description: "系统内置 hg38 家系 WES 分析流程", BEDFile: "内置 WES BED（hg38）",
 			BEDAssetID: model.BuiltinBEDHG38ID, ReferenceGenome: "hg38",
 			CNVBaseline: "内置 WES CNV 基线（hg38）", CNVBaselineID: model.BuiltinCNVBaselineHG38ID,
-			Template: "trio", IsBuiltin: true, Status: model.PipelineStatusActive,
+			Template: "trio", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive,
 		},
 	}
 }
@@ -120,7 +122,7 @@ func (s *PipelineService) resolveResources(reqBED, reqBaseline string, genome st
 	}
 	if strings.TrimSpace(reqBED) != "" {
 		item, err := s.assets.FindScopedByUUID(strings.TrimSpace(reqBED), actor)
-		if err != nil || item.Status != model.FileStatusCompleted || item.ReadType != model.ReadTypeBed {
+		if err != nil || !bedUsable(item) {
 			return nil, nil, fmt.Errorf("completed BED data asset not found")
 		}
 		if !genomeMatchesPipeline(item.ReferenceGenome, genome) {
@@ -183,7 +185,12 @@ func (s *PipelineService) CreatePipeline(_ context.Context, req *model.PipelineC
 	if baseline != nil {
 		pipeline.CNVBaselineID = &baseline.ID
 	}
-	if err := s.repo.Create(pipeline); err != nil {
+	if err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+		if e := lockPipelineBED(tx, pipeline); e != nil {
+			return e
+		}
+		return tx.Create(pipeline).Error
+	}); err != nil {
 		return nil, err
 	}
 	response := s.toResponse(pipeline, bed, baseline)
@@ -272,7 +279,12 @@ func (s *PipelineService) UpdatePipeline(_ context.Context, id string, req *mode
 		pipeline.Status = req.Status
 	}
 	pipeline.UpdatedAt = time.Now()
-	if err := s.repo.Update(pipeline); err != nil {
+	if err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+		if e := lockPipelineBED(tx, pipeline); e != nil {
+			return e
+		}
+		return tx.Save(pipeline).Error
+	}); err != nil {
 		return nil, err
 	}
 	response := s.toResponse(pipeline, bed, baseline)
@@ -292,6 +304,7 @@ func (s *PipelineService) DeletePipeline(_ context.Context, id string, actor mod
 
 func (s *PipelineService) toResponse(pipeline *model.Pipeline, bed *model.DataAsset, baseline *model.CNVBaseline) model.PipelineResponse {
 	response := pipeline.ToResponse()
+	response.ResourceAvailable = true
 	if pipeline.BEDAssetID != nil {
 		if bed == nil {
 			bed, _ = s.assets.FindByID(*pipeline.BEDAssetID)
@@ -308,9 +321,25 @@ func (s *PipelineService) toResponse(pipeline *model.Pipeline, bed *model.DataAs
 			response.CNVBaselineID, response.CNVBaseline = baseline.UUID, baseline.Name
 		}
 	}
+	if pipeline.BEDAssetID != nil && (bed == nil || !bedUsable(bed)) {
+		response.ResourceAvailable = false
+		response.ResourceError = "自定义 BED 已失效或未通过内容校验"
+		response.BEDAssetID = "unavailable"
+		if response.BEDFile == "" {
+			response.BEDFile = "自定义 BED 不可用"
+		}
+	}
 	if response.BEDFile == "" {
 		response.BEDAssetID = model.BuiltinBEDResourceID(pipeline.ReferenceGenome)
 		response.BEDFile = fmt.Sprintf("内置 WES BED（%s）", pipeline.ReferenceGenome)
+	}
+	if pipeline.CNVBaselineID != nil && (baseline == nil || baseline.OutputPath == "") {
+		response.ResourceAvailable = false
+		response.ResourceError = "自定义 CNV 基线不可用"
+		response.CNVBaselineID = "unavailable"
+		if response.CNVBaseline == "" {
+			response.CNVBaseline = "自定义 CNV 基线不可用"
+		}
 	}
 	if response.CNVBaseline == "" {
 		response.CNVBaselineID = model.BuiltinCNVBaselineResourceID(pipeline.ReferenceGenome)

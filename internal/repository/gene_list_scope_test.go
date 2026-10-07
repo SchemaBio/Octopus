@@ -13,7 +13,7 @@ func TestGeneListRepositoryScopesLookupToOwner(t *testing.T) {
 	repo := NewGeneListRepository()
 	repo.Repository.db = db
 
-	query := `SELECT * FROM "gene_lists" WHERE id = $1 AND created_by = $2 ORDER BY "gene_lists"."id" LIMIT $3`
+	query := `SELECT * FROM "gene_lists" WHERE id = $1 AND (external_org_id = '' AND created_by = $2) ORDER BY "gene_lists"."id" LIMIT $3`
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs("list-1", uint(42), 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_by", "genes_json"}).

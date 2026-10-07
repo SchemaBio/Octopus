@@ -16,6 +16,7 @@ const (
 )
 
 type IdentityClaims struct {
+	OrgRole           string `json:"org_role,omitempty"`
 	ClientIP          string `json:"client_ip,omitempty"`
 	UserID            uint   `json:"user_id"`
 	Email             string `json:"email"`

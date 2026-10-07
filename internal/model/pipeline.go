@@ -50,22 +50,24 @@ type Pipeline struct {
 
 // PipelineResponse is the API response for a pipeline
 type PipelineResponse struct {
-	ID              string           `json:"id"`
-	Name            string           `json:"name"`
-	BasePipelineID  string           `json:"base_pipeline_id"`
-	BaseType        PipelineBaseType `json:"base_type"`
-	Version         string           `json:"version"`
-	Description     string           `json:"description,omitempty"`
-	BEDFile         string           `json:"bed_file,omitempty"`
-	ReferenceGenome string           `json:"reference_genome,omitempty"`
-	CNVBaseline     string           `json:"cnv_baseline,omitempty"`
-	BEDAssetID      string           `json:"bed_asset_id,omitempty"`
-	CNVBaselineID   string           `json:"cnv_baseline_id,omitempty"`
-	Template        string           `json:"template"`
-	IsBuiltin       bool             `json:"is_builtin"`
-	Status          PipelineStatus   `json:"status"`
-	CreatedAt       string           `json:"created_at"`
-	UpdatedAt       string           `json:"updated_at"`
+	ResourceAvailable bool             `json:"resource_available"`
+	ResourceError     string           `json:"resource_error,omitempty"`
+	ID                string           `json:"id"`
+	Name              string           `json:"name"`
+	BasePipelineID    string           `json:"base_pipeline_id"`
+	BaseType          PipelineBaseType `json:"base_type"`
+	Version           string           `json:"version"`
+	Description       string           `json:"description,omitempty"`
+	BEDFile           string           `json:"bed_file,omitempty"`
+	ReferenceGenome   string           `json:"reference_genome,omitempty"`
+	CNVBaseline       string           `json:"cnv_baseline,omitempty"`
+	BEDAssetID        string           `json:"bed_asset_id,omitempty"`
+	CNVBaselineID     string           `json:"cnv_baseline_id,omitempty"`
+	Template          string           `json:"template"`
+	IsBuiltin         bool             `json:"is_builtin"`
+	Status            PipelineStatus   `json:"status"`
+	CreatedAt         string           `json:"created_at"`
+	UpdatedAt         string           `json:"updated_at"`
 }
 
 // PipelineCreateRequest is the request body for creating a pipeline

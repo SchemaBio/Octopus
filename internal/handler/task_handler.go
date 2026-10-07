@@ -90,10 +90,11 @@ func taskActorFromContext(c *gin.Context) model.OverlayActor {
 	userID, email, role, _ := middleware.GetCurrentUser(c)
 	orgID, _ := middleware.GetCurrentOrg(c)
 	return model.OverlayActor{
-		UserID: userID,
-		Email:  email,
-		Role:   role,
-		OrgID:  orgID,
+		OrgRole: c.GetString("org_role"),
+		UserID:  userID,
+		Email:   email,
+		Role:    role,
+		OrgID:   orgID,
 	}
 }
 

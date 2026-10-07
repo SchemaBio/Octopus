@@ -27,10 +27,17 @@ const (
 // OverlayActor carries the authenticated principal forwarded by an overlay such
 // as Squid. Community deployments normally populate this from the local JWT.
 type OverlayActor struct {
-	UserID uint   `json:"user_id,omitempty"`
-	Email  string `json:"email,omitempty"`
-	Role   string `json:"role,omitempty"`
-	OrgID  string `json:"org_id,omitempty"`
+	OrgRole string `json:"org_role,omitempty"`
+	UserID  uint   `json:"user_id,omitempty"`
+	Email   string `json:"email,omitempty"`
+	Role    string `json:"role,omitempty"`
+	OrgID   string `json:"org_id,omitempty"`
+}
+
+// ResourceMaintenance is restricted to the creator or a verified administrator
+// in the selected organization. It never grants access to another scope.
+func (a OverlayActor) ResourceMaintenance(owner uint) bool {
+	return a.UserID != 0 && (a.UserID == owner || a.Role == string(SystemRoleSuperAdmin) || (a.OrgID != "" && (a.OrgRole == "ORG_ADMIN" || a.OrgRole == "PLATFORM_ADMIN")))
 }
 
 // OverlayTaskSnapshot is the stable task shape sent to external overlay policy

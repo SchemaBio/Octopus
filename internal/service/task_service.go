@@ -892,7 +892,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	if selectedPipeline != nil {
 		if selectedPipeline.BEDAssetID != nil {
 			bed, err := s.assetRepo.FindByID(*selectedPipeline.BEDAssetID)
-			if err != nil || bed.Status != model.FileStatusCompleted || bed.ReadType != model.ReadTypeBed || !taskDataAssetUseAllowed(bed, actor) {
+			if err != nil || !bedUsable(bed) || !taskDataAssetUseAllowed(bed, actor) {
 				return nil, fmt.Errorf("pipeline BED data asset is not available")
 			}
 			if _, exists := inputs["bed_file"]; !exists {
@@ -1035,17 +1035,26 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		return nil, err
 	}
 
-	if err := s.repo.Create(task); err != nil {
-		return nil, fmt.Errorf("failed to save task: %w", err)
-	}
+	task.PipelineSnapshotJSON = makePipelineSnapshot(selectedPipeline, req)
 	for i := range directAssets {
 		directAssets[i].TaskUUID = task.UUID
 	}
-	if len(directAssets) > 0 {
-		if err := database.GetDB().Create(&directAssets).Error; err != nil {
-			_ = s.repo.DeleteByID(task.ID)
-			return nil, fmt.Errorf("failed to link task data assets: %w", err)
+	if err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+		if e := lockTaskAssets(tx, directAssets); e != nil {
+			return e
 		}
+		if e := freezeTaskResourceIdentities(tx, task, directAssets); e != nil {
+			return e
+		}
+		if e := tx.Create(task).Error; e != nil {
+			return e
+		}
+		if len(directAssets) > 0 {
+			return tx.Create(&directAssets).Error
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("failed to save task resources: %w", err)
 	}
 
 	s.emitTaskEvent(model.OverlayTaskEventCreated, actor, task, "", "")
@@ -1098,6 +1107,10 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 		return nil, err
 	}
 
+	if err := database.GetDB().Transaction(func(tx *gorm.DB) error { return validateSavedTaskResources(tx, task) }); err != nil {
+		s.releaseLocalStart(task)
+		return nil, err
+	}
 	if err := s.stageDataFiles(task); err != nil {
 		s.releaseLocalStart(task)
 		return nil, fmt.Errorf("failed to stage data files: %w", err)
@@ -2433,8 +2446,8 @@ func (s *TaskService) collectTaskAssets(task *model.Task) (map[uint]*model.DataA
 		}
 	}
 	for _, asset := range assets {
-		if asset.Status != model.FileStatusCompleted {
-			return nil, nil, fmt.Errorf("data asset %s is not ready", asset.UUID)
+		if asset.Status != model.FileStatusCompleted || (asset.ReadType == model.ReadTypeBed && !bedUsable(asset)) {
+			return nil, nil, fmt.Errorf("data asset %s is not ready or BED validation has not passed", asset.UUID)
 		}
 	}
 	return assets, directLinks, nil

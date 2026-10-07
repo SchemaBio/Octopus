@@ -58,14 +58,18 @@ func (h *ReportHandler) CreateReport(c *gin.Context) {
 		return
 	}
 
-	userID, email, role, ok := middleware.GetCurrentUser(c)
+	_, _, _, ok = middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	download, err := h.svc.GenerateReportDownload(c.Request.Context(), userID, task, &req, email, role)
+	download, err := h.svc.GenerateScopedReportDownload(c.Request.Context(), taskActorFromContext(c), task, &req)
 	if err != nil {
+		if errors.Is(err, service.ErrResourceConflict) {
+			ErrorConflict(c, err.Error())
+			return
+		}
 		if errors.Is(err, service.ErrResultPackageNotReady) {
 			c.JSON(http.StatusConflict, gin.H{"error": service.ErrResultPackageNotReady.Error(), "detail": err.Error()})
 			return
@@ -139,7 +143,7 @@ func (h *ReportHandler) ListTemplates(c *gin.Context) {
 		return
 	}
 	if c.Query("include_inactive") == "true" {
-		templates, err := h.svc.ListTemplatesForOwner(userID)
+		templates, err := h.svc.ListTemplatesForOwner(userID, taskActorFromContext(c))
 		if err != nil {
 			ErrorInternal(c, err.Error())
 			return
@@ -148,7 +152,7 @@ func (h *ReportHandler) ListTemplates(c *gin.Context) {
 		return
 	}
 
-	templates, err := h.svc.ListActiveTemplates(userID)
+	templates, err := h.svc.ListActiveTemplates(userID, taskActorFromContext(c))
 	if err != nil {
 		ErrorInternal(c, err.Error())
 		return
@@ -170,7 +174,7 @@ func (h *ReportHandler) CreateTemplate(c *gin.Context) {
 		return
 	}
 
-	tmpl, err := h.svc.CreateTemplate(userID, &req)
+	tmpl, err := h.svc.CreateTemplate(userID, &req, taskActorFromContext(c))
 	if err != nil {
 		writeReportTemplateError(c, err)
 		return
@@ -190,12 +194,12 @@ func (h *ReportHandler) ValidateTemplateEndpoint(c *gin.Context) {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	status, err := h.svc.ValidateOwnedTemplateEndpoint(c.Request.Context(), userID, req.TemplateID, req.APIEndpoint, req.APIKey)
+	status, err := h.svc.ValidateOwnedTemplateEndpoint(c.Request.Context(), userID, req.TemplateID, req.APIEndpoint, req.APIKey, taskActorFromContext(c))
 	if err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-	Success(c, gin.H{"reachable": true, "status_code": status})
+	Success(c, gin.H{"reachable": true, "status_code": status, "authenticated": status >= 200 && status < 300, "protocol_verified": false, "head_supported": status != 405})
 }
 
 // UpdateTemplate updates a report template.
@@ -211,7 +215,7 @@ func (h *ReportHandler) UpdateTemplate(c *gin.Context) {
 		return
 	}
 
-	tmpl, err := h.svc.UpdateTemplate(userID, c.Param("id"), &req)
+	tmpl, err := h.svc.UpdateTemplate(userID, c.Param("id"), &req, taskActorFromContext(c))
 	if err != nil {
 		writeReportTemplateError(c, err)
 		return
@@ -233,7 +237,7 @@ func (h *ReportHandler) UpdateTemplateStatus(c *gin.Context) {
 		return
 	}
 
-	tmpl, err := h.svc.SetTemplateActive(userID, c.Param("id"), req.IsActive)
+	tmpl, err := h.svc.SetTemplateActive(userID, c.Param("id"), req.IsActive, taskActorFromContext(c))
 	if err != nil {
 		writeReportTemplateError(c, err)
 		return
@@ -249,7 +253,7 @@ func (h *ReportHandler) DeleteTemplate(c *gin.Context) {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
-	if err := h.svc.DeleteTemplate(userID, c.Param("id")); err != nil {
+	if err := h.svc.DeleteTemplate(userID, c.Param("id"), taskActorFromContext(c)); err != nil {
 		writeReportTemplateError(c, err)
 		return
 	}
@@ -260,7 +264,7 @@ func writeReportTemplateError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrReportTemplateNotFound):
 		ErrorNotFound(c, err.Error())
-	case errors.Is(err, service.ErrReportTemplateNameExists):
+	case errors.Is(err, service.ErrResourceConflict), errors.Is(err, service.ErrReportTemplateNameExists):
 		ErrorConflict(c, err.Error())
 	case errors.Is(err, service.ErrReportTemplateActive):
 		ErrorBadRequest(c, err.Error())
@@ -269,4 +273,45 @@ func writeReportTemplateError(c *gin.Context, err error) {
 	default:
 		ErrorInternal(c, err.Error())
 	}
+}
+
+func (h *ReportHandler) PublishTemplate(c *gin.Context) {
+	var req struct {
+		ExpectedRevision uint64 `json:"expectedRevision"`
+	}
+	if c.ShouldBindJSON(&req) != nil {
+		ErrorBadRequest(c, "expectedRevision required")
+		return
+	}
+	r, e := h.svc.PublishTemplate(c.Param("id"), taskActorFromContext(c), req.ExpectedRevision)
+	if e != nil {
+		writeReportTemplateError(c, e)
+		return
+	}
+	Success(c, r)
+}
+func (h *ReportHandler) Generations(c *gin.Context) {
+	t, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	rows, e := h.svc.ListGenerations(c.Request.Context(), t)
+	if e != nil {
+		ErrorInternal(c, "report records unavailable")
+		return
+	}
+	Success(c, rows)
+}
+
+func (h *ReportHandler) Preview(c *gin.Context) {
+	t, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	r, e := h.svc.PreviewReport(c.Request.Context(), t)
+	if e != nil {
+		ErrorConflict(c, e.Error())
+		return
+	}
+	Success(c, r)
 }

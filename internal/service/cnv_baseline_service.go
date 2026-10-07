@@ -3,8 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/SchemaBio/Octopus/internal/database"
+	"log"
+	"math"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/model"
@@ -32,7 +36,7 @@ func baselineBillingQuantity(inputBytes int64) int {
 	if inputBytes <= 0 {
 		return 0
 	}
-	return int((inputBytes + gib - 1) / gib)
+	return int(1 + (inputBytes-1)/gib)
 }
 
 func validateBaselineGenome(value string) (string, error) {
@@ -48,7 +52,7 @@ func validateBaselineGenome(value string) (string, error) {
 
 func (s *CNVBaselineService) scopedCompletedAsset(uuid string, actor model.OverlayActor, readType model.ReadType) (*model.DataAsset, error) {
 	asset, err := s.assets.FindScopedByUUID(strings.TrimSpace(uuid), actor)
-	if err != nil || asset.Status != model.FileStatusCompleted || asset.ReadType != readType {
+	if err != nil || asset.Status != model.FileStatusCompleted || asset.ReadType != readType || (readType == model.ReadTypeBed && !bedUsable(asset)) {
 		return nil, fmt.Errorf("completed %s data asset not found: %s", readType, uuid)
 	}
 	return asset, nil
@@ -71,6 +75,9 @@ func (s *CNVBaselineService) Create(ctx context.Context, req *model.CNVBaselineC
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+	if utf8.RuneCountInString(name) > 200 {
+		return nil, fmt.Errorf("baseline name must not exceed 200 characters")
+	}
 	genome, err := validateBaselineGenome(req.ReferenceGenome)
 	if err != nil {
 		return nil, err
@@ -84,6 +91,9 @@ func (s *CNVBaselineService) Create(ctx context.Context, req *model.CNVBaselineC
 	}
 	if bed.ReferenceGenome != genome {
 		return nil, fmt.Errorf("BED reference genome does not match %s", genome)
+	}
+	if bed.FileSize <= 0 {
+		return nil, fmt.Errorf("selected BED must have a known positive file size")
 	}
 
 	inputAssets := []model.TaskInputAssetRequest{{AssetID: bed.ID, InputRole: model.TaskAssetRoleCNVBED, Index: 0}}
@@ -106,6 +116,9 @@ func (s *CNVBaselineService) Create(ctx context.Context, req *model.CNVBaselineC
 		}
 		if r1.FileSize <= 0 || r2.FileSize <= 0 {
 			return nil, fmt.Errorf("selected R1/R2 data assets must have a known positive file size")
+		}
+		if r1.FileSize > math.MaxInt64-r2.FileSize || inputBytes > math.MaxInt64-r1.FileSize-r2.FileSize {
+			return nil, fmt.Errorf("input data size exceeds supported range")
 		}
 		inputBytes += r1.FileSize + r2.FileSize
 		pairs[i] = model.CNVBaselineReadPair{PairIndex: i, Read1AssetID: r1.ID, Read2AssetID: r2.ID}
@@ -155,6 +168,16 @@ func (s *CNVBaselineService) Create(ctx context.Context, req *model.CNVBaselineC
 	}
 	if started, startErr := s.taskSvc.StartTask(ctx, task.UUID, actor); startErr == nil {
 		task = started
+	} else {
+		// Preserve the established baseline and task identity. Returning a creation
+		// error would invite a second paid baseline; the original task is recoverable.
+		baseline.StartError = "任务已建立，但投递未确认。请从关联任务查看原因或继续处理，不要重复建立基线。"
+		if err := database.GetDB().Model(baseline).Update("start_error", baseline.StartError).Error; err != nil {
+			log.Printf("CNV baseline start diagnostic persistence failed: task=%s", task.UUID)
+		}
+		if current, err := s.tasks.FindByUUID(task.UUID); err == nil {
+			task = current
+		}
 	}
 	return s.toResponse(baseline, task)
 }
@@ -208,12 +231,16 @@ func (s *CNVBaselineService) toResponse(baseline *model.CNVBaseline, task *model
 		}
 		readPairs = append(readPairs, [2]model.CNVBaselineAssetResponse{{ID: r1.UUID, FileName: r1.FileName}, {ID: r2.UUID, FileName: r2.FileName}})
 	}
+	startError := baseline.StartError
+	if task.Status == model.TaskStatusRunning || task.Status == model.TaskStatusCompleted {
+		startError = ""
+	}
 	return &model.CNVBaselineResponse{
 		ID: baseline.UUID, Name: baseline.Name, ReferenceGenome: baseline.ReferenceGenome,
 		BED: model.CNVBaselineAssetResponse{ID: bed.UUID, FileName: bed.FileName}, ReadPairs: readPairs,
 		TaskID: task.UUID, Status: task.Status, Progress: task.Progress, OutputPath: baseline.OutputPath,
 		InputBytes: baseline.InputBytes, CreditCost: baseline.CreditsCharged, CreditsCharged: baseline.CreditsCharged,
-		Error: task.Error, CreatedAt: baseline.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Error: task.Error, StartError: startError, CreatedAt: baseline.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt: baseline.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}, nil
 }

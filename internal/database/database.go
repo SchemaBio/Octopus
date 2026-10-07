@@ -72,6 +72,7 @@ func AutoMigrate() error {
 		// Report models
 		&model.Report{},
 		&model.ReportTemplate{},
+		&model.ReportGeneration{},
 		&model.ResultPackage{},
 		&model.ResultDownload{},
 		&model.BAMRetentionJob{},
@@ -102,6 +103,17 @@ func AutoMigrate() error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)
+	}
+	for _, sql := range []string{
+		"CREATE UNIQUE INDEX IF NOT EXISTS gene_lists_org_name ON gene_lists(external_org_id,lower(name)) WHERE external_org_id<>''",
+		"CREATE UNIQUE INDEX IF NOT EXISTS gene_lists_user_name ON gene_lists(created_by,lower(name)) WHERE external_org_id=''",
+		"CREATE UNIQUE INDEX IF NOT EXISTS report_templates_user_name ON report_templates(owner_user_id,lower(name)) WHERE external_org_id=''",
+		"DROP INDEX IF EXISTS idx_report_templates_owner_name",
+		"CREATE UNIQUE INDEX IF NOT EXISTS report_templates_org_name ON report_templates(external_org_id,lower(name)) WHERE external_org_id<>''",
+	} {
+		if err := DB.Exec(sql).Error; err != nil {
+			return fmt.Errorf("resource scope index: %w", err)
+		}
 	}
 	if err := migrateResultImportStorage(); err != nil {
 		return err

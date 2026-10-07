@@ -1,9 +1,11 @@
 package repository
 
 import (
+	"errors"
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type CNVBaselineRepository struct{}
@@ -12,6 +14,13 @@ func NewCNVBaselineRepository() *CNVBaselineRepository { return &CNVBaselineRepo
 
 func (r *CNVBaselineRepository) Create(baseline *model.CNVBaseline, pairs []model.CNVBaselineReadPair) error {
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		var bed model.DataAsset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&bed, baseline.BEDAssetID).Error; err != nil {
+			return err
+		}
+		if bed.ReadType != model.ReadTypeBed || bed.Status != model.FileStatusCompleted || bed.ValidationStatus != "valid" || bed.ValidationSHA256 == "" {
+			return errors.New("BED is unavailable or content validation has not passed")
+		}
 		if err := tx.Create(baseline).Error; err != nil {
 			return err
 		}

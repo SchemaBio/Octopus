@@ -12,38 +12,46 @@ const (
 // DataAsset is the organization-scoped identity for one stored data file.
 // StorageKey is deliberately omitted from all browser response models.
 type DataAsset struct {
-	ID              uint            `json:"-" gorm:"primaryKey"`
-	UUID            string          `json:"id" gorm:"uniqueIndex;size:36;not null"`
-	ExternalOrgID   string          `json:"-" gorm:"size:100;index"`
-	CreatedBy       uint            `json:"-" gorm:"index;not null"`
-	UploadFileID    *uint           `json:"-" gorm:"uniqueIndex"`
-	Provider        UploadProvider  `json:"provider" gorm:"size:20;index;uniqueIndex:idx_data_assets_provider_key;not null"`
-	StorageKey      string          `json:"-" gorm:"size:1000;uniqueIndex:idx_data_assets_provider_key;not null"`
-	FileName        string          `json:"file_name" gorm:"size:500;not null"`
-	InternalID      string          `json:"internal_id,omitempty" gorm:"size:100;index"`
-	FileSize        int64           `json:"file_size" gorm:"default:0"`
-	ReadType        ReadType        `json:"read_type" gorm:"size:20;index;not null"`
-	ReferenceGenome string          `json:"reference_genome,omitempty" gorm:"size:20;index"`
-	Status          FileStatus      `json:"status" gorm:"size:20;index;not null;default:pending"`
-	Source          DataAssetSource `json:"source" gorm:"size:20;index;not null;default:upload"`
-	ExpiresAt       *time.Time      `json:"expires_at,omitempty" gorm:"index;type:timestamptz"`
-	CreatedAt       time.Time       `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt       time.Time       `json:"updated_at" gorm:"type:timestamptz"`
+	ValidationStatus          string          `json:"validation_status" gorm:"size:32;not null;default:'pending'"`
+	ValidationCode            string          `json:"validation_code" gorm:"size:80;not null;default:''"`
+	ValidationSHA256          string          `json:"-" gorm:"size:64;not null;default:''"`
+	ValidationReferenceSHA256 string          `json:"-" gorm:"size:64;not null;default:''"`
+	ValidatedAt               *time.Time      `json:"validated_at,omitempty"`
+	ID                        uint            `json:"-" gorm:"primaryKey"`
+	UUID                      string          `json:"id" gorm:"uniqueIndex;size:36;not null"`
+	ExternalOrgID             string          `json:"-" gorm:"size:100;index"`
+	CreatedBy                 uint            `json:"-" gorm:"index;not null"`
+	UploadFileID              *uint           `json:"-" gorm:"uniqueIndex"`
+	Provider                  UploadProvider  `json:"provider" gorm:"size:20;index;uniqueIndex:idx_data_assets_provider_key;not null"`
+	StorageKey                string          `json:"-" gorm:"size:1000;uniqueIndex:idx_data_assets_provider_key;not null"`
+	FileName                  string          `json:"file_name" gorm:"size:500;not null"`
+	InternalID                string          `json:"internal_id,omitempty" gorm:"size:100;index"`
+	FileSize                  int64           `json:"file_size" gorm:"default:0"`
+	ReadType                  ReadType        `json:"read_type" gorm:"size:20;index;not null"`
+	ReferenceGenome           string          `json:"reference_genome,omitempty" gorm:"size:20;index"`
+	Status                    FileStatus      `json:"status" gorm:"size:20;index;not null;default:pending"`
+	Source                    DataAssetSource `json:"source" gorm:"size:20;index;not null;default:upload"`
+	ExpiresAt                 *time.Time      `json:"expires_at,omitempty" gorm:"index;type:timestamptz"`
+	CreatedAt                 time.Time       `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt                 time.Time       `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 type DataAssetResponse struct {
-	ID              string          `json:"id"`
-	FileName        string          `json:"file_name"`
-	InternalID      string          `json:"internal_id,omitempty"`
-	FileSize        int64           `json:"file_size"`
-	ReadType        ReadType        `json:"read_type"`
-	ReferenceGenome string          `json:"reference_genome,omitempty"`
-	Provider        UploadProvider  `json:"provider"`
-	Status          FileStatus      `json:"status"`
-	Source          DataAssetSource `json:"source"`
-	ExpiresAt       *string         `json:"expires_at,omitempty"`
-	CreatedAt       string          `json:"created_at"`
-	UpdatedAt       string          `json:"updated_at"`
+	ValidationStatus string          `json:"validation_status,omitempty"`
+	ValidationCode   string          `json:"validation_code,omitempty"`
+	ValidatedAt      *time.Time      `json:"validated_at,omitempty"`
+	ID               string          `json:"id"`
+	FileName         string          `json:"file_name"`
+	InternalID       string          `json:"internal_id,omitempty"`
+	FileSize         int64           `json:"file_size"`
+	ReadType         ReadType        `json:"read_type"`
+	ReferenceGenome  string          `json:"reference_genome,omitempty"`
+	Provider         UploadProvider  `json:"provider"`
+	Status           FileStatus      `json:"status"`
+	Source           DataAssetSource `json:"source"`
+	ExpiresAt        *string         `json:"expires_at,omitempty"`
+	CreatedAt        string          `json:"created_at"`
+	UpdatedAt        string          `json:"updated_at"`
 }
 
 type DataAssetUpdateRequest struct {
@@ -72,6 +80,7 @@ type DataCenterConfigResponse struct {
 
 func DataAssetToResponse(asset *DataAsset) DataAssetResponse {
 	response := DataAssetResponse{
+		ValidationStatus: asset.ValidationStatus, ValidationCode: asset.ValidationCode, ValidatedAt: asset.ValidatedAt,
 		ID: asset.UUID, FileName: asset.FileName, InternalID: asset.InternalID, FileSize: asset.FileSize,
 		ReadType: asset.ReadType, Provider: asset.Provider, Status: asset.Status,
 		ReferenceGenome: asset.ReferenceGenome,

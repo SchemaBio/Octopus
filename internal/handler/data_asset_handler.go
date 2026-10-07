@@ -94,8 +94,22 @@ func (h *DataAssetHandler) Download(c *gin.Context) {
 
 func (h *DataAssetHandler) Delete(c *gin.Context) {
 	if err := h.svc.Delete(c.Request.Context(), c.Param("uuid"), taskActorFromContext(c)); err != nil {
+		var inUse *service.ResourceInUseError
+		if errors.As(err, &inUse) {
+			c.JSON(http.StatusConflict, gin.H{"error": inUse.Error(), "references": inUse.References})
+			return
+		}
 		ErrorNotFound(c, "Data asset not found")
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *DataAssetHandler) ValidateBED(c *gin.Context) {
+	a, e := h.svc.ValidateBED(c.Request.Context(), c.Param("uuid"), taskActorFromContext(c))
+	if e != nil {
+		ErrorBadRequest(c, e.Error())
+		return
+	}
+	Success(c, model.DataAssetToResponse(a))
 }

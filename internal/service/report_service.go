@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const (
@@ -118,7 +120,7 @@ func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.
 	}
 
 	var packageStatus *model.ResultPackageResponse
-	if s.packageSvc != nil {
+	if s.packageSvc != nil && tmpl.ContractVersion != "report-snapshot-v2" {
 		var packageErr error
 		packageStatus, packageErr = s.packageSvc.Status(ctx, task)
 		if packageErr != nil {
@@ -132,7 +134,10 @@ func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.
 		}
 	}
 
-	requestID := uuid.New().String()
+	requestID := req.GenerationID
+	if requestID == "" {
+		requestID = uuid.NewString()
+	}
 	reportName := strings.TrimSpace(req.Name)
 	if reportName == "" {
 		reportName = tmpl.Name
@@ -155,12 +160,21 @@ func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.
 		payload["result_package_expires_at"] = packageStatus.ExpiresAt
 	}
 
+	if tmpl.ContractVersion == "report-snapshot-v2" {
+		if req.SnapshotJSON == "" {
+			return nil, errors.New("report snapshot is required")
+		}
+		payload["contract_version"] = "report-snapshot-v2"
+		payload["report_snapshot"] = json.RawMessage(req.SnapshotJSON)
+		payload["report_snapshot_sha256"] = req.SnapshotSHA256
+	}
 	body, _ := json.Marshal(payload)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, tmpl.APIEndpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 
+	httpReq.Header.Set("Idempotency-Key", requestID)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/octet-stream,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*")
 	httpReq.Header.Set("Authorization", "Bearer "+tmpl.APIKey)
@@ -262,7 +276,7 @@ func (s *ReportService) ValidateTemplateEndpoint(ctx context.Context, endpoint, 
 		return 0, fmt.Errorf("report API endpoint is unreachable: %w", err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+	if resp.StatusCode != http.StatusMethodNotAllowed && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
 		return resp.StatusCode, fmt.Errorf("report API rejected the authentication key with status %d", resp.StatusCode)
 	}
 	return resp.StatusCode, nil
@@ -270,15 +284,18 @@ func (s *ReportService) ValidateTemplateEndpoint(ctx context.Context, endpoint, 
 
 // ValidateOwnedTemplateEndpoint reuses a saved key when an owner validates an
 // existing template. The key never needs to be returned to the browser.
-func (s *ReportService) ValidateOwnedTemplateEndpoint(ctx context.Context, ownerUserID uint, templateID, endpoint, apiKey string) (int, error) {
+func (s *ReportService) ValidateOwnedTemplateEndpoint(ctx context.Context, ownerUserID uint, templateID, endpoint, apiKey string, actors ...model.OverlayActor) (int, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" && strings.TrimSpace(templateID) != "" {
-		tmpl, err := s.templateRepo.FindAnyByIDAndOwner(strings.TrimSpace(templateID), ownerUserID)
+		tmpl, err := s.templateRepo.FindScoped(strings.TrimSpace(templateID), reportActor(ownerUserID, actors))
 		if err != nil {
 			return 0, err
 		}
-		if tmpl == nil {
+		if tmpl == nil || !reportActor(ownerUserID, actors).ResourceMaintenance(tmpl.OwnerUserID) {
 			return 0, ErrReportTemplateNotFound
+		}
+		if endpoint != tmpl.APIEndpoint {
+			return 0, errors.New("save an endpoint change with a new key before testing")
 		}
 		apiKey = tmpl.APIKey
 	}
@@ -343,8 +360,10 @@ func reportFileExtension(contentType string) string {
 }
 
 // ListActiveTemplates returns the current user's active report templates.
-func (s *ReportService) ListActiveTemplates(ownerUserID uint) ([]model.ReportTemplateResponse, error) {
-	templates, err := s.templateRepo.FindActiveByOwner(ownerUserID)
+func (s *ReportService) ListActiveTemplates(ownerUserID uint, actors ...model.OverlayActor) ([]model.ReportTemplateResponse, error) {
+	a := reportActor(ownerUserID, actors)
+	var templates []model.ReportTemplate
+	err := s.templateRepo.Scoped(a).Where("is_active=?", true).Order("name,id").Find(&templates).Error
 	if err != nil {
 		return nil, err
 	}
@@ -356,20 +375,23 @@ func (s *ReportService) ListActiveTemplates(ownerUserID uint) ([]model.ReportTem
 }
 
 // ListTemplatesForOwner returns a user's templates with endpoint metadata but never the API key.
-func (s *ReportService) ListTemplatesForOwner(ownerUserID uint) ([]model.ReportTemplateAdminResponse, error) {
-	templates, err := s.templateRepo.FindAllByOwner(ownerUserID)
+func (s *ReportService) ListTemplatesForOwner(ownerUserID uint, actors ...model.OverlayActor) ([]model.ReportTemplateAdminResponse, error) {
+	a := reportActor(ownerUserID, actors)
+	var templates []model.ReportTemplate
+	err := s.templateRepo.Scoped(a).Order("name,id").Find(&templates).Error
 	if err != nil {
 		return nil, err
 	}
 	results := make([]model.ReportTemplateAdminResponse, len(templates))
 	for i, t := range templates {
 		results[i] = t.ToAdminResponse()
+		results[i].CanMaintain = a.ResourceMaintenance(t.OwnerUserID)
 	}
 	return results, nil
 }
 
 // CreateTemplate creates a new report template.
-func (s *ReportService) CreateTemplate(ownerUserID uint, req *model.ReportTemplateCreateRequest) (*model.ReportTemplateAdminResponse, error) {
+func (s *ReportService) CreateTemplate(ownerUserID uint, req *model.ReportTemplateCreateRequest, actors ...model.OverlayActor) (*model.ReportTemplateAdminResponse, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
 	req.APIEndpoint = strings.TrimSpace(req.APIEndpoint)
@@ -383,7 +405,7 @@ func (s *ReportService) CreateTemplate(ownerUserID uint, req *model.ReportTempla
 	if err := validateReportAPIEndpoint(req.APIEndpoint); err != nil {
 		return nil, err
 	}
-	if existing, err := s.templateRepo.FindAnyByNameAndOwner(req.Name, ownerUserID); err != nil {
+	if existing, err := s.findTemplateName(req.Name, reportActor(ownerUserID, actors)); err != nil {
 		return nil, err
 	} else if existing != nil {
 		return nil, ErrReportTemplateNameExists
@@ -391,7 +413,7 @@ func (s *ReportService) CreateTemplate(ownerUserID uint, req *model.ReportTempla
 
 	tmpl := &model.ReportTemplate{
 		ID:          uuid.New().String(),
-		OwnerUserID: ownerUserID,
+		OwnerUserID: ownerUserID, ExternalOrgID: reportActor(ownerUserID, actors).OrgID, ContractVersion: reportContract(req.ContractVersion), Revision: 1,
 		Name:        req.Name,
 		Description: req.Description,
 		APIEndpoint: req.APIEndpoint,
@@ -407,18 +429,22 @@ func (s *ReportService) CreateTemplate(ownerUserID uint, req *model.ReportTempla
 }
 
 // UpdateTemplate updates mutable report template metadata and optionally rotates the API key.
-func (s *ReportService) UpdateTemplate(ownerUserID uint, id string, req *model.ReportTemplateUpdateRequest) (*model.ReportTemplateAdminResponse, error) {
-	tmpl, err := s.templateRepo.FindAnyByIDAndOwner(strings.TrimSpace(id), ownerUserID)
+func (s *ReportService) UpdateTemplate(ownerUserID uint, id string, req *model.ReportTemplateUpdateRequest, actors ...model.OverlayActor) (*model.ReportTemplateAdminResponse, error) {
+	a := reportActor(ownerUserID, actors)
+	tmpl, err := s.templateRepo.FindScoped(strings.TrimSpace(id), a)
 	if err != nil {
 		return nil, err
 	}
-	if tmpl == nil {
+	if tmpl == nil || !a.ResourceMaintenance(tmpl.OwnerUserID) {
 		return nil, ErrReportTemplateNotFound
 	}
 
+	if len(actors) > 0 && req.ExpectedRevision != tmpl.Revision {
+		return nil, ErrResourceConflict
+	}
 	name := strings.TrimSpace(req.Name)
 	if name != "" && name != tmpl.Name {
-		if existing, err := s.templateRepo.FindAnyByNameAndOwner(name, ownerUserID); err != nil {
+		if existing, err := s.findTemplateName(name, model.OverlayActor{UserID: tmpl.OwnerUserID, OrgID: tmpl.ExternalOrgID}); err != nil {
 			return nil, err
 		} else if existing != nil && existing.ID != tmpl.ID {
 			return nil, ErrReportTemplateNameExists
@@ -441,7 +467,12 @@ func (s *ReportService) UpdateTemplate(ownerUserID uint, id string, req *model.R
 		tmpl.IsActive = *req.IsActive
 	}
 
-	if err := s.templateRepo.Update(tmpl); err != nil {
+	if req.ContractVersion != "" {
+		tmpl.ContractVersion = reportContract(req.ContractVersion)
+	}
+	old := tmpl.Revision
+	tmpl.Revision++
+	if err := s.saveTemplateRevision(tmpl, old); err != nil {
 		return nil, err
 	}
 	resp := tmpl.ToAdminResponse()
@@ -449,16 +480,19 @@ func (s *ReportService) UpdateTemplate(ownerUserID uint, id string, req *model.R
 }
 
 // SetTemplateActive toggles report template availability.
-func (s *ReportService) SetTemplateActive(ownerUserID uint, id string, active bool) (*model.ReportTemplateAdminResponse, error) {
-	tmpl, err := s.templateRepo.FindAnyByIDAndOwner(strings.TrimSpace(id), ownerUserID)
+func (s *ReportService) SetTemplateActive(ownerUserID uint, id string, active bool, actors ...model.OverlayActor) (*model.ReportTemplateAdminResponse, error) {
+	a := reportActor(ownerUserID, actors)
+	tmpl, err := s.templateRepo.FindScoped(strings.TrimSpace(id), a)
 	if err != nil {
 		return nil, err
 	}
-	if tmpl == nil {
+	if tmpl == nil || !a.ResourceMaintenance(tmpl.OwnerUserID) {
 		return nil, ErrReportTemplateNotFound
 	}
 	tmpl.IsActive = active
-	if err := s.templateRepo.Update(tmpl); err != nil {
+	old := tmpl.Revision
+	tmpl.Revision++
+	if err := s.saveTemplateRevision(tmpl, old); err != nil {
 		return nil, err
 	}
 	resp := tmpl.ToAdminResponse()
@@ -466,12 +500,13 @@ func (s *ReportService) SetTemplateActive(ownerUserID uint, id string, active bo
 }
 
 // DeleteTemplate deletes an inactive report template.
-func (s *ReportService) DeleteTemplate(ownerUserID uint, id string) error {
-	tmpl, err := s.templateRepo.FindAnyByIDAndOwner(strings.TrimSpace(id), ownerUserID)
+func (s *ReportService) DeleteTemplate(ownerUserID uint, id string, actors ...model.OverlayActor) error {
+	a := reportActor(ownerUserID, actors)
+	tmpl, err := s.templateRepo.FindScoped(strings.TrimSpace(id), a)
 	if err != nil {
 		return err
 	}
-	if tmpl == nil {
+	if tmpl == nil || !a.ResourceMaintenance(tmpl.OwnerUserID) {
 		return ErrReportTemplateNotFound
 	}
 	if tmpl.IsActive {
@@ -573,4 +608,41 @@ func reportDialContext(ctx context.Context, network, address string) (net.Conn, 
 		return dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
 	}
 	return nil, fmt.Errorf("report API endpoint must resolve to public IP addresses")
+}
+
+func reportActor(id uint, actors []model.OverlayActor) model.OverlayActor {
+	if len(actors) > 0 {
+		return actors[0]
+	}
+	return model.OverlayActor{UserID: id}
+}
+func reportContract(value string) string {
+	if value == "report-snapshot-v2" {
+		return value
+	}
+	return "legacy-v1"
+}
+func (s *ReportService) findTemplateName(name string, a model.OverlayActor) (*model.ReportTemplate, error) {
+	var t model.ReportTemplate
+	q := database.GetDB().Model(&model.ReportTemplate{})
+	if a.OrgID != "" {
+		q = q.Where("external_org_id=?", a.OrgID)
+	} else {
+		q = q.Where("external_org_id='' AND owner_user_id=?", a.UserID)
+	}
+	e := q.Where("lower(name)=lower(?)", name).First(&t).Error
+	if e == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	return &t, e
+}
+func (s *ReportService) saveTemplateRevision(t *model.ReportTemplate, old uint64) error {
+	res := database.GetDB().Model(&model.ReportTemplate{}).Where("id=? AND revision=?", t.ID, old).Select("name", "description", "api_endpoint", "api_key", "is_active", "contract_version", "revision").Updates(t)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return ErrResourceConflict
+	}
+	return nil
 }
