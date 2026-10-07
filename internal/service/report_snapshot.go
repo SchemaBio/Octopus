@@ -56,6 +56,8 @@ type reportSnapshotRow struct {
 	Original          map[string]interface{} `json:"original"`
 	Interpretation    map[string]interface{} `json:"interpretation"`
 	Automatic         json.RawMessage        `json:"automatic_assessment,omitempty"`
+	AssessmentVersion string                 `json:"assessment_version,omitempty"`
+	AssessmentProfile string                 `json:"assessment_profile,omitempty"`
 }
 
 // Preview verifies the same source proof used by generation without invoking a
@@ -152,6 +154,18 @@ func (s *ReportService) prepareReportSnapshot(ctx context.Context, task *model.T
 					return e
 				}
 				row := reportSnapshotRow{Table: d.Table, RowID: a.RowID, DatasetVersion: d.DataVersion, AdjustmentVersion: a.Version, Original: page.Rows[0], Interpretation: interpretation}
+				if version, ok := interpretation["assessmentVersion"].(string); ok && version != "" {
+					var fixed model.ResultAssessmentContext
+					if e := tx.Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND version=?", d.TenantID, task.UUID, task.ExecutionAttemptID, version).First(&fixed).Error; e != nil {
+						return ErrAdjustmentConflict
+					}
+					row.AssessmentVersion = version
+					row.AssessmentProfile = browserAssessmentProfile
+					// A legacy server baseline belongs to a different assessment
+					// contract. Never attach it to the browser's fixed context.
+					snapshot.Reported = append(snapshot.Reported, row)
+					continue
+				}
 				var auto model.ResultRowAutomaticAssessment
 				e = tx.Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND row_id=? AND profile_version=?", d.TenantID, task.UUID, task.ExecutionAttemptID, d.Table, a.RowID, d.AutomaticAssessmentProfile).First(&auto).Error
 				if e == nil {

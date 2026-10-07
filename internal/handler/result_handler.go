@@ -24,6 +24,48 @@ type ResultHandler struct {
 	eventRepo *repository.VariantReviewEventRepository
 }
 
+func (h *ResultHandler) GetAssessmentContext(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	value, err := h.svc.AssessmentContext(c.Request.Context(), task)
+	if err != nil {
+		ErrorInternal(c, "assessment context unavailable")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	if c.Query("check") == "1" {
+		Success(c, map[string]interface{}{"latestVersion": value.LatestVersion, "reassessmentAvailable": value.ReassessmentAvailable})
+		return
+	}
+	Success(c, value)
+}
+func (h *ResultHandler) ActivateAssessmentContext(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	var request struct {
+		ExpectedVersion string `json:"expectedVersion"`
+	}
+	if c.ShouldBindJSON(&request) != nil {
+		ErrorBadRequest(c, "invalid assessment context request")
+		return
+	}
+	value, err := h.svc.ActivateAssessmentContext(c.Request.Context(), task, request.ExpectedVersion)
+	if errors.Is(err, service.ErrAdjustmentConflict) {
+		ErrorConflict(c, "assessment context changed; reload")
+		return
+	}
+	if err != nil {
+		ErrorInternal(c, "assessment context activation failed")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	Success(c, value)
+}
+
 func (h *ResultHandler) GetBrowserDataset(c *gin.Context) {
 	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
 	if !ok {

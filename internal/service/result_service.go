@@ -206,6 +206,10 @@ func validateCNVAssessmentPayload(payload json.RawMessage, variantID string) err
 	}
 	switch classification {
 	case "Pathogenic", "Likely_Pathogenic", "VUS", "Likely_Benign", "Benign":
+	case "":
+		if parsed["assessmentState"] != "insufficient_evidence" {
+			return errors.New("empty classification requires insufficient evidence state")
+		}
 	default:
 		return errors.New("assessment classification is invalid")
 	}

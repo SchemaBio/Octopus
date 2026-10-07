@@ -231,6 +231,8 @@ func New(cfg *config.Config) *gin.Engine {
 			results.GET("/snv-indel", resultHandler.ListSNVIndels)
 			results.POST("/tables/:table/query", resultHandler.QueryParquetTable)
 			results.GET("/tables/:table/browser", resultHandler.GetBrowserDataset)
+			results.GET("/assessment/context", resultHandler.GetAssessmentContext)
+			results.POST("/assessment/context", resultHandler.ActivateAssessmentContext)
 			results.GET("/tables/:table/adjustments", resultHandler.GetBrowserAdjustments)
 			results.GET("/tables/:table/views", resultHandler.ListPersonalViews)
 			results.PUT("/tables/:table/views", resultHandler.SavePersonalView)

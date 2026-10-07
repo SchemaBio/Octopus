@@ -1,15 +1,11 @@
 package service
 
 import (
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/database"
@@ -57,7 +53,10 @@ type BrowserResultDataset struct {
 	Aliases           map[string][]string `json:"aliases"`
 }
 
+type browserLocalAssessmentKey struct{}
+
 func (s *ResultService) BrowserDataset(ctx context.Context, task *model.Task, table string) (*BrowserResultDataset, error) {
+	ctx = context.WithValue(ctx, browserLocalAssessmentKey{}, true)
 	if task == nil || !validParquetTable(table) {
 		return nil, fmt.Errorf("invalid result table")
 	}
@@ -100,49 +99,7 @@ func (s *ResultService) BrowserDataset(ctx context.Context, task *model.Task, ta
 			}
 		}
 	}
-	if table == "snv-indel" {
-		// Publish the versioned persisted baseline once, not once per page/filter.
-		key := resultPackagePrefix(task) + "/browser-baselines/" + d.ID + "-" + d.DataVersion + "-" + automaticACMGProfile + ".jsonl.gz"
-		if _, err := storage.stat(ctx, key); err != nil {
-			filename := filepath.Join(s.cfg.ResultQuery.AssessmentDir, d.ID+"-"+d.DataVersion+"-"+automaticACMGProfile+".jsonl")
-			f, err := os.Open(filename)
-			if err != nil {
-				return nil, fmt.Errorf("automatic baseline unavailable")
-			}
-			defer f.Close()
-			// Repeated per-row assessment metadata compresses well. Publish a
-			// versioned gzip object while keeping the canonical JSONL unchanged.
-			compressed, err := os.CreateTemp(s.cfg.ResultQuery.CacheDir, "browser-baseline-*.gz")
-			if err != nil {
-				return nil, fmt.Errorf("automatic baseline compression failed")
-			}
-			defer os.Remove(compressed.Name())
-			defer compressed.Close()
-			zw := gzip.NewWriter(compressed)
-			if _, err = io.Copy(zw, f); err != nil {
-				_ = zw.Close()
-				return nil, fmt.Errorf("automatic baseline compression failed")
-			}
-			if err = zw.Close(); err != nil {
-				return nil, fmt.Errorf("automatic baseline compression failed")
-			}
-			info, err := compressed.Stat()
-			if err != nil {
-				return nil, err
-			}
-			if _, err = compressed.Seek(0, io.SeekStart); err != nil {
-				return nil, err
-			}
-			if err = storage.putReader(ctx, key, "application/gzip", compressed, info.Size()); err != nil {
-				return nil, fmt.Errorf("automatic baseline publication failed")
-			}
-		}
-		result.AutomaticEncoding = "gzip"
-		result.AutomaticURL, err = storage.presignRead(ctx, key, 10*time.Minute)
-		if err != nil {
-			return nil, fmt.Errorf("automatic baseline authorization failed")
-		}
-	}
+
 	return result, nil
 }
 

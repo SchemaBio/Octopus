@@ -175,7 +175,10 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if _, hasOverride := request.Adjustments["acmgOverride"]; hasOverride && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("ACMG override changes require an adjustment reason")
 	}
-	allowed := map[string]bool{"resetAcmg": true, "pinned": true, "reviewed": true, "reported": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
+	allowed := map[string]bool{"assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "reported": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
+	if _, has := request.Adjustments["cnvAssessment"]; has && strings.TrimSpace(request.Reason) == "" {
+		return nil, nil, fmt.Errorf("CNV evidence changes require an adjustment reason")
+	}
 	for key, value := range request.Adjustments {
 		if (strings.HasPrefix(key, "acmg") || key == "resetAcmg") && table != "snv-indel" {
 			return nil, nil, fmt.Errorf("ACMG small-variant evidence is only valid for SNP/InDel")
@@ -184,6 +187,15 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			return nil, nil, fmt.Errorf("unsupported adjustment field")
 		}
 		switch key {
+		case "assessmentVersion":
+			version, ok := value.(string)
+			if !ok || len(version) != 64 {
+				return nil, nil, fmt.Errorf("invalid assessment version")
+			}
+			var fixed model.ResultAssessmentContext
+			if err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND version=?", model.TenantIDForTask(task), task.UUID, executionAttempt(task), version).First(&fixed).Error; err != nil {
+				return nil, nil, ErrAdjustmentConflict
+			}
 		case "resetAcmg", "pinned", "reviewed", "reported":
 			if _, ok := value.(bool); !ok {
 				return nil, nil, fmt.Errorf("review and report values must be boolean")
@@ -219,6 +231,9 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			if err := validateCNVAssessmentPayload(payload, rowID); err != nil {
 				return nil, nil, err
 			}
+			if err := normalizeCNVScoring(value.(map[string]interface{})); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 	if value, ok := request.Adjustments["acmgOverride"]; ok {
@@ -232,6 +247,22 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	}
 	if request.AttemptID != "" && request.AttemptID != executionAttempt(task) || request.DatasetVersion != "" && request.DatasetVersion != dataset.DataVersion {
 		return nil, nil, ErrAdjustmentConflict
+	}
+	if cnv, ok := request.Adjustments["cnvAssessment"].(map[string]interface{}); ok {
+		cache, err := s.historyDatasetCache(ctx, dataset)
+		if err != nil {
+			return nil, nil, err
+		}
+		if request.RowOrdinal == nil {
+			return nil, nil, ErrAdjustmentConflict
+		}
+		page, err := NewParquetReader().ReadPage(cache, *request.RowOrdinal, 1)
+		if err != nil || len(page.Rows) != 1 {
+			return nil, nil, ErrParquetIncomplete
+		}
+		if err := verifyCNVEventType(page.Rows[0], cnv); err != nil {
+			return nil, nil, err
+		}
 	}
 	tenant, attempt := model.TenantIDForTask(task), executionAttempt(task)
 	var historySource *model.HistoryReport

@@ -65,6 +65,7 @@ type ParquetConfig struct {
 }
 
 type ResultQueryConfig struct {
+	ReferenceDir  string
 	ServiceURL    string
 	CacheDir      string
 	AssessmentDir string
@@ -237,6 +238,7 @@ func Load() *Config {
 			FilePatterns: []string{"*.csv", "*.tsv", "*.txt"}, // default patterns
 		},
 		ResultQuery: ResultQueryConfig{
+			ReferenceDir:  strings.TrimSpace(getEnv("ASSESSMENT_REFERENCE_DIR", filepath.Join(parquetCacheDir, "reference"))),
 			ServiceURL:    strings.TrimRight(strings.TrimSpace(getEnv("PARQUET_QUERY_URL", "http://parquet-query:9100")), "/"),
 			CacheDir:      parquetCacheDir,
 			AssessmentDir: strings.TrimSpace(getEnv("PARQUET_ASSESSMENT_DIR", filepath.Join(parquetCacheDir, "assessments"))),

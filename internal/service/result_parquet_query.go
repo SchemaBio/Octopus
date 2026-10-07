@@ -202,9 +202,6 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 				}
 			}
 
-			if err := s.ensureAutomaticAssessments(ctx, task, tenant, attempt, table, &current); err != nil {
-				return nil, err
-			}
 			return &current, nil
 		}
 	}
@@ -257,15 +254,15 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 	if err := database.DB.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "task_uuid"}, {Name: "execution_attempt_id"}, {Name: "table"}}, DoUpdates: clause.AssignmentColumns([]string{"object_key", "object_sha256", "manifest_version", "source_size", "source_last_modified", "fields_json", "expected_rows", "rows", "data_version", "automatic_assessment_profile", "automatic_assessment_ready", "created_at"})}).Create(&item).Error; err != nil {
 		return nil, err
 	}
-	if err := s.ensureAutomaticAssessments(ctx, task, tenant, attempt, table, &item); err != nil {
-		return nil, err
-	}
 	return &item, nil
 }
 
 const automaticACMGProfile = "acmg-snv-points-v2"
 
 func (s *ResultService) ensureAutomaticAssessments(ctx context.Context, task *model.Task, tenant, attempt, table string, dataset *model.ResultDataset) error {
+	if ctx.Value(browserLocalAssessmentKey{}) == true {
+		return nil
+	}
 	if table != "snv-indel" || dataset.AutomaticAssessmentReady && dataset.AutomaticAssessmentProfile == automaticACMGProfile {
 		return nil
 	}

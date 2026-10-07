@@ -55,6 +55,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "results-assessment" {
+		if err := runResultsAssessmentCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "assessment evidence preparation failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	cfg := config.Load()
 
