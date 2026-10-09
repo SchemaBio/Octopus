@@ -54,6 +54,10 @@ func (h *ResultHandler) ActivateAssessmentContext(c *gin.Context) {
 		return
 	}
 	value, err := h.svc.ActivateAssessmentContext(c.Request.Context(), task, request.ExpectedVersion)
+	if errors.Is(err, service.ErrInterpretationCompleted) {
+		ErrorConflict(c, err.Error())
+		return
+	}
 	if errors.Is(err, service.ErrAdjustmentConflict) {
 		ErrorConflict(c, "assessment context changed; reload")
 		return

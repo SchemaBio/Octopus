@@ -152,7 +152,7 @@ func New(cfg *config.Config) *gin.Engine {
 		reportHandler := handler.NewReportHandler(cfg)
 		resultPackageHandler := handler.NewResultPackageHandler(cfg)
 		tasks := v1.Group("/tasks")
-		tasks.Use(middleware.JWTAuth(cfg))
+		tasks.Use(middleware.JWTAuth(cfg), taskHandler.InterpretationEditGuard)
 		{
 			tasks.POST("", taskHandler.CreateTask)
 			tasks.POST("/estimate", taskHandler.EstimateTask)
@@ -163,6 +163,7 @@ func New(cfg *config.Config) *gin.Engine {
 			tasks.GET("/stats", taskHandler.GetTaskStats)
 			tasks.GET("/:id", taskHandler.GetTask)
 			tasks.PUT("/:id", taskHandler.UpdateTask)
+			tasks.PUT("/:id/interpretation-completion", taskHandler.SetInterpretationCompleted)
 			tasks.GET("/:id/progress", taskHandler.GetTaskProgress)
 			tasks.DELETE("/:id", taskHandler.DeleteTask)
 			tasks.GET("/:id/logs", taskHandler.GetTaskLogs)
@@ -221,7 +222,7 @@ func New(cfg *config.Config) *gin.Engine {
 		// ========== Result management (protected) ==========
 		resultHandler := handler.NewResultHandler(cfg)
 		results := v1.Group("/tasks/:id/results")
-		results.Use(middleware.JWTAuth(cfg))
+		results.Use(middleware.JWTAuth(cfg), taskHandler.InterpretationEditGuard)
 		{
 			results.GET("/context", resultHandler.GetContext)
 			results.GET("/igv", resultHandler.GetIGVSession)
@@ -260,7 +261,7 @@ func New(cfg *config.Config) *gin.Engine {
 		// ========== Archive management (protected) ==========
 		archiveHandler := handler.NewArchiveHandler(cfg)
 		archive := v1.Group("/archive")
-		archive.Use(middleware.JWTAuth(cfg))
+		archive.Use(middleware.JWTAuth(cfg), taskHandler.InterpretationEditGuard)
 		{
 			archive.GET("/:uuid", archiveHandler.ArchiveStatus)
 			archive.GET("/:uuid/outputs", archiveHandler.ListOutputKeys)

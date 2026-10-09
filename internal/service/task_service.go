@@ -1178,6 +1178,9 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 	task.Progress = 0
 	task.Error = ""
 	now := time.Now()
+	if previousStatus == model.TaskStatusFailed || previousStatus == model.TaskStatusCancelled {
+		task.RetryStartedAt = &now
+	}
 	if task.Executor == model.ExecutorCVM {
 		// A cloud instance being provisioned is not the same as a workflow
 		// running. Sepiida/Squid will confirm the business-running phase after
@@ -1363,6 +1366,7 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 	task.Progress = 0
 	task.Error = ""
 	now := time.Now()
+	task.RetryStartedAt = &now
 	if task.Executor == model.ExecutorCVM {
 		task.Status = model.TaskStatusQueued
 		task.ExecutionPhase = "bootstrapping"
@@ -2067,6 +2071,9 @@ func (s *TaskService) UpdateTask(ctx context.Context, id string, req *model.Task
 		return nil, fmt.Errorf("task not found: %s", id)
 	}
 
+	if task.InterpretationCompletedAt != nil {
+		return nil, ErrInterpretationCompleted
+	}
 	if task.Status == model.TaskStatusRunning {
 		return nil, fmt.Errorf("cannot edit a running task")
 	}

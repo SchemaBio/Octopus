@@ -348,6 +348,9 @@ func (s *ResultService) ActivateAssessmentContext(ctx context.Context, task *mod
 			}
 			return expandAssessmentArtifacts(tx, latest)
 		}
+		if locked.InterpretationCompletedAt != nil && expected != "" {
+			return ErrInterpretationCompleted
+		}
 		if (err == nil && previous.Version != expected) || (errors.Is(err, gorm.ErrRecordNotFound) && expected != "") {
 			return ErrAdjustmentConflict
 		}

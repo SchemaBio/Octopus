@@ -149,6 +149,9 @@ func validACMGCriterion(code string) bool {
 }
 
 func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *model.Task, table, rowID, actor string, request model.ResultRowAdjustmentRequest) (*model.ResultRowAdjustment, *model.ResultRowAdjustmentEvent, error) {
+	if task != nil && task.InterpretationCompletedAt != nil {
+		return nil, nil, ErrInterpretationCompleted
+	}
 	if task == nil || !validParquetTable(table) || !validResultRowID(rowID) {
 		return nil, nil, fmt.Errorf("invalid result row identity")
 	}
@@ -284,6 +287,9 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		var lockedTask model.Task
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid=?", task.UUID).First(&lockedTask).Error; err != nil {
 			return err
+		}
+		if lockedTask.InterpretationCompletedAt != nil {
+			return ErrInterpretationCompleted
 		}
 		if executionAttempt(&lockedTask) != attempt {
 			return ErrAdjustmentConflict

@@ -17,7 +17,7 @@ func TestTaskRepositoryStandaloneListExcludesOrganizationTasks(t *testing.T) {
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "tasks" WHERE \(tasks\.external_org_id = '' AND tasks\.created_by = \$1\) AND "tasks"\."deleted_at" IS NULL`).
 		WithArgs(uint(42)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectQuery(`SELECT \* FROM "tasks" WHERE \(tasks\.external_org_id = '' AND tasks\.created_by = \$1\) AND "tasks"\."deleted_at" IS NULL ORDER BY created_at DESC LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "tasks" WHERE \(tasks\.external_org_id = '' AND tasks\.created_by = \$1\) AND "tasks"\."deleted_at" IS NULL ORDER BY CASE WHEN interpretation_completed_at IS NULL THEN 0 ELSE 1 END ASC,COALESCE\(retry_started_at, created_at\) DESC,uuid ASC LIMIT \$2`).
 		WithArgs(uint(42), 10).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -37,7 +37,7 @@ func TestTaskRepositoryPlatformAdminCanFilterByOrganization(t *testing.T) {
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "tasks" WHERE external_org_id = \$1 AND "tasks"\."deleted_at" IS NULL`).
 		WithArgs("org-1").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT \* FROM "tasks" WHERE external_org_id = \$1 AND "tasks"\."deleted_at" IS NULL ORDER BY created_at DESC LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "tasks" WHERE external_org_id = \$1 AND "tasks"\."deleted_at" IS NULL ORDER BY CASE WHEN interpretation_completed_at IS NULL THEN 0 ELSE 1 END ASC,COALESCE\(retry_started_at, created_at\) DESC,uuid ASC LIMIT \$2`).
 		WithArgs("org-1", 10).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("task-row-1"))
 
@@ -50,6 +50,39 @@ func TestTaskRepositoryPlatformAdminCanFilterByOrganization(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("SQL expectations: %v", err)
+	}
+}
+
+func TestTaskRepositoryInterpretationFiltersBeforePagination(t *testing.T) {
+	for _, status := range []model.TaskStatus{"completed", "interpretation_completed"} {
+		t.Run(string(status), func(t *testing.T) {
+			db, mock := newUploadRepositoryTestDB(t)
+			repo := NewTaskRepository()
+			repo.Repository.db = db
+			predicate := `tenant_id = \$1 AND interpretation_completed_at IS NOT NULL`
+			args := []interface{}{"tenant"}
+			if status == "completed" {
+				predicate = `tenant_id = \$1 AND \(status = \$2 AND interpretation_completed_at IS NULL\)`
+				args = append(args, status)
+			}
+			count := mock.ExpectQuery(`SELECT count\(\*\) FROM "tasks" WHERE ` + predicate + ` AND "tasks"\."deleted_at" IS NULL`)
+			rows := mock.ExpectQuery(`SELECT \* FROM "tasks" WHERE ` + predicate + ` AND "tasks"\."deleted_at" IS NULL ORDER BY CASE WHEN interpretation_completed_at IS NULL THEN 0 ELSE 1 END ASC,COALESCE\(retry_started_at, created_at\) DESC,uuid ASC LIMIT .* OFFSET`)
+			if len(args) == 1 {
+				count.WithArgs(args[0])
+				rows.WithArgs(args[0], 10, 10)
+			} else {
+				count.WithArgs(args[0], args[1])
+				rows.WithArgs(args[0], args[1], 10, 10)
+			}
+			count.WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(20))
+			rows.WillReturnRows(sqlmock.NewRows([]string{"id"}))
+			if _, total, err := repo.PaginateByQuery(&model.TaskListQuery{Status: status, TenantID: "tenant", Page: 2, PageSize: 10}); err != nil || total != 20 {
+				t.Fatalf("filter/pagination: total=%d err=%v", total, err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

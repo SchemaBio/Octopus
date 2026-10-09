@@ -308,8 +308,10 @@ func (r *TaskRepository) PaginateByQuery(query *model.TaskListQuery) ([]model.Ta
 	} else {
 		db = applyTaskActorScope(db, query.ExternalOrgID, query.CreatedBy, query.IncludeAll)
 	}
-	if query.Status != "" {
-		db = db.Where("status = ?", query.Status)
+	if query.Status == "interpretation_completed" {
+		db = db.Where("interpretation_completed_at IS NOT NULL")
+	} else if query.Status != "" {
+		db = db.Where("status = ? AND interpretation_completed_at IS NULL", query.Status)
 	}
 	if query.SampleID != "" {
 		db = db.Where("sample_id = ?", query.SampleID)
@@ -345,6 +347,6 @@ func (r *TaskRepository) PaginateByQuery(query *model.TaskListQuery) ([]model.Ta
 
 	var tasks []model.Task
 	offset := (page - 1) * pageSize
-	err = db.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&tasks).Error
+	err = db.Order("CASE WHEN interpretation_completed_at IS NULL THEN 0 ELSE 1 END ASC").Order("COALESCE(retry_started_at, created_at) DESC").Order("uuid ASC").Offset(offset).Limit(pageSize).Find(&tasks).Error
 	return tasks, total, err
 }

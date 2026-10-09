@@ -101,6 +101,7 @@ func (s *TaskService) enqueueCVM(ctx context.Context, id string, actor model.Ove
 		if err := validateSavedTaskResources(tx, &task); err != nil {
 			return err
 		}
+		retrying := task.Status == model.TaskStatusFailed || task.Status == model.TaskStatusCancelled
 		// Legacy live attempts are adopted without changing their identity.
 		if task.ExecutionAttemptID == "" || cvmAttemptStateTerminal(task.VMStatus) || task.ExecutionPhase == "terminal" {
 			task.ExecutionAttemptID = uuid.NewString()
@@ -124,6 +125,9 @@ func (s *TaskService) enqueueCVM(ctx context.Context, id string, actor model.Ove
 		task.Version++
 		now := time.Now().UTC()
 		task.PhaseUpdatedAt = &now
+		if retrying {
+			task.RetryStartedAt = &now
+		}
 		if err := tx.Save(&task).Error; err != nil {
 			return err
 		}
