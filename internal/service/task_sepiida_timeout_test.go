@@ -7,6 +7,25 @@ import (
 	"github.com/SchemaBio/Octopus/internal/model"
 )
 
+func TestCVMRetryDoesNotInheritFirstReportDeadline(t *testing.T) {
+	now := time.Now().UTC()
+	old := now.Add(-8 * time.Hour)
+	task := model.Task{Executor: model.ExecutorCVM, ExecutionPhase: "running",
+		SepiidaFirstReportExpectedAt: &old, BootstrapLastHeartbeatAt: &old,
+		BootstrapPhase: "running", DiagnosticSummary: "old attempt"}
+	if !sepiidaFirstReportOverdue(&task, 10*time.Minute, now) {
+		t.Fatal("old attempt should be overdue")
+	}
+	resetCVMWorkflowObservation(&task)
+	if sepiidaFirstReportOverdue(&task, 10*time.Minute, now) {
+		t.Fatal("retry inherited the old first-report timeout")
+	}
+	task.SepiidaFirstReportExpectedAt = &now
+	if sepiidaFirstReportOverdue(&task, 10*time.Minute, now.Add(time.Minute)) {
+		t.Fatal("new workflow should get its own first-report window")
+	}
+}
+
 func TestSepiidaFirstReportOverdueUsesWorkflowStartDeadline(t *testing.T) {
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	timeout := 10 * time.Minute

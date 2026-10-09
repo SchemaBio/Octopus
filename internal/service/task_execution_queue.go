@@ -112,6 +112,7 @@ func (s *TaskService) enqueueCVM(ctx context.Context, id string, actor model.Ove
 			task.CVMDispatchRetryCount = 0
 			task.StartedAt = nil
 			task.FinishedAt = nil
+			resetCVMWorkflowObservation(&task)
 		}
 		task.Status = model.TaskStatusQueued
 		task.ExecutionPhase = "dispatching"
@@ -129,6 +130,18 @@ func (s *TaskService) enqueueCVM(ctx context.Context, id string, actor model.Ove
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.CVMSubmission{AttemptID: task.ExecutionAttemptID, TaskUUID: task.UUID, NextRetryAt: now}).Error
 	})
 	return &task, err
+}
+
+// A new execution must not inherit the previous attempt's first-report clock.
+// Keep this reset inside the new-attempt branch so adopted submissions retain
+// their original deadline and heartbeat history.
+func resetCVMWorkflowObservation(task *model.Task) {
+	task.SepiidaFirstReportExpectedAt = nil
+	task.SepiidaFirstReportedAt = nil
+	task.BootstrapPhase = ""
+	task.BootstrapLastHeartbeatAt = nil
+	task.DiagnosticHoldUntil = nil
+	task.DiagnosticSummary = ""
 }
 
 func cvmPhaseNeedsSubmission(phase string) bool {
