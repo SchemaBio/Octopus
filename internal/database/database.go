@@ -93,6 +93,7 @@ func AutoMigrate() error {
 		&model.ResultImportBatch{},
 		&model.VariantReviewEvent{},
 		&model.ResultDataset{},
+		&model.IGVSnapshot{},
 		&model.ResultAssessmentContext{},
 		&model.ResultAssessmentArtifact{},
 		&model.ResultSavedView{},

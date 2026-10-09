@@ -225,6 +225,8 @@ func New(cfg *config.Config) *gin.Engine {
 		{
 			results.GET("/context", resultHandler.GetContext)
 			results.GET("/igv", resultHandler.GetIGVSession)
+			results.GET("/igv/snapshot", resultHandler.GetIGVSnapshot)
+			results.POST("/igv/snapshot", resultHandler.SaveIGVSnapshot)
 			results.GET("/igv/reference/:asset", resultHandler.GetIGVReference)
 			results.POST("/igv/urls", resultHandler.SignIGVTrackURLs)
 			results.GET("/qc", resultHandler.GetQC)

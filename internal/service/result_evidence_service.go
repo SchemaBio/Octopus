@@ -219,7 +219,7 @@ func igvArchiveObjectIndex(prefix string, objects []s3ObjectInfo) (string, map[s
 	hash := sha256.New()
 	sort.Slice(objects, func(i, j int) bool { return objects[i].Key < objects[j].Key })
 	for _, object := range objects {
-		if strings.Contains(object.Key, "/_raw-downloads/") {
+		if strings.Contains(object.Key, "/_raw-downloads/") || strings.Contains(object.Key, "/_igv-snapshots/") {
 			continue
 		}
 		if _, err := safeResultPackageRelativePath(prefix, object.Key); err != nil {
