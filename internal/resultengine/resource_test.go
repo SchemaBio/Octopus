@@ -5,10 +5,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"github.com/xitongsys/parquet-go-source/local"
+	"github.com/xitongsys/parquet-go/writer"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDiskBudgetFailureCleansSpills(t *testing.T) {
@@ -31,6 +36,76 @@ func TestDiskBudgetFailureCleansSpills(t *testing.T) {
 	w := budgetWriter{writer: &b, budget: &diskBudget{limit: 3}}
 	if _, err = w.Write([]byte("four")); err == nil || b.Len() != 0 {
 		t.Fatal("budget allowed partial oversized write")
+	}
+}
+
+type wideFixture struct {
+	Position string `parquet:"name=Position, type=BYTE_ARRAY, convertedtype=UTF8"`
+	Note     string `parquet:"name=Note, type=BYTE_ARRAY, convertedtype=UTF8"`
+}
+
+func TestWideHeapFallbackAndExportCancellation(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "wide.parquet")
+	f, err := local.NewLocalFileWriter(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := writer.NewParquetWriter(f, new(wideFixture), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 299; i >= 0; i-- {
+		if err = w.Write(wideFixture{Position: fmt.Sprint(i), Note: strings.Repeat("wide", 6000)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = w.WriteStop(); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	data, _ := os.ReadFile(path)
+	h := sha256.Sum256(data)
+	temp := t.TempDir()
+	e := New(root, temp, temp)
+	q := Request{Table: "snv-indel", FilePath: path, DatasetID: strings.Repeat("a", 64), ObjectHash: hex.EncodeToString(h[:]), Limit: 200, Offset: 100, Sort: "Position"}
+	r, err := e.Query(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Items) != 200 || r.Items[0]["Position"] != "100" || r.Items[199]["Position"] != "299" || r.Items[0]["__row_id"] == "" {
+		t.Fatal("heap fallback changed page or row identity")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := e.Export(ctx, q); done <- err }()
+	deadline := time.After(5 * time.Second)
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			entries, _ := os.ReadDir(temp)
+			for _, entry := range entries {
+				if strings.HasPrefix(entry.Name(), "octopus-effective-") {
+					cancel()
+					goto cancelled
+				}
+			}
+		case err := <-done:
+			t.Fatalf("export ended before cancellation: %v", err)
+		case <-deadline:
+			t.Fatal("export did not start")
+		}
+	}
+cancelled:
+	if err = <-done; !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(temp)
+	if len(entries) != 0 {
+		t.Fatal("cancelled export retained files")
 	}
 }
 func TestDenseOverlayAndLargeOffset(t *testing.T) {

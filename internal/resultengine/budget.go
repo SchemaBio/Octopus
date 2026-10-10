@@ -7,7 +7,7 @@ import (
 
 // Per-operation ceilings bound disk consumption as well as memory. The service
 // holds its admission lease until an exported response has been closed.
-const maxExportBytes int64 = 2 << 30
+const maxExportBytes int64 = 1 << 30
 const maxSpillBytes int64 = 4 << 30
 
 type diskBudget struct{ used, limit int64 }

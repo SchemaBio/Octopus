@@ -237,7 +237,7 @@ func (e *Engine) run(ctx context.Context, q Request, export bool) (response *Res
 		defer func() {
 			file.Close()
 			if err != nil {
-				os.Remove(output)
+				os.Remove(file.Name())
 			}
 		}()
 		writer = newCSVWriter(budgetWriter{writer: file, budget: &diskBudget{limit: maxExportBytes}})

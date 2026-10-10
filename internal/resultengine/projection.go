@@ -58,7 +58,16 @@ func numeric(v interface{}) (float64, bool) {
 	if v == nil {
 		return 0, false
 	}
-	n, e := strconv.ParseFloat(strings.TrimSpace(text(v)), 64)
+	s := strings.TrimSpace(text(v))
+	switch strings.ToLower(s) {
+	case "nan", "+nan", "-nan":
+		return math.NaN(), true
+	case "infinity", "+infinity":
+		return math.Inf(1), true
+	case "-infinity":
+		return math.Inf(-1), true
+	}
+	n, e := strconv.ParseFloat(s, 64)
 	return n, e == nil
 }
 
