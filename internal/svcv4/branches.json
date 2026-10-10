@@ -1,0 +1,485 @@
+{
+  "nonsense": {
+    "NMD_NO_RESCUE": {
+      "parent_code": "NUL",
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "held_hi": 10.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "NMD_WITH_RESCUE": {
+      "parent_code": "CDS",
+      "prd_lo": -1.0,
+      "prd_hi": 6.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "NO_NMD": {
+      "parent_code": "CDS",
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    }
+  },
+  "frameshift": {
+    "NMD_NO_RESCUE": {
+      "parent_code": "NUL",
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "held_hi": 10.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "NMD_WITH_RESCUE": {
+      "parent_code": "CDS",
+      "prd_lo": -1.0,
+      "prd_hi": 6.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "NO_NMD": {
+      "parent_code": "CDS",
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "NON_STOP_DECAY": {
+      "parent_code": "NUL",
+      "prd_lo": 0.0,
+      "prd_hi": 4.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "PROTEIN_EXTENSION": {
+      "parent_code": "CDS",
+      "prd_lo": 0.0,
+      "prd_hi": 4.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    }
+  },
+  "canonical_splice": {
+    "NMD_PREDICTED": {
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "prd_spa_lo": -8.0,
+      "prd_spa_hi": 10.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0
+    },
+    "FRAMESHIFT_NO_NMD": {
+      "prd_lo": -1.0,
+      "prd_hi": 6.0,
+      "prd_spa_lo": -8.0,
+      "prd_spa_hi": 10.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0
+    },
+    "SPLICE_NO_FRAMESHIFT": {
+      "prd_lo": -1.0,
+      "prd_hi": 6.0,
+      "prd_spa_lo": -8.0,
+      "prd_spa_hi": 10.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0
+    },
+    "UNCERTAIN": {
+      "prd_lo": 0.0,
+      "prd_hi": 0.0,
+      "prd_spa_lo": -8.0,
+      "prd_spa_hi": 10.0,
+      "prd_spa_fxn_hi": 8.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 8.0
+    },
+    "UNLIKELY": {
+      "prd_lo": -1.0,
+      "prd_hi": 0.0,
+      "prd_spa_lo": -3.0,
+      "prd_spa_hi": 0.0,
+      "prd_spa_fxn_hi": 0.0,
+      "inf_lo": -8.0,
+      "inf_hi": 0.0,
+      "parent_lo": -8.0,
+      "parent_hi": 0.0
+    }
+  },
+  "intronic_synonymous": {
+    "NMD_PREDICTED": {
+      "prd_lo": 0.0,
+      "prd_hi": 3.0,
+      "prd_spa_lo": -8.0,
+      "prd_spa_hi": 10.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0
+    },
+    "FRAMESHIFT_NO_NMD": {
+      "prd_lo": -1.0,
+      "prd_hi": 3.0,
+      "prd_spa_lo": -1.0,
+      "prd_spa_hi": 6.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0
+    },
+    "SPLICE_NO_FRAMESHIFT": {
+      "prd_lo": -1.0,
+      "prd_hi": 3.0,
+      "prd_spa_lo": -1.0,
+      "prd_spa_hi": 6.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0
+    },
+    "UNCERTAIN": {
+      "prd_lo": 0.0,
+      "prd_hi": 0.0,
+      "prd_spa_lo": -8.0,
+      "prd_spa_hi": 10.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 8.0
+    },
+    "UNLIKELY": {
+      "prd_lo": -1.0,
+      "prd_hi": 0.0,
+      "prd_spa_lo": -3.0,
+      "prd_spa_hi": 0.0,
+      "prd_spa_fxn_hi": 0.0,
+      "inf_lo": -8.0,
+      "inf_hi": 0.0,
+      "parent_lo": -8.0,
+      "parent_hi": 0.0
+    }
+  },
+  "exon_deletion": {
+    "WHOLE_GENE": {
+      "parent_code": "NUL",
+      "prd_lo": 0.0,
+      "prd_hi": 10.0,
+      "held_hi": 10.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": true,
+      "fxn_na": false
+    },
+    "SUBGENIC_NMD": {
+      "parent_code": "NUL",
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "held_hi": 10.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "SUBGENIC_NO_NMD": {
+      "parent_code": "CDS",
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "START_CODON_NO_ALT_START": {
+      "parent_code": "NUL",
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "held_hi": 10.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "START_CODON_ALT_START_UNPROVEN": {
+      "parent_code": "CDS",
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "START_CODON_ALT_START_FUNCTIONAL": {
+      "parent_code": "CDS",
+      "prd_lo": -1.0,
+      "prd_hi": 0.0,
+      "held_hi": 0.0,
+      "parent_lo": -8.0,
+      "parent_hi": 0.0,
+      "inf_lo": -8.0,
+      "inf_hi": 0.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    }
+  },
+  "exon_duplication": {
+    "TANDEM_NMD": {
+      "parent_code": "NUL",
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "held_hi": 10.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "TANDEM_NO_NMD": {
+      "parent_code": "CDS",
+      "prd_lo": 0.0,
+      "prd_hi": 3.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "TANDEM_TERMINAL_EXON": {
+      "parent_code": "CDS",
+      "prd_lo": 0.0,
+      "prd_hi": 0.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "GAIN_NMD": {
+      "parent_code": "NUL",
+      "prd_lo": 0.0,
+      "prd_hi": 4.0,
+      "held_hi": 9.0,
+      "parent_lo": -1.0,
+      "parent_hi": 6.0,
+      "inf_lo": -8.0,
+      "inf_hi": 6.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": true
+    },
+    "GAIN_NO_NMD": {
+      "parent_code": "CDS",
+      "prd_lo": 0.0,
+      "prd_hi": 2.0,
+      "held_hi": 9.0,
+      "parent_lo": -1.0,
+      "parent_hi": 6.0,
+      "inf_lo": -8.0,
+      "inf_hi": 6.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": true
+    },
+    "GAIN_TERMINAL_EXON": {
+      "parent_code": "CDS",
+      "prd_lo": 0.0,
+      "prd_hi": 0.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 0.0,
+      "inf_lo": -8.0,
+      "inf_hi": 0.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": true
+    }
+  },
+  "start_lost": {
+    "NO_ALT_START": {
+      "parent_code": "NUL",
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "held_hi": 10.0,
+      "parent_lo": -4.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "ALT_START_UNPROVEN": {
+      "parent_code": "CDS",
+      "prd_lo": 0.0,
+      "prd_hi": 6.0,
+      "held_hi": 9.0,
+      "parent_lo": -4.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "ALT_START_FUNCTIONAL": {
+      "parent_code": "CDS",
+      "prd_lo": -1.0,
+      "prd_hi": 0.0,
+      "held_hi": 0.0,
+      "parent_lo": -8.0,
+      "parent_hi": 0.0,
+      "inf_lo": -8.0,
+      "inf_hi": 0.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    }
+  },
+  "stop_lost": {
+    "NSD_PREDICTED": {
+      "parent_code": "NUL",
+      "prd_lo": 0.0,
+      "prd_hi": 4.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    },
+    "NO_NSD": {
+      "parent_code": "CDS",
+      "prd_lo": 0.0,
+      "prd_hi": 4.0,
+      "held_hi": 9.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "sm18_mechanism_only": false,
+      "fxn_na": false
+    }
+  },
+  "missense_splice": {
+    "NMD_PREDICTED": {
+      "prd_lo": 0.0,
+      "prd_hi": 3.0,
+      "prd_spa_lo": 0.0,
+      "prd_spa_hi": 6.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0
+    },
+    "FRAMESHIFT_NO_NMD": {
+      "prd_lo": -1.0,
+      "prd_hi": 3.0,
+      "prd_spa_lo": 0.0,
+      "prd_spa_hi": 6.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0
+    },
+    "SPLICE_NO_FRAMESHIFT": {
+      "prd_lo": -1.0,
+      "prd_hi": 3.0,
+      "prd_spa_lo": 0.0,
+      "prd_spa_hi": 6.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 10.0
+    },
+    "UNCERTAIN": {
+      "prd_lo": 0.0,
+      "prd_hi": 0.0,
+      "prd_spa_lo": -2.0,
+      "prd_spa_hi": 2.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 8.0,
+      "parent_lo": -8.0,
+      "parent_hi": 0.0
+    },
+    "UNLIKELY": {
+      "prd_lo": -1.0,
+      "prd_hi": 0.0,
+      "prd_spa_lo": -3.0,
+      "prd_spa_hi": 0.0,
+      "prd_spa_fxn_hi": 9.0,
+      "inf_lo": -8.0,
+      "inf_hi": 0.0,
+      "parent_lo": -8.0,
+      "parent_hi": 8.0
+    }
+  }
+}
