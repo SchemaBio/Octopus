@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -25,12 +26,12 @@ func InspectResultDownloadAuthorization(ctx context.Context, cfg *config.Config,
 		return nil, fmt.Errorf("没有可验证的 BAM")
 	}
 	file := catalog.BAMs[0]
-	expires := time.Now().UTC().Add(3 * time.Hour)
-	link, err := ipBoundCOSDownload(ctx, cfg.Storage, file.key, file.Filename, ip, expires)
+	expires := time.Now().UTC().Add(downloadSettings(cfg.Storage).ResultDownloadLinkTTL)
+	link, err := directCOSDownload(ctx, cfg.Storage, file.key, file.Filename, expires)
 	if err != nil {
 		return nil, err
 	}
-	result := map[string]interface{}{"attempt_id": catalog.AttemptID, "bam_size_bytes": file.SizeBytes, "bam_credits": file.Credits, "sts_three_hour_grant": "ok", "missing_outputs": catalog.Missing, "credits_charged": 0}
+	result := map[string]interface{}{"attempt_id": catalog.AttemptID, "bam_size_bytes": file.SizeBytes, "bam_credits": file.Credits, "sts_short_grant": "ok", "ip_bound": false, "traffic_limit_bps": downloadSettings(cfg.Storage).ResultDownloadTrafficLimit, "missing_outputs": catalog.Missing, "credits_charged": 0}
 	if !probe {
 		return result, nil
 	}
@@ -58,22 +59,22 @@ func InspectResultDownloadAuthorization(ctx context.Context, cfg *config.Config,
 	if response.StatusCode != 206 {
 		return result, fmt.Errorf("COS 单字节读取返回 HTTP %d", response.StatusCode)
 	}
-	// A second grant bound to a documentation IP must fail from this host.
-	wrongLink, err := ipBoundCOSDownload(ctx, cfg.Storage, file.key, file.Filename, "203.0.113.1", expires)
-	if err != nil {
-		return result, err
-	}
-	request, _ = http.NewRequestWithContext(ctx, http.MethodGet, wrongLink, nil)
+	// The limit is part of the signature; removing it must fail at COS.
+	tampered, _ := url.Parse(link)
+	query := tampered.Query()
+	query.Del("x-cos-traffic-limit")
+	tampered.RawQuery = query.Encode()
+	request, _ = http.NewRequestWithContext(ctx, http.MethodGet, tampered.String(), nil)
 	request.Header.Set("Range", "bytes=0-0")
 	response, err = (&http.Client{Timeout: 30 * time.Second}).Do(request)
 	if err != nil {
-		return result, fmt.Errorf("COS 异地 IP 验证请求失败")
+		return result, fmt.Errorf("COS 限速签名验证请求失败")
 	}
 	io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 	response.Body.Close()
-	result["different_ip_http_status"] = response.StatusCode
+	result["removed_limit_http_status"] = response.StatusCode
 	if response.StatusCode != 403 {
-		return result, fmt.Errorf("COS IP 限制验证未通过")
+		return result, fmt.Errorf("COS 限速签名验证未通过")
 	}
 	return result, nil
 }

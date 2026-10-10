@@ -3,7 +3,7 @@ package model
 import "time"
 
 // ResultDownload is a durable quote and billing idempotency key. Credentials
-// and signed URLs are never persisted. A quote is scoped to one user/attempt/IP.
+// and signed URLs are never persisted. A quote is scoped to one user/attempt.
 type ResultDownload struct {
 	ID             string     `gorm:"primaryKey;size:36" json:"id"`
 	TaskUUID       string     `gorm:"size:36;index" json:"-"`
@@ -20,6 +20,8 @@ type ResultDownload struct {
 	QuoteExpiresAt time.Time  `json:"quote_expires_at"`
 	LinkExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	ChargedAt      *time.Time `json:"charged_at,omitempty"`
+	LastIssuedAt   *time.Time `json:"last_issued_at,omitempty"`
+	IssueCount     int        `gorm:"not null;default:0" json:"issue_count"`
 	RefundedAt     *time.Time `json:"-"`
 	CreatedAt      time.Time  `json:"-"`
 	UpdatedAt      time.Time  `json:"-"`

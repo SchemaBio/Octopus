@@ -5,23 +5,25 @@
 - Interpretation tabs no longer include runtime/status. Old `tab=runtime` links normalize to overview. Task list status is preserved.
 - `GET /tasks/:id/downloads` describes the current attempt's manifest-declared outputs.
 - `POST .../downloads/prepare` creates an immutable ZIP asynchronously; it never charges. ZIP includes final VCF/index, SNP/InDel, MT, CNV region/exon, MEI, UPD, ROH, STR and QC outputs where present. Original report text is preferred where the Parquet catalogue proves its conversion source; otherwise the immutable archived Parquet remains the report source. Inline resolved QC becomes `reports/QC.json`. Missing outputs are recorded in `download-manifest.json`; no BAM/intermediate/reference/input files are included.
-- `POST .../downloads/quote` HEADs the object and snapshots size, ETag, user, organization, attempt and IP. Quote validity is ten minutes.
-- `POST .../downloads/issue` prepares IP-restricted COS STS authorization before charging. ZIP costs 1 credit; BAM costs ceil(bytes / 1,000,000,000), minimum 1. Squid prices the billing codes independently and writes its normal ledger.
+- `POST .../downloads/quote` HEADs the object and snapshots size, ETag, user, organization and attempt. Source IP is audit metadata only. Quote validity is ten minutes.
+- `POST .../downloads/issue` prepares exact-object COS STS authorization before charging. Both ZIP and BAM download directly from COS. ZIP costs 1 credit; BAM costs ceil(bytes / 1,000,000,000), minimum 1. Squid prices the billing codes independently and writes its normal ledger.
 - A confirmed request has a durable three-hour deadline. Retries use `download:<quote UUID>` as the idempotent reference. Recovering a paid request retains its deadline and costs nothing extra. Explicit new requests charge separately.
-- `GET .../downloads/active` allows the same user/IP to recover an unexpired grant after refreshing. Signed URLs/STS credentials are not stored. URLs stay in browser memory, not query strings/local storage.
+- `GET .../downloads/active` allows the same user to recover an unexpired grant after changing networks. Signed URLs/STS credentials are not stored. URLs stay in browser memory, not query strings/local storage.
 - Expired cross-service requests with no local charge completion are reconciled every five minutes, using the existing idempotent refund API. Successfully issued requests are excluded.
 - Old individual raw export endpoints now return 410. Browser Parquet analysis, filtered exports and IGV evidence remain separate capabilities.
 
 ## Security and deployment
 
 - Squid signs `client_ip` in its two-minute identity token. Octopus uses only this verified claim for SaaS requests, not an arbitrary forwarded header or the container address. Older tokens without the claim fail closed for downloads.
-- COS STS grants only `GetObject` for one exact object with `ip_equal / qcs:ip`; signatures expire at the original deadline. Range/resume is permitted during that window. A changed public IP requires a new request. Shared NAT users share an IP; this is IP restriction, not device identity.
+- COS STS grants only `GetObject` for one exact object, without an IP condition. Short signatures include `x-cos-traffic-limit` in the signed query. Changing/removing that parameter invalidates the signature. See [current controls](DIRECT_COS_DOWNLOADS_20261010.md) for configuration and pause operations.
 - Deploy Squid (new billing codes and signed client IP), then Octopus (tables `result_downloads`, `raw_result_packages`), then YiJian.
 - No Agent/system image change is needed for the download feature itself. Missing workflow outputs cannot be recovered from a final manifest that never archived them.
 
 ## Read-only evidence
 
-Controlled CLI: `download-preflight --task <UUID> --ip <source IP> --probe-network`. It does not migrate, create quotes, charge/refund, prepare ZIPs or start a queue/node. It reads at most one byte and prints no credentials/URLs.
+Controlled CLI: `download-preflight --task <UUID> --probe-network`. It does not migrate, create quotes, charge/refund, prepare ZIPs or start a queue/node. It reads at most one byte and prints no credentials/URLs. The optional legacy `--ip` argument is ignored. Current probes verify a direct single-byte GET and rejection when the signed limit is removed.
+
+The following evidence describes the previous IP-bound implementation, before the 2026-10-10 update.
 
 For task 73ac68fd / attempt 5298563b:
 

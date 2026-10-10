@@ -5,10 +5,27 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ValidateStartup checks the configuration for common mistakes at server startup.
 func ValidateStartup(cfg *Config) error {
+	if cfg.Storage.ResultDownloadLinkTTL != 0 && (cfg.Storage.ResultDownloadLinkTTL < time.Minute || cfg.Storage.ResultDownloadLinkTTL > time.Hour) {
+		return fmt.Errorf("RESULT_DOWNLOAD_LINK_TTL must be between 1m and 1h")
+	}
+	ttl := cfg.Storage.ResultDownloadLinkTTL
+	if ttl == 0 {
+		ttl = 30 * time.Minute
+	}
+	if cfg.Storage.ResultDownloadRefreshInterval != 0 && (cfg.Storage.ResultDownloadRefreshInterval < time.Second || cfg.Storage.ResultDownloadRefreshInterval > ttl) {
+		return fmt.Errorf("RESULT_DOWNLOAD_REFRESH_INTERVAL must be positive and no longer than the link TTL")
+	}
+	if cfg.Storage.ResultDownloadMaxIssues != 0 && (cfg.Storage.ResultDownloadMaxIssues < 1 || cfg.Storage.ResultDownloadMaxIssues > 100) {
+		return fmt.Errorf("RESULT_DOWNLOAD_MAX_ISSUES must be between 1 and 100")
+	}
+	if cfg.Storage.ResultDownloadTrafficLimit != 0 && (cfg.Storage.ResultDownloadTrafficLimit < 819200 || cfg.Storage.ResultDownloadTrafficLimit > 838860800) {
+		return fmt.Errorf("RESULT_DOWNLOAD_TRAFFIC_LIMIT_BPS must be between 819200 and 838860800")
+	}
 	for _, proxy := range cfg.Server.TrustedProxies {
 		if net.ParseIP(proxy) != nil {
 			continue

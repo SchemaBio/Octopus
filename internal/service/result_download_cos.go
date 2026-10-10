@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -21,11 +20,16 @@ import (
 	"github.com/SchemaBio/Octopus/internal/config"
 )
 
-// COS enforces the IP condition on every GET, including subsequent Range
-// requests. Neither the permanent credentials nor STS credentials leave here.
-func ipBoundCOSDownload(ctx context.Context, cfg config.StorageConfig, key, filename, ip string, expires time.Time) (string, error) {
-	if net.ParseIP(ip) == nil || cfg.S3AccessKey == "" || cfg.S3SecretKey == "" || strings.ContainsAny(key, "*?") {
-		return "", fmt.Errorf("IP-bound COS download configuration is unavailable")
+// COS serves the exact object directly. The temporary secret key stays here;
+// the URL includes only the temporary ID/token and a short-lived signature.
+func directCOSDownload(ctx context.Context, cfg config.StorageConfig, key, filename string, expires time.Time) (string, error) {
+	return directCOSDownloadWithClient(ctx, cfg, key, filename, expires, &http.Client{Timeout: 20 * time.Second})
+}
+
+func directCOSDownloadWithClient(ctx context.Context, cfg config.StorageConfig, key, filename string, expires time.Time, client *http.Client) (string, error) {
+	cfg = downloadSettings(cfg)
+	if cfg.S3AccessKey == "" || cfg.S3SecretKey == "" || strings.ContainsAny(key, "*?") || cfg.ResultDownloadTrafficLimit < 819200 || cfg.ResultDownloadTrafficLimit > 838860800 {
+		return "", fmt.Errorf("COS download configuration is unavailable")
 	}
 	split := strings.LastIndex(cfg.S3Bucket, "-")
 	if split < 1 || cfg.S3Region == "" {
@@ -37,15 +41,14 @@ func ipBoundCOSDownload(ctx context.Context, cfg config.StorageConfig, key, file
 	}
 	policy, err := json.Marshal(map[string]interface{}{"version": "2.0", "statement": []interface{}{map[string]interface{}{
 		"effect": "allow", "action": []string{"name/cos:GetObject"},
-		"resource":  []string{"qcs::cos:" + cfg.S3Region + ":uid/" + appID + ":" + cfg.S3Bucket + "/" + key},
-		"condition": map[string]interface{}{"ip_equal": map[string]interface{}{"qcs:ip": []string{ip}}},
+		"resource": []string{"qcs::cos:" + cfg.S3Region + ":uid/" + appID + ":" + cfg.S3Bucket + "/" + key},
 	}}})
 	if err != nil {
 		return "", err
 	}
 	now := time.Now().UTC()
 	remaining := int64(expires.Sub(now).Seconds())
-	if remaining <= 0 || remaining > 10800 {
+	if remaining <= 0 || remaining > int64(cfg.ResultDownloadLinkTTL.Seconds()) {
 		return "", fmt.Errorf("download authorization expired")
 	}
 	payload, _ := json.Marshal(map[string]interface{}{"Name": "result-download", "DurationSeconds": remaining + 30, "Policy": string(policy)})
@@ -73,7 +76,7 @@ func ipBoundCOSDownload(ctx context.Context, cfg config.StorageConfig, key, file
 		req.Header.Set("X-TC-Token", cfg.S3SessionToken)
 	}
 	req.Header.Set("Authorization", "TC3-HMAC-SHA256 Credential="+cfg.S3AccessKey+"/"+scope+", SignedHeaders=content-type;host, Signature="+hex.EncodeToString(mac(signingKey, toSign)))
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("COS temporary authorization unavailable")
 	}
@@ -105,7 +108,8 @@ func ipBoundCOSDownload(ctx context.Context, cfg config.StorageConfig, key, file
 	u := &url.URL{Scheme: "https", Host: host, Path: "/" + key}
 	encode := func(s string) string { return strings.ReplaceAll(url.QueryEscape(s), "+", "%20") }
 	params := url.Values{"response-content-disposition": {mime.FormatMediaType("attachment", map[string]string{"filename": filename})}, "x-cos-security-token": {r.Credentials.Token}}
-	query := "response-content-disposition=" + encode(params.Get("response-content-disposition")) + "&x-cos-security-token=" + encode(r.Credentials.Token)
+	params.Set("x-cos-traffic-limit", strconv.FormatInt(cfg.ResultDownloadTrafficLimit, 10))
+	query := "response-content-disposition=" + encode(params.Get("response-content-disposition")) + "&x-cos-security-token=" + encode(r.Credentials.Token) + "&x-cos-traffic-limit=" + encode(params.Get("x-cos-traffic-limit"))
 	keyTime := strconv.FormatInt(now.Unix()-30, 10) + ";" + strconv.FormatInt(expires.Unix(), 10)
 	sha := func(s string) string { h := sha1.Sum([]byte(s)); return hex.EncodeToString(h[:]) }
 	shaMAC := func(key, s string) string {
@@ -122,7 +126,7 @@ func ipBoundCOSDownload(ctx context.Context, cfg config.StorageConfig, key, file
 	params.Set("q-sign-time", keyTime)
 	params.Set("q-key-time", keyTime)
 	params.Set("q-header-list", "host")
-	params.Set("q-url-param-list", "response-content-disposition;x-cos-security-token")
+	params.Set("q-url-param-list", "response-content-disposition;x-cos-security-token;x-cos-traffic-limit")
 	params.Set("q-signature", signature)
 	u.RawQuery = params.Encode()
 	return u.String(), nil

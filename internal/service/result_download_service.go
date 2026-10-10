@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
+	"log"
 	"os"
 	"path"
 	"sort"
@@ -26,8 +26,9 @@ import (
 )
 
 type ResultDownloadService struct {
-	cfg     *config.Config
-	overlay *OverlayClient
+	cfg          *config.Config
+	overlay      *OverlayClient
+	signDownload func(context.Context, config.StorageConfig, string, string, time.Time) (string, error)
 }
 type ResultDownloadFile struct {
 	ID        string `json:"id"`
@@ -50,7 +51,7 @@ type ResultDownloadCatalog struct {
 }
 
 func NewResultDownloadService(cfg *config.Config) *ResultDownloadService {
-	svc := &ResultDownloadService{cfg: cfg, overlay: NewOverlayClient(cfg.Overlay)}
+	svc := &ResultDownloadService{cfg: cfg, overlay: NewOverlayClient(cfg.Overlay), signDownload: directCOSDownload}
 	go svc.reconcileAbandonedDownloads()
 	return svc
 }
@@ -98,7 +99,7 @@ func (s *ResultDownloadService) reconcileAbandonedDownloads() {
 
 func (s *ResultDownloadService) Active(ctx context.Context, task *model.Task, actor model.OverlayActor, ip string) ([]model.ResultDownload, error) {
 	rows := []model.ResultDownload{}
-	err := database.DB.WithContext(ctx).Where("task_uuid = ? AND attempt_id = ? AND user_id = ? AND org_id = ? AND client_ip = ? AND link_expires_at > ? AND refunded_at IS NULL", task.UUID, task.ExecutionAttemptID, actor.UserID, actor.OrgID, ip, time.Now()).Order("created_at DESC").Limit(10).Find(&rows).Error
+	err := database.DB.WithContext(ctx).Where("task_uuid = ? AND attempt_id = ? AND user_id = ? AND org_id = ? AND link_expires_at > ? AND refunded_at IS NULL", task.UUID, task.ExecutionAttemptID, actor.UserID, actor.OrgID, time.Now()).Order("created_at DESC").Limit(10).Find(&rows).Error
 	if err != nil {
 		return rows, err
 	}
@@ -457,9 +458,11 @@ func (s *ResultDownloadService) buildRawZIP(storage *s3Storage, key, prefix stri
 }
 
 func (s *ResultDownloadService) Quote(ctx context.Context, task *model.Task, actor model.OverlayActor, ip, kind, fileID string) (*model.ResultDownload, error) {
-	parsedIP := net.ParseIP(ip)
-	if parsedIP == nil || !parsedIP.IsGlobalUnicast() || parsedIP.IsPrivate() || actor.OrgID == "" || actor.OrgID != task.ExternalOrgID {
-		return nil, fmt.Errorf("下载身份或来源 IP 无效")
+	if actor.UserID == 0 || actor.OrgID == "" || actor.OrgID != task.ExternalOrgID {
+		return nil, fmt.Errorf("下载身份无效")
+	}
+	if err := downloadSigningAvailable(s.cfg.Storage); err != nil {
+		return nil, err
 	}
 	catalog, err := s.Catalog(ctx, task, false)
 	if err != nil {
@@ -506,6 +509,9 @@ func (s *ResultDownloadService) Quote(ctx context.Context, task *model.Task, act
 // Issue serializes one quote, prepares authorization before billing and uses
 // the quote UUID as the ledger key. A transport retry never creates a new fee.
 func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, actor model.OverlayActor, ip, id string) (map[string]interface{}, error) {
+	if err := downloadSigningAvailable(s.cfg.Storage); err != nil {
+		return nil, err
+	}
 	if s.overlay == nil {
 		return nil, fmt.Errorf("积分服务未配置，无法申请下载")
 	}
@@ -515,15 +521,13 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 	}
 	var link string
 	var quote model.ResultDownload
+	var linkExpires time.Time
 	// Commit the validity window before crossing the billing service boundary.
 	// If its response or the final DB commit is lost, retries retain the original
 	// deadline and ledger reference instead of extending the grant or recharging.
 	reserveErr := database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND task_uuid = ? AND attempt_id = ? AND user_id = ? AND org_id = ?", id, task.UUID, task.ExecutionAttemptID, actor.UserID, actor.OrgID).First(&quote).Error; err != nil {
 			return fmt.Errorf("下载申请不存在")
-		}
-		if quote.ClientIP != ip {
-			return fmt.Errorf("网络 IP 已改变，请重新申请下载")
 		}
 		if quote.RefundedAt != nil {
 			return fmt.Errorf("下载申请已关闭")
@@ -556,12 +560,10 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 	if reserveErr != nil {
 		return nil, reserveErr
 	}
+	quote = model.ResultDownload{}
 	err = database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND task_uuid = ? AND attempt_id = ? AND user_id = ? AND org_id = ?", id, task.UUID, task.ExecutionAttemptID, actor.UserID, actor.OrgID).First(&quote).Error; err != nil {
 			return fmt.Errorf("下载申请不存在")
-		}
-		if quote.ClientIP != ip {
-			return fmt.Errorf("网络 IP 已改变，请重新申请下载")
 		}
 		now := time.Now().UTC()
 		if quote.Kind == "bam" && deadline != nil {
@@ -585,8 +587,12 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 			}
 			quote.LinkExpiresAt = &expires
 		}
-		if !now.Before(*quote.LinkExpiresAt) {
-			return fmt.Errorf("下载链接已过期，请重新申请")
+		if err := downloadSigningAvailable(s.cfg.Storage); err != nil {
+			return err
+		}
+		linkExpires, err = downloadIssueDeadline(s.cfg.Storage, &quote, now)
+		if err != nil {
+			return err
 		}
 		storage, err := newS3Storage(ctx, s.cfg.Storage)
 		if err != nil {
@@ -596,20 +602,9 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 		if err != nil || aws.ToInt64(meta.ContentLength) != quote.SizeBytes || aws.ToString(meta.ETag) != quote.ETag {
 			return fmt.Errorf("文件发生变化或不可用，请重新申请；本次未扣费")
 		}
-		if quote.Kind == "zip" {
-			// Check readability before billing. ZIP delivery uses the authenticated
-			// site transport, whose observed IP is checked again by OpenZIP.
-			reader, openErr := storage.open(ctx, quote.ObjectKey)
-			if openErr != nil {
-				return fmt.Errorf("ZIP 暂时无法读取，本次未扣费")
-			}
-			reader.Close()
-			link = "/v1/tasks/" + task.UUID + "/downloads/" + quote.ID + "/file"
-		} else {
-			link, err = ipBoundCOSDownload(ctx, s.cfg.Storage, quote.ObjectKey, quote.Filename, ip, *quote.LinkExpiresAt)
-			if err != nil {
-				return err
-			}
+		link, err = s.signDownload(ctx, s.cfg.Storage, quote.ObjectKey, quote.Filename, linkExpires)
+		if err != nil {
+			return err
 		}
 		if quote.Kind == "bam" && deadline != nil && !time.Now().Before(*deadline) {
 			return fmt.Errorf("BAM 保留期已到，本次未签发链接")
@@ -631,39 +626,14 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 			}
 			quote.ChargedAt = &now
 		}
+		quote.LastIssuedAt = &now
+		quote.IssueCount++
 		return tx.Save(&quote).Error
 	})
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"id": quote.ID, "url": link, "filename": quote.Filename, "size_bytes": quote.SizeBytes, "credits_charged": quote.Credits, "expires_at": quote.LinkExpiresAt, "ip_bound": true}, nil
-}
-
-// OpenZIP never charges. A paid grant is restricted to its original user,
-// organisation, attempt and site-observed IP within its original validity window.
-func (s *ResultDownloadService) OpenZIP(ctx context.Context, task *model.Task, actor model.OverlayActor, ip, id, byteRange string) (*s3.GetObjectOutput, string, error) {
-	var grant model.ResultDownload
-	if err := database.DB.WithContext(ctx).Where("id = ? AND task_uuid = ? AND attempt_id = ? AND user_id = ? AND org_id = ? AND client_ip = ? AND kind = ? AND charged_at IS NOT NULL AND refunded_at IS NULL AND link_expires_at > ?", id, task.UUID, task.ExecutionAttemptID, actor.UserID, actor.OrgID, ip, "zip", time.Now().UTC()).First(&grant).Error; err != nil {
-		return nil, "", fmt.Errorf("ZIP 下载申请不存在、已到期或当前网络 IP 已改变")
-	}
-	storage, err := newS3Storage(ctx, s.cfg.Storage)
-	if err != nil {
-		return nil, "", fmt.Errorf("ZIP 存储暂时不可用，请稍后重试同一申请")
-	}
-	input := &s3.GetObjectInput{Bucket: aws.String(storage.bucket), Key: aws.String(grant.ObjectKey), IfMatch: aws.String(grant.ETag)}
-	if byteRange != "" {
-		if !strings.HasPrefix(byteRange, "bytes=") || strings.ContainsAny(byteRange, ",\r\n") || len(byteRange) > 80 {
-			return nil, "", fmt.Errorf("无效的续传区间")
-		}
-		input.Range = aws.String(byteRange)
-	}
-	output, err := storage.client.GetObject(ctx, input)
-	if err != nil {
-		return nil, "", fmt.Errorf("ZIP 读取失败，请重试同一申请，不会重复扣费")
-	}
-	if byteRange == "" && aws.ToInt64(output.ContentLength) != grant.SizeBytes {
-		output.Body.Close()
-		return nil, "", fmt.Errorf("ZIP 文件已变化，请联系管理员")
-	}
-	return output, grant.Filename, nil
+	settings := downloadSettings(s.cfg.Storage)
+	log.Printf("download_link_issued grant=%s task=%s kind=%s count=%d bytes=%d", quote.ID, task.UUID, quote.Kind, quote.IssueCount, quote.SizeBytes)
+	return map[string]interface{}{"id": quote.ID, "url": link, "filename": quote.Filename, "size_bytes": quote.SizeBytes, "credits_charged": quote.Credits, "expires_at": linkExpires, "grant_expires_at": quote.LinkExpiresAt, "ip_bound": false, "refresh_after": quote.LastIssuedAt.Add(settings.ResultDownloadRefreshInterval), "remaining_issues": settings.ResultDownloadMaxIssues - quote.IssueCount, "traffic_limit_bps": settings.ResultDownloadTrafficLimit}, nil
 }

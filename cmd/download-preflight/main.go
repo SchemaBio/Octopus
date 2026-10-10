@@ -16,11 +16,11 @@ import (
 
 func main() {
 	taskID := flag.String("task", "", "completed task UUID")
-	ip := flag.String("ip", "", "IP to bind; for probing, this host's COS source IP")
-	probe := flag.Bool("probe-network", false, "GET one byte and verify a different IP is denied (no billing)")
+	ip := flag.String("ip", "", "deprecated; download links no longer bind an IP")
+	probe := flag.Bool("probe-network", false, "GET one byte and verify removing the signed traffic limit is denied (no billing)")
 	flag.Parse()
-	if *taskID == "" || *ip == "" {
-		fmt.Fprintln(os.Stderr, "--task and --ip are required")
+	if *taskID == "" {
+		fmt.Fprintln(os.Stderr, "--task is required")
 		os.Exit(2)
 	}
 	cfg := config.Load()

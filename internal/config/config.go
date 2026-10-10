@@ -115,13 +115,18 @@ type LLMConfig struct {
 }
 
 type StorageConfig struct {
-	BAMRetentionDays  int    // 0 disables the policy; SaaS uses exactly 7 days
-	BAMCleanupEnabled bool   // enable physical deletion after reviewing a dry run
-	Provider          string // local or s3
-	LocalDir          string // local upload root directory
-	MaxSizeMB         int    // maximum upload file size in MB; default 20 GiB, 0 means unlimited
-	RetentionDays     int    // 0 keeps data indefinitely; SaaS deployments use 7
-	PresignExpiry     time.Duration
+	ResultDownloadLinkTTL         time.Duration
+	ResultDownloadRefreshInterval time.Duration
+	ResultDownloadMaxIssues       int
+	ResultDownloadTrafficLimit    int64  // bits per second, enforced by COS per request
+	ResultDownloadPauseFile       string // existing file pauses new download signatures
+	BAMRetentionDays              int    // 0 disables the policy; SaaS uses exactly 7 days
+	BAMCleanupEnabled             bool   // enable physical deletion after reviewing a dry run
+	Provider                      string // local or s3
+	LocalDir                      string // local upload root directory
+	MaxSizeMB                     int    // maximum upload file size in MB; default 20 GiB, 0 means unlimited
+	RetentionDays                 int    // 0 keeps data indefinitely; SaaS deployments use 7
+	PresignExpiry                 time.Duration
 	// CVM inputs may wait for spot capacity; keep their download URL valid for
 	// the retry window plus instance bootstrap time.
 	CVMInputPresignExpiry time.Duration
@@ -283,30 +288,35 @@ func Load() *Config {
 			ProxyMaxBodyBytes: int64(parseIntEnv("LLM_PROXY_MAX_BODY_MB", 2)) << 20,
 		},
 		Storage: StorageConfig{
-			Provider:              normalizeStorageProvider(storageProvider),
-			LocalDir:              getEnv("STORAGE_LOCAL_DIR", "/mnt/data/uploads"),
-			MaxSizeMB:             parseIntEnv("UPLOAD_MAX_SIZE_MB", 20480),
-			RetentionDays:         parseIntEnv("DATA_RETENTION_DAYS", 0),
-			BAMRetentionDays:      parseIntEnv("BAM_RETENTION_DAYS", 0),
-			BAMCleanupEnabled:     getEnv("BAM_CLEANUP_ENABLED", "false") == "true",
-			PresignExpiry:         parseDuration(getEnv("STORAGE_PRESIGN_EXPIRE", "15m")),
-			CVMInputPresignExpiry: parseDuration(getEnv("CVM_INPUT_PRESIGN_EXPIRE", "1h")),
-			S3Endpoint:            s3Endpoint,
-			S3PublicEndpoint:      s3PublicEndpoint,
-			S3Region:              s3Region,
-			S3Bucket:              s3Bucket,
-			CVMReferenceBucket:    strings.TrimSpace(getEnv("CVM_REFERENCE_BUCKET", "schemabio-1327430028")),
-			CVMReferenceAccessKey: strings.TrimSpace(getEnvOrFile("CVM_REFERENCE_SECRET_ID", "")),
-			CVMReferenceSecretKey: strings.TrimSpace(getEnvOrFile("CVM_REFERENCE_SECRET_KEY", "")),
-			S3AccessKey:           s3AccessKey,
-			S3SecretKey:           s3SecretKey,
-			S3SessionToken:        getEnvOrFile("S3_SESSION_TOKEN", ""),
-			S3UsePathStyle:        getEnv("S3_USE_PATH_STYLE", "false") == "true",
-			ScanLocalDir:          strings.TrimSpace(getEnv("DATA_SCAN_LOCAL_DIR", "")),
-			S3ScanPrefix:          strings.Trim(strings.TrimSpace(getEnv("S3_SCAN_PREFIX", "")), "/"),
-			ScanOrgID:             strings.TrimSpace(getEnv("DATA_SCAN_ORG_ID", "")),
-			ScanUserID:            parseIntEnv("DATA_SCAN_USER_ID", 1),
-			ScanInterval:          parseDuration(getEnv("DATA_SCAN_INTERVAL", "1m")),
+			ResultDownloadLinkTTL:         parseDuration(getEnv("RESULT_DOWNLOAD_LINK_TTL", "30m")),
+			ResultDownloadRefreshInterval: parseDuration(getEnv("RESULT_DOWNLOAD_REFRESH_INTERVAL", "60s")),
+			ResultDownloadMaxIssues:       parseIntEnv("RESULT_DOWNLOAD_MAX_ISSUES", 12),
+			ResultDownloadTrafficLimit:    int64(parseIntEnv("RESULT_DOWNLOAD_TRAFFIC_LIMIT_BPS", 83886080)),
+			ResultDownloadPauseFile:       getEnv("RESULT_DOWNLOAD_PAUSE_FILE", "/data/archive/.downloads-paused"),
+			Provider:                      normalizeStorageProvider(storageProvider),
+			LocalDir:                      getEnv("STORAGE_LOCAL_DIR", "/mnt/data/uploads"),
+			MaxSizeMB:                     parseIntEnv("UPLOAD_MAX_SIZE_MB", 20480),
+			RetentionDays:                 parseIntEnv("DATA_RETENTION_DAYS", 0),
+			BAMRetentionDays:              parseIntEnv("BAM_RETENTION_DAYS", 0),
+			BAMCleanupEnabled:             getEnv("BAM_CLEANUP_ENABLED", "false") == "true",
+			PresignExpiry:                 parseDuration(getEnv("STORAGE_PRESIGN_EXPIRE", "15m")),
+			CVMInputPresignExpiry:         parseDuration(getEnv("CVM_INPUT_PRESIGN_EXPIRE", "1h")),
+			S3Endpoint:                    s3Endpoint,
+			S3PublicEndpoint:              s3PublicEndpoint,
+			S3Region:                      s3Region,
+			S3Bucket:                      s3Bucket,
+			CVMReferenceBucket:            strings.TrimSpace(getEnv("CVM_REFERENCE_BUCKET", "schemabio-1327430028")),
+			CVMReferenceAccessKey:         strings.TrimSpace(getEnvOrFile("CVM_REFERENCE_SECRET_ID", "")),
+			CVMReferenceSecretKey:         strings.TrimSpace(getEnvOrFile("CVM_REFERENCE_SECRET_KEY", "")),
+			S3AccessKey:                   s3AccessKey,
+			S3SecretKey:                   s3SecretKey,
+			S3SessionToken:                getEnvOrFile("S3_SESSION_TOKEN", ""),
+			S3UsePathStyle:                getEnv("S3_USE_PATH_STYLE", "false") == "true",
+			ScanLocalDir:                  strings.TrimSpace(getEnv("DATA_SCAN_LOCAL_DIR", "")),
+			S3ScanPrefix:                  strings.Trim(strings.TrimSpace(getEnv("S3_SCAN_PREFIX", "")), "/"),
+			ScanOrgID:                     strings.TrimSpace(getEnv("DATA_SCAN_ORG_ID", "")),
+			ScanUserID:                    parseIntEnv("DATA_SCAN_USER_ID", 1),
+			ScanInterval:                  parseDuration(getEnv("DATA_SCAN_INTERVAL", "1m")),
 		},
 		Report: ReportConfig{
 			PackageMaxSizeMB: parseIntEnv("REPORT_PACKAGE_MAX_SIZE_MB", 20*1024),
