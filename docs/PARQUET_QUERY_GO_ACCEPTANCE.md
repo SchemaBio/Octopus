@@ -5,7 +5,7 @@
 - 623 pinned upstream function vectors, 193 full scoring requests, 375 input
   validation/public-JSON-boundary cases; classification/VUS/missing status,
   score components, caps, exclusivity and calculation provenance agree exactly.
-- 91 query/preparation/export vectors: compression, empty schema, absent fields,
+- 93 query/preparation/export vectors: compression, empty schema, absent fields,
   null versus zero, 64-bit integer precision, multi-value annotations, overlays,
   stable pagination, numeric/natural chromosome order and byte-exact CSV.
 - Wide-table oracle: 55,041 rows and 46 columns generated from production schema,
@@ -57,3 +57,31 @@ production snapshot check. No assessment save or report generation was performed
 This was controlled acceptance traffic, not observation of an actual business
 peak. The initial request-based release gate passed before runtime removal.
 Raw, non-clinical evidence lives in [acceptance data](plans/resultengine-go-acceptance.json).
+
+## Final Go-only deployment
+
+Runtime image: `schemabio/octopus:go-only-6ad61a1`, SHA-256
+`1eec470df3eb2609c86e700e2953357abc3ea426d001be90848788c541a84012`.
+Octopus is healthy, statically built with CGO disabled. The runtime image has no
+Python or DuckDB executable; the Python service, dedicated network, HTTP client,
+selectors and runtime Dockerfile have been removed. Cache/assessment mounts are
+writable by UID/GID 1000. Default and Sepiida networks remain attached.
+
+After removing the Python container, 58 additional authenticated requests passed
+across both tasks and all seven available tables, schema/scoring and complete
+CSV exports. Both CSV byte counts and hashes matched the first-stage release.
+Two concurrent numeric queries: ordinary API p95 38.97 ms (40 samples).
+Final container peak 159,703,040 bytes, no OOM; no temporary outputs remained.
+The 11 manual adjustment digests remained identical to the pre-release values.
+
+97 unused SaaS image entries were deleted without force. All running/stopped
+container references and five named rollback tags were preserved; no volumes,
+COS objects or unrelated services were deleted. Measured filesystem recovery
+was 237,613,056 bytes; shared build layers/caches were not globally pruned.
+First-stage rollback instructions are in [migration](PARQUET_QUERY_GO_MIGRATION.md).
+
+The attempted partly redacted fixture was rejected by automatic approval review
+because it would have retained genetic values. It was not created. Instead,
+`scripts/resultengine_oracle/shape.py` reads only aggregate shape statistics and
+generates every cell synthetically. Actual existing tasks were also exercised
+through their authorised read-only APIs, with no clinical content in this report.
