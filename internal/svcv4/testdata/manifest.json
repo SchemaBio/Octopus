@@ -1,0 +1,11 @@
+{
+  "revision": "ef66faff51a265fef7b5c4e6439905f3aa540c46",
+  "python": "3.12.14",
+  "upstreamVectors": 623,
+  "evaluateVectors": 193,
+  "sha256": {
+    "internal/svcv4/testdata/upstream.json": "f5fab10cc25078ce9aed9d565909d43508d0bc5ad9d0181d16d92255da3da5eb",
+    "internal/svcv4/testdata/evaluate.json": "d140529eb4890308dd97b5217f452af47de05682eedb274276825f897810a9c5",
+    "internal/svcv4/schema.json": "40221db1b25f726c882e14012c19d8e38742bc32162926b187b5d4136af1f5bd"
+  }
+}

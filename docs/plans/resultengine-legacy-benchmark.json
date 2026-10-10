@@ -1,0 +1,139 @@
+[
+  {
+    "rows": 10000,
+    "bytes": 512739,
+    "sha256": "30859d3fbae82055861b63d8205853337e7cdb1463dd4b64cfa806e064cdb045"
+  },
+  {
+    "operation": "query",
+    "rows": 10000,
+    "elapsedSeconds": 0.032428134232759476,
+    "peakRSSKiB": 68956,
+    "result": 10000,
+    "duckdb": "1.5.5"
+  },
+  {
+    "operation": "sort",
+    "rows": 10000,
+    "elapsedSeconds": 0.06688663735985756,
+    "peakRSSKiB": 82904,
+    "result": 10000,
+    "duckdb": "1.5.5"
+  },
+  {
+    "operation": "filter",
+    "rows": 10000,
+    "elapsedSeconds": 0.04215388000011444,
+    "peakRSSKiB": 75816,
+    "result": 1714,
+    "duckdb": "1.5.5"
+  },
+  {
+    "operation": "export",
+    "rows": 10000,
+    "elapsedSeconds": 0.37635814771056175,
+    "peakRSSKiB": 158684,
+    "result": 3640730,
+    "duckdb": "1.5.5"
+  },
+  {
+    "operation": "prepare",
+    "rows": 10000,
+    "elapsedSeconds": 0.2076234593987465,
+    "peakRSSKiB": 70984,
+    "result": 10000,
+    "duckdb": "1.5.5"
+  },
+  {
+    "rows": 100000,
+    "bytes": 4810886,
+    "sha256": "a19e12772e01ae5c7493fe05f21f95e204e9d72964b873165fab3ffaf8a164ba"
+  },
+  {
+    "operation": "query",
+    "rows": 100000,
+    "elapsedSeconds": 0.04299304634332657,
+    "peakRSSKiB": 78672,
+    "result": 100000,
+    "duckdb": "1.5.5"
+  },
+  {
+    "operation": "sort",
+    "rows": 100000,
+    "elapsedSeconds": 0.3141024000942707,
+    "peakRSSKiB": 169588,
+    "result": 100000,
+    "duckdb": "1.5.5"
+  },
+  {
+    "operation": "filter",
+    "rows": 100000,
+    "elapsedSeconds": 0.11149799078702927,
+    "peakRSSKiB": 115808,
+    "result": 17142,
+    "duckdb": "1.5.5"
+  },
+  {
+    "operation": "export",
+    "rows": 100000,
+    "elapsedSeconds": 2.697286281734705,
+    "peakRSSKiB": 281320,
+    "result": 36505029,
+    "duckdb": "1.5.5"
+  },
+  {
+    "operation": "prepare",
+    "rows": 100000,
+    "elapsedSeconds": 1.6975131332874298,
+    "peakRSSKiB": 81868,
+    "result": 100000,
+    "duckdb": "1.5.5"
+  },
+  {
+    "rows": 1000000,
+    "bytes": 48021535,
+    "sha256": "243814ca4d2eab08efde9e5b97e556b90144eb2fd619492934a7f30f46916e3c"
+  },
+  {
+    "operation": "query",
+    "rows": 1000000,
+    "elapsedSeconds": 0.04825423285365105,
+    "peakRSSKiB": 105216,
+    "result": 1000000,
+    "duckdb": "1.5.5"
+  },
+  {
+    "rows": 1000000,
+    "operation": "sort",
+    "productionError": "DuckDB temp directory .tmp is not writable; remaining benchmark uses writable /tmp spill directory"
+  },
+  {
+    "operation": "sort",
+    "rows": 1000000,
+    "elapsedSeconds": 5.455658622086048,
+    "peakRSSKiB": 322264,
+    "result": 1000000,
+    "duckdb": "1.5.5"
+  },
+  {
+    "operation": "filter",
+    "rows": 1000000,
+    "elapsedSeconds": 1.3677212484180927,
+    "peakRSSKiB": 339672,
+    "result": 171428,
+    "duckdb": "1.5.5"
+  },
+  {
+    "operation": "export",
+    "rows": 1000000,
+    "error": "Traceback (most recent call last):\n  File \"<string>\", line 41, in <module>\n  File \"/srv/server.py\", line 296, in execute\n    conn.execute(\"COPY (\" + selection + \" \" + joined + where_sql + \" ORDER BY \" + order + \") TO '\" + str(output).replace(\"'\", \"''\") + \"' (FORMAT CSV, HEADER TRUE)\",\n_duckdb.InterruptException: INTERRUPT Error: Interrupted!\n"
+  },
+  {
+    "operation": "prepare",
+    "rows": 1000000,
+    "elapsedSeconds": 16.65948572382331,
+    "peakRSSKiB": 105088,
+    "result": 1000000,
+    "duckdb": "1.5.5"
+  }
+]

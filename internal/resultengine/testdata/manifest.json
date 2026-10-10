@@ -1,0 +1,12 @@
+{
+  "cases": 65,
+  "duckdb": "1.5.5",
+  "sha256": {
+    "empty.parquet": "78ce5ba13efc20a7b951f2e0903bec631ffa16b4b76e2cc04a5dc957efc64ba1",
+    "gzip.parquet": "b680ef81a276f8f4f50d0f79851135bab369866e7990e93e9df885a8f3095853",
+    "numeric.parquet": "d25fad75590004837d4078aca185666d5951479c504947a91b8822dc8f25e17a",
+    "snappy.parquet": "f33ce549e21d61b24dbc49bd3db492888347afc69047d8dd6c9fe83f63232807",
+    "uncompressed.parquet": "573841661465ef3e6e56b9e87e468ace2b26262d34258eb6fbb70a0e792a37c5",
+    "zstd.parquet": "371874472adee36bd4aca9ad1ffde7b964de6d20f446ff49dc121433a24ab2f6"
+  }
+}
