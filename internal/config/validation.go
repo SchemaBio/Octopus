@@ -10,6 +10,11 @@ import (
 
 // ValidateStartup checks the configuration for common mistakes at server startup.
 func ValidateStartup(cfg *Config) error {
+	for name, value := range map[string]string{"RESULT_ENGINE_BACKEND": cfg.ResultQuery.Backend, "SVC_ENGINE_BACKEND": cfg.ResultQuery.SVCBackend} {
+		if value != "" && value != "go" && value != "python" {
+			return fmt.Errorf("%s must be go or python", name)
+		}
+	}
 	if cfg.Storage.ResultDownloadLinkTTL != 0 && (cfg.Storage.ResultDownloadLinkTTL < time.Minute || cfg.Storage.ResultDownloadLinkTTL > time.Hour) {
 		return fmt.Errorf("RESULT_DOWNLOAD_LINK_TTL must be between 1m and 1h")
 	}

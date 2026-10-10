@@ -19,7 +19,7 @@ func (s *ResultService) SVCv4(ctx context.Context, input map[string]interface{})
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if s.cfg.ResultQuery.Backend != "python" {
+	if s.cfg.ResultQuery.SVCBackend != "python" {
 		if input == nil {
 			return svcv4.Schema(), nil
 		}

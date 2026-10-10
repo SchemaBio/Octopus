@@ -57,7 +57,7 @@ func TestSVCv4ProxyChecksReferenceRevision(t *testing.T) {
 		}))
 		cfg := &config.Config{}
 		cfg.ResultQuery.ServiceURL = upstream.URL
-		cfg.ResultQuery.Backend = "python"
+		cfg.ResultQuery.SVCBackend = "python"
 		_, err := (&ResultService{cfg: cfg}).SVCv4(context.Background(), map[string]interface{}{"inputs": map[string]interface{}{}})
 		upstream.Close()
 		if (err == nil) != (revision == SVCv4Revision) {

@@ -66,6 +66,11 @@ type parquetPrepareResponse struct {
 }
 
 func (s *ResultService) QueryParquetTable(ctx context.Context, task *model.Task, table string, query model.ParquetQueryRequest) (*model.ParquetQueryResponse, error) {
+	ctx, release, admissionErr := admitResultOperation(ctx)
+	if admissionErr != nil {
+		return nil, admissionErr
+	}
+	defer release()
 	if task == nil || !validParquetTable(table) {
 		return nil, fmt.Errorf("unsupported result table")
 	}
@@ -638,6 +643,11 @@ func currentCacheName(id, hash string) string { return id + "-" + hash + ".parqu
 
 // Resolve a stable row against the current immutable object; hashes alone are not membership proof.
 func (s *ResultService) verifyParquetRow(ctx context.Context, task *model.Task, table, rowID string) (*model.ResultDataset, error) {
+	ctx, release, admissionErr := admitResultOperation(ctx)
+	if admissionErr != nil {
+		return nil, admissionErr
+	}
+	defer release()
 	dataset, err := s.ensureParquetDataset(ctx, task, model.TenantIDForTask(task), executionAttempt(task), table)
 	if err != nil {
 		return nil, err
@@ -657,7 +667,18 @@ func (s *ResultService) verifyParquetRow(ctx context.Context, task *model.Task, 
 }
 
 // Export an effective table through the same structured query engine as the workspace.
-func (s *ResultService) ExportParquetTable(ctx context.Context, task *model.Task, table string, query model.ParquetQueryRequest) (*http.Response, error) {
+func (s *ResultService) ExportParquetTable(ctx context.Context, task *model.Task, table string, query model.ParquetQueryRequest) (response *http.Response, err error) {
+	ctx, release, admissionErr := admitResultOperation(ctx)
+	if admissionErr != nil {
+		return nil, admissionErr
+	}
+	defer func() {
+		if err != nil {
+			release()
+		} else {
+			response.Body = &leasedExportBody{ReadCloser: response.Body, release: release}
+		}
+	}()
 	if !validParquetTable(table) {
 		return nil, fmt.Errorf("invalid result table")
 	}

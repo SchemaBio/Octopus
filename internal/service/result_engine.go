@@ -85,6 +85,10 @@ func (s *ResultService) queryResultEngine(ctx context.Context, wire parquetQuery
 		}
 		return nil, err
 	}
+	encoded, encodeErr := json.Marshal(r)
+	if encodeErr != nil || len(encoded) > 16<<20 {
+		return nil, fmt.Errorf("invalid Parquet query response")
+	}
 	return &model.ParquetQueryResponse{Items: r.Items, Total: r.Total, RowCount: r.RowCount, Offset: r.Offset, Limit: r.Limit, Columns: r.Columns, ColumnTypes: r.ColumnTypes, FieldProfileVersion: r.FieldProfileVersion}, nil
 }
 func (s *ResultService) prepareResultEngine(ctx context.Context, wire resultengine.Request) (*parquetPrepareResponse, error) {
