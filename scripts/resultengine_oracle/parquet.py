@@ -32,6 +32,11 @@ def main():
     con.execute('CREATE TABLE numeric(Chromosome VARCHAR, Position BIGINT, VAF DOUBLE, Depth BIGINT, Missing VARCHAR)')
     con.execute("INSERT INTO numeric VALUES ('1',9007199254740993,0.125,100,NULL),('X',NULL,NULL,NULL,'.')")
     con.execute('COPY numeric TO ? (FORMAT PARQUET)',[str(target/'numeric.parquet')])
+    con.execute('CREATE TABLE nonfinite(Position VARCHAR, GnomAD_AF VARCHAR)')
+    con.executemany('INSERT INTO nonfinite VALUES (?,?)',[('1','NaN'),('2','inf'),('3','-inf'),('4','0'),('5','bad'),('6',None)])
+    con.execute('COPY nonfinite TO ? (FORMAT PARQUET)',[str(target/'nonfinite.parquet')])
+    con.execute("INSERT INTO source VALUES ('1','1','GENE1','SNP','missense_variant','ENST000001','1.0','0',NULL),('2','2','GENE2','SNP','missense_variant','ENST000001','0.0','0',NULL)")
+    con.execute('COPY source TO ? (FORMAT PARQUET)',[str(target/'boundaries.parquet')])
     con.close()
     cases=[]
     def add(file='snappy.parquet',export=False,prepare=False,**updates):
@@ -50,6 +55,7 @@ def main():
         cases.append(entry)
     for file in ['snappy.parquet','gzip.parquet','zstd.parquet','uncompressed.parquet','empty.parquet','numeric.parquet']: add(file); add(file,export=True)
     add(prepare=True); add('empty.parquet',prepare=True)
+    add('boundaries.parquet'); add('boundaries.parquet',export=True); add('boundaries.parquet',prepare=True)
     for table in sorted(server.TABLES): add(table=table)
     for column in ['Chromosome','Position','GnomAD_AF','Gene']:
         for direction in ['asc','desc']: add(sort=column,direction=direction,offset=1,limit=3); add(sort=column,direction=direction,export=True)
@@ -61,7 +67,14 @@ def main():
         overlays=[{'rowId':identity,'version':3,'payload':payload}]
         add(overlays=overlays); add(overlays=overlays,export=True); add(overlays=overlays,filters=[{'column':'acmgClassification','operator':'equals','value':'VUS'}])
     add(rowId=identity); add(offset=100); add(limit=10000); add(search='GENE'); add(search='likely_benign')
+    add(overlays=[{'rowId':identity,'version':1,'payload':{'svcv4Assessment':{'warnings':['中文<>&😀'], 'inputs':{'tiny':1e-6,'integerFloat':1.0}},'acmgEvidence':[{'code':'PP3','note':'中文😀','value':1.0}]}}],export=True)
     add(filters=[{'column':'unknown','operator':'equals','value':'x'}]); add(filters=[{'column':'Gene','operator':'unknown','value':'x'}]); add(filters=[{'column':'Position','operator':'between','value':[10,1]}])
+    for op in ['equals','in','contains']:
+        for value in [True,False,0,0.0,None]:
+            add(overlays=[{'rowId':identity,'version':1,'payload':{'reviewed':True}}],filters=[{'column':'reviewed','operator':op,'value':[value] if op=='in' else value}])
+    for direction in ['asc','desc']: add('nonfinite.parquet',sort='GnomAD_AF',direction=direction)
+    for op,value in [('gt',0),('lt',0),('gte','NaN'),('between',['-inf','inf']),('between',['NaN','NaN'])]:
+        add('nonfinite.parquet',filters=[{'column':'GnomAD_AF','operator':op,'value':value}])
     (target/'golden.json').write_text(json.dumps(cases,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     manifest={'cases':len(cases),'duckdb':duckdb.__version__,'sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(target.glob('*.parquet'))}}
     (target/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')

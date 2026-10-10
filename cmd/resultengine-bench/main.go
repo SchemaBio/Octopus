@@ -21,8 +21,15 @@ func main() {
 	root := flag.String("root", "/tmp/resultengine-benchmark", "fixture directory")
 	rows := flag.Int("rows", 100000, "fixture rows")
 	op := flag.String("operation", "query", "query/sort/filter/export/prepare")
+	name := flag.String("file", "", "fixture basename within root")
 	flag.Parse()
 	file := filepath.Join(*root, fmt.Sprint(*rows)+".parquet")
+	if *name != "" {
+		if filepath.Base(*name) != *name {
+			panic("fixture must be a basename")
+		}
+		file = filepath.Join(*root, *name)
+	}
 	f, err := os.Open(file)
 	if err != nil {
 		panic(err)

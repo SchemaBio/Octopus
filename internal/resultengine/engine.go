@@ -2,7 +2,6 @@ package resultengine
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 
 	"encoding/json"
@@ -241,7 +240,7 @@ func (e *Engine) run(ctx context.Context, q Request, export bool) (response *Res
 				os.Remove(output)
 			}
 		}()
-		writer = newCSVWriter(file)
+		writer = newCSVWriter(budgetWriter{writer: file, budget: &diskBudget{limit: maxExportBytes}})
 		if err = writer.WriteHeader(append(append(append([]string{}, original...), "row_id"), extra...)); err != nil {
 			return nil, "", err
 		}
@@ -325,19 +324,21 @@ func (e *Engine) run(ctx context.Context, q Request, export bool) (response *Res
 					v := p.field(c)
 					if raw, ok := o.raw[c]; ok && c != "acmgEvidence" {
 						if len(raw) > 0 && (raw[0] == '{' || raw[0] == '[') {
-							var b bytes.Buffer
-							json.Compact(&b, raw)
-							v = b.String()
+							v, err = pythonJSON(raw)
+							if err != nil {
+								return nil, "", err
+							}
 						}
 					}
 					if c == "acmgEvidence" {
 						if raw, ok := o.raw[c]; ok {
-							var b bytes.Buffer
-							json.Compact(&b, raw)
-							v = b.String()
+							v, err = pythonJSON(raw)
+							if err != nil {
+								return nil, "", err
+							}
 						} else if a, ok := automatic["criteria"].([]interface{}); ok && len(a) > 0 {
 							criterion := a[0].(map[string]interface{})
-							v = fmt.Sprintf(`[{"code":%q,"strength":%q,"source":%q,"value":%s}]`, criterion["code"], criterion["strength"], criterion["source"], text(criterion["value"]))
+							v = fmt.Sprintf(`[{"code":%q,"strength":%q,"source":%q,"value":%s}]`, criterion["code"], criterion["strength"], criterion["source"], pythonFloat(criterion["value"].(float64)))
 						}
 					}
 					values = append(values, csvValue(v))
@@ -353,6 +354,14 @@ func (e *Engine) run(ctx context.Context, q Request, export bool) (response *Res
 			if q.Sort != "" {
 				if top != nil {
 					top.add(entry)
+					if top.bytes > 4<<20 {
+						for _, kept := range top.rows {
+							if err = sorter.add(kept); err != nil {
+								return nil, "", err
+							}
+						}
+						top = nil
+					}
 				} else if err = sorter.add(entry); err != nil {
 					return nil, "", err
 				}
@@ -372,7 +381,7 @@ func (e *Engine) run(ctx context.Context, q Request, export bool) (response *Res
 				return writer.WriteRaw(entry.CSV)
 			}
 			if seen >= q.Offset && int64(len(response.Items)) < q.Limit {
-				if top != nil {
+				if _, decorated := entry.Row["__row_id"]; !decorated {
 					id := RowID(q.DatasetID, q.ObjectHash, entry.Ordinal)
 					o, exists := overlays[id]
 					decorate(entry.Row, q.Table, id, entry.Ordinal, o, exists)

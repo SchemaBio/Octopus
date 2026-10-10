@@ -59,7 +59,28 @@ func numeric(v interface{}) (float64, bool) {
 		return 0, false
 	}
 	n, e := strconv.ParseFloat(strings.TrimSpace(text(v)), 64)
-	return n, e == nil && !math.IsNaN(n) && !math.IsInf(n, 0)
+	return n, e == nil
+}
+
+// DuckDB orders NaN above every finite/infinite value and considers NaN equal
+// to itself. This differs from Go's IEEE comparisons and matters for filters.
+func compareNumber(a, b float64) int {
+	if math.IsNaN(a) {
+		if math.IsNaN(b) {
+			return 0
+		}
+		return 1
+	}
+	if math.IsNaN(b) {
+		return -1
+	}
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
 }
 func isNumeric(name string) bool {
 	for _, v := range numericFields {

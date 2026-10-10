@@ -78,7 +78,16 @@ func matches(v interface{}, f Filter) bool {
 	case "equals", "in":
 		for _, part := range strings.Split(s, "&") {
 			for _, needle := range values {
-				if part == text(needle) {
+				compared := text(needle)
+				if f.Operator == "in" {
+					if b, ok := needle.(bool); ok {
+						compared = "False"
+						if b {
+							compared = "True"
+						}
+					}
+				}
+				if part == compared {
 					return true
 				}
 			}
@@ -96,24 +105,24 @@ func matches(v interface{}, f Filter) bool {
 			}
 			switch f.Operator {
 			case "gt":
-				if n > bound {
+				if compareNumber(n, bound) > 0 {
 					return true
 				}
 			case "gte":
-				if n >= bound {
+				if compareNumber(n, bound) >= 0 {
 					return true
 				}
 			case "lt":
-				if n < bound {
+				if compareNumber(n, bound) < 0 {
 					return true
 				}
 			case "lte":
-				if n <= bound {
+				if compareNumber(n, bound) <= 0 {
 					return true
 				}
 			case "between":
 				upper, _ := numeric(values[1])
-				if n >= bound && n <= upper {
+				if compareNumber(n, bound) >= 0 && compareNumber(n, upper) <= 0 {
 					return true
 				}
 			}
@@ -151,7 +160,7 @@ func makeKey(name string, value interface{}) sortKey {
 	if isNumeric(name) {
 		var min *float64
 		for _, part := range strings.Split(text(value), "&") {
-			if n, ok := numeric(part); ok && (min == nil || n < *min) {
+			if n, ok := numeric(part); ok && (min == nil || compareNumber(n, *min) < 0) {
 				copy := n
 				min = &copy
 			}

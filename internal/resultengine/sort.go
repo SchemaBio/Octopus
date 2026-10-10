@@ -22,6 +22,7 @@ type topRows struct {
 	s     *sorter
 	limit int
 	rows  []sortEntry
+	bytes int
 }
 
 func (t topRows) Len() int            { return len(t.rows) }
@@ -36,10 +37,22 @@ func (t *topRows) Pop() interface{} {
 func (t *topRows) add(v sortEntry) {
 	if len(t.rows) < t.limit {
 		heap.Push(t, v)
+		t.bytes += rowSize(v.Row)
 	} else if t.s.less(v, t.rows[0]) {
+		t.bytes += rowSize(v.Row) - rowSize(t.rows[0].Row)
 		t.rows[0] = v
 		heap.Fix(t, 0)
 	}
+}
+func rowSize(row map[string]interface{}) int {
+	size := len(row) * 64
+	for k, v := range row {
+		size += len(k)
+		if s, ok := v.(string); ok {
+			size += len(s)
+		}
+	}
+	return size
 }
 func (t *topRows) each(emit func(sortEntry) error) error {
 	sort.Slice(t.rows, func(i, j int) bool { return t.s.less(t.rows[i], t.rows[j]) })
@@ -61,6 +74,7 @@ type sorter struct {
 	buffer []sortEntry
 	bytes  int
 	runs   []string
+	disk   diskBudget
 }
 
 func newSorter(ctx context.Context, root string, desc bool) (*sorter, error) {
@@ -68,7 +82,7 @@ func newSorter(ctx context.Context, root string, desc bool) (*sorter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &sorter{ctx: ctx, dir: dir, desc: desc}, nil
+	return &sorter{ctx: ctx, dir: dir, desc: desc, disk: diskBudget{limit: maxSpillBytes}}, nil
 }
 func (s *sorter) close() { os.RemoveAll(s.dir) }
 func (s *sorter) less(a, b sortEntry) bool {
@@ -77,12 +91,7 @@ func (s *sorter) less(a, b sortEntry) bool {
 	}
 	cmp := 0
 	if a.Key.Number != nil && b.Key.Number != nil {
-		if *a.Key.Number < *b.Key.Number {
-			cmp = -1
-		}
-		if *a.Key.Number > *b.Key.Number {
-			cmp = 1
-		}
+		cmp = compareNumber(*a.Key.Number, *b.Key.Number)
 	} else if !a.Key.Missing {
 		if a.Key.Text < b.Key.Text {
 			cmp = -1
@@ -126,7 +135,7 @@ func (s *sorter) flush() error {
 	if err != nil {
 		return err
 	}
-	w := bufio.NewWriterSize(file, 65536)
+	w := bufio.NewWriterSize(budgetWriter{writer: file, budget: &s.disk}, 65536)
 	for _, v := range s.buffer {
 		if err = writeEntry(w, v); err != nil {
 			file.Close()
@@ -231,7 +240,7 @@ func (s *sorter) each(emit func(sortEntry) error) error {
 			if err != nil {
 				return err
 			}
-			w := bufio.NewWriterSize(f, 65536)
+			w := bufio.NewWriterSize(budgetWriter{writer: f, budget: &s.disk}, 65536)
 			err = s.merge(s.runs[start:end], func(v sortEntry) error { return writeEntry(w, v) })
 			if err == nil {
 				err = w.Flush()
@@ -245,9 +254,14 @@ func (s *sorter) each(emit func(sortEntry) error) error {
 			}
 			next = append(next, f.Name())
 			for _, path := range s.runs[start:end] {
+				info, statErr := os.Stat(path)
+				if statErr != nil {
+					return statErr
+				}
 				if err = os.Remove(path); err != nil {
 					return err
 				}
+				s.disk.used -= info.Size()
 			}
 		}
 		s.runs = next
