@@ -1,5 +1,5 @@
 {
-  "cases": 91,
+  "cases": 93,
   "duckdb": "1.5.5",
   "sha256": {
     "boundaries.parquet": "2825d91469dfcb20ebd56432b21d508bc2f4fcb8f56ab3d52183bf232448b1c0",

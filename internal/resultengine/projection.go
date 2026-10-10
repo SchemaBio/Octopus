@@ -50,6 +50,10 @@ func jsonText(v interface{}) interface{} {
 	switch v.(type) {
 	case map[string]interface{}, []interface{}, []map[string]interface{}:
 		b, _ := json.Marshal(v)
+		encoded, err := pythonJSON(b)
+		if err == nil {
+			return encoded
+		}
 		return string(b)
 	}
 	return text(v)

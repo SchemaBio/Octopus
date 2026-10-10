@@ -68,6 +68,8 @@ def main():
         add(overlays=overlays); add(overlays=overlays,export=True); add(overlays=overlays,filters=[{'column':'acmgClassification','operator':'equals','value':'VUS'}])
     add(rowId=identity); add(offset=100); add(limit=10000); add(search='GENE'); add(search='likely_benign')
     add(overlays=[{'rowId':identity,'version':1,'payload':{'svcv4Assessment':{'warnings':['中文<>&😀'], 'inputs':{'tiny':1e-6,'integerFloat':1.0}},'acmgEvidence':[{'code':'PP3','note':'中文😀','value':1.0}]}}],export=True)
+    for needle in ['&','中文']:
+        add(overlays=[{'rowId':identity,'version':1,'payload':{'svcv4Assessment':{'warnings':['中文<>&😀']}}}],filters=[{'column':'svcv4Assessment','operator':'contains','value':needle}])
     add(filters=[{'column':'unknown','operator':'equals','value':'x'}]); add(filters=[{'column':'Gene','operator':'unknown','value':'x'}]); add(filters=[{'column':'Position','operator':'between','value':[10,1]}])
     for op in ['equals','in','contains']:
         for value in [True,False,0,0.0,None]:

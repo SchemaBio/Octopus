@@ -8608,6 +8608,276 @@
       "objectSha256": "f33ce549e21d61b24dbc49bd3db492888347afc69047d8dd6c9fe83f63232807",
       "offset": 0,
       "limit": 20,
+      "overlays": [
+        {
+          "rowId": "85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b",
+          "version": 1,
+          "payload": {
+            "svcv4Assessment": {
+              "warnings": [
+                "中文<>&😀"
+              ]
+            }
+          }
+        }
+      ],
+      "filters": [
+        {
+          "column": "svcv4Assessment",
+          "operator": "contains",
+          "value": "&"
+        }
+      ]
+    },
+    "output": {
+      "items": [
+        {
+          "Chromosome": "chr2",
+          "Position": "10",
+          "Gene": "GENE1",
+          "Type": "SNP",
+          "Consequence": "missense_variant",
+          "Transcript": "ENST000001",
+          "AlphaMissense_AM": "0.995",
+          "GnomAD_AF": "0.1&0.01",
+          "Note": "comma, quote\" and\nnewline",
+          "file_row_number": 0,
+          "__row_id": "85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b",
+          "__adjustments": {
+            "svcv4Assessment": {
+              "warnings": [
+                "中文<>&😀"
+              ]
+            }
+          },
+          "__adjustment_version": 1,
+          "__ordinal": 0,
+          "__acmg": {
+            "profile": "acmg-snv-points-v2",
+            "state": "classified",
+            "score": 4,
+            "criteria": [
+              {
+                "code": "PP3",
+                "strength": "strong",
+                "source": "AlphaMissense",
+                "value": 0.995
+              }
+            ],
+            "classification": "VUS",
+            "pending": [
+              "疾病机制、病例/家系及实验室证据未由本自动初评评估"
+            ]
+          }
+        }
+      ],
+      "total": 1,
+      "rowCount": 6,
+      "offset": 0,
+      "limit": 20,
+      "columns": [
+        "AlphaMissense_AM",
+        "Chromosome",
+        "Consequence",
+        "Gene",
+        "GnomAD_AF",
+        "Note",
+        "Position",
+        "Transcript",
+        "Type",
+        "acmgClassification",
+        "acmgEvidence",
+        "acmgOverride",
+        "acmgOverrideReason",
+        "acmgProfile",
+        "acmgScore",
+        "acmgState",
+        "acmgTrial",
+        "acmgVusSubclass",
+        "activeAcmgVersion",
+        "cnvAssessment",
+        "cnvClassification",
+        "cnvScore",
+        "interpretation",
+        "reported",
+        "reviewed",
+        "svcv4Assessment"
+      ],
+      "columnTypes": {
+        "AlphaMissense_AM": "number",
+        "Chromosome": "text",
+        "Consequence": "text",
+        "Gene": "text",
+        "GnomAD_AF": "number",
+        "Note": "text",
+        "Position": "number",
+        "Transcript": "text",
+        "Type": "text",
+        "acmgClassification": "enum",
+        "acmgEvidence": "text",
+        "acmgOverride": "text",
+        "acmgOverrideReason": "text",
+        "acmgProfile": "text",
+        "acmgScore": "number",
+        "acmgState": "text",
+        "acmgTrial": "text",
+        "acmgVusSubclass": "text",
+        "activeAcmgVersion": "text",
+        "cnvAssessment": "text",
+        "cnvClassification": "text",
+        "cnvScore": "number",
+        "interpretation": "text",
+        "reported": "boolean",
+        "reviewed": "boolean",
+        "svcv4Assessment": "text"
+      },
+      "fieldProfileVersion": "parquet-fields-v2"
+    }
+  },
+  {
+    "operation": "query",
+    "input": {
+      "table": "snv-indel",
+      "filePath": "snappy.parquet",
+      "datasetId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "objectSha256": "f33ce549e21d61b24dbc49bd3db492888347afc69047d8dd6c9fe83f63232807",
+      "offset": 0,
+      "limit": 20,
+      "overlays": [
+        {
+          "rowId": "85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b",
+          "version": 1,
+          "payload": {
+            "svcv4Assessment": {
+              "warnings": [
+                "中文<>&😀"
+              ]
+            }
+          }
+        }
+      ],
+      "filters": [
+        {
+          "column": "svcv4Assessment",
+          "operator": "contains",
+          "value": "中文"
+        }
+      ]
+    },
+    "output": {
+      "items": [
+        {
+          "Chromosome": "chr2",
+          "Position": "10",
+          "Gene": "GENE1",
+          "Type": "SNP",
+          "Consequence": "missense_variant",
+          "Transcript": "ENST000001",
+          "AlphaMissense_AM": "0.995",
+          "GnomAD_AF": "0.1&0.01",
+          "Note": "comma, quote\" and\nnewline",
+          "file_row_number": 0,
+          "__row_id": "85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b",
+          "__adjustments": {
+            "svcv4Assessment": {
+              "warnings": [
+                "中文<>&😀"
+              ]
+            }
+          },
+          "__adjustment_version": 1,
+          "__ordinal": 0,
+          "__acmg": {
+            "profile": "acmg-snv-points-v2",
+            "state": "classified",
+            "score": 4,
+            "criteria": [
+              {
+                "code": "PP3",
+                "strength": "strong",
+                "source": "AlphaMissense",
+                "value": 0.995
+              }
+            ],
+            "classification": "VUS",
+            "pending": [
+              "疾病机制、病例/家系及实验室证据未由本自动初评评估"
+            ]
+          }
+        }
+      ],
+      "total": 1,
+      "rowCount": 6,
+      "offset": 0,
+      "limit": 20,
+      "columns": [
+        "AlphaMissense_AM",
+        "Chromosome",
+        "Consequence",
+        "Gene",
+        "GnomAD_AF",
+        "Note",
+        "Position",
+        "Transcript",
+        "Type",
+        "acmgClassification",
+        "acmgEvidence",
+        "acmgOverride",
+        "acmgOverrideReason",
+        "acmgProfile",
+        "acmgScore",
+        "acmgState",
+        "acmgTrial",
+        "acmgVusSubclass",
+        "activeAcmgVersion",
+        "cnvAssessment",
+        "cnvClassification",
+        "cnvScore",
+        "interpretation",
+        "reported",
+        "reviewed",
+        "svcv4Assessment"
+      ],
+      "columnTypes": {
+        "AlphaMissense_AM": "number",
+        "Chromosome": "text",
+        "Consequence": "text",
+        "Gene": "text",
+        "GnomAD_AF": "number",
+        "Note": "text",
+        "Position": "number",
+        "Transcript": "text",
+        "Type": "text",
+        "acmgClassification": "enum",
+        "acmgEvidence": "text",
+        "acmgOverride": "text",
+        "acmgOverrideReason": "text",
+        "acmgProfile": "text",
+        "acmgScore": "number",
+        "acmgState": "text",
+        "acmgTrial": "text",
+        "acmgVusSubclass": "text",
+        "activeAcmgVersion": "text",
+        "cnvAssessment": "text",
+        "cnvClassification": "text",
+        "cnvScore": "number",
+        "interpretation": "text",
+        "reported": "boolean",
+        "reviewed": "boolean",
+        "svcv4Assessment": "text"
+      },
+      "fieldProfileVersion": "parquet-fields-v2"
+    }
+  },
+  {
+    "operation": "query",
+    "input": {
+      "table": "snv-indel",
+      "filePath": "snappy.parquet",
+      "datasetId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "objectSha256": "f33ce549e21d61b24dbc49bd3db492888347afc69047d8dd6c9fe83f63232807",
+      "offset": 0,
+      "limit": 20,
       "overlays": [],
       "filters": [
         {
