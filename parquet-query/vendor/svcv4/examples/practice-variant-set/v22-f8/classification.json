@@ -1,0 +1,224 @@
+{
+  "proposition": {
+    "subject": {
+      "variation": {
+        "id": "CAID:CA414914392",
+        "type": "Allele",
+        "_note": "Placeholder VRS Variation. Source: ClinGen Allele ID CA414914392."
+      },
+      "label": "F8 c.1420G>C (p.Gly474Arg) \u2014 PVS-v22-F8 VBC"
+    },
+    "predicate": "is_causal_for",
+    "object": {
+      "curie": "MONDO:0010602",
+      "label": "hemophilia A"
+    },
+    "qualifiers": [
+      {
+        "moi": "XLR",
+        "note": "X-linked. Loss of function is an established disease mechanism."
+      }
+    ]
+  },
+  "score": 5.0,
+  "outcome": "likely_pathogenic",
+  "strength": null,
+  "direction": "supports",
+  "contribution": null,
+  "description": "PVS-v22-F8 rolled-up SVCv4 classification. Illustrative \u2014 scoring lives in CSpec. Source tab: 'v22: F8'. Evidence-driven (no clinical observation): strong in-silico support plus a same-amino-acid LP variant (PS1) and same-codon P/LP variants (PM5). An X-linked example.",
+  "specifiedBy": {
+    "code": "svcv4:baseline",
+    "label": "ACMG/AMP/CAP/ClinGen SVCv4 Standard (baseline)",
+    "version": "draft-2026-pre-release"
+  },
+  "hasEvidenceLines": [
+    {
+      "code": "POP_FRQ",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "POP_FRQ_+0",
+      "contribution": 0.0,
+      "description": "Population frequency (illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:POP_FRQ",
+        "label": "Population allele frequency (POP_FRQ)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v22-F8-pop-001",
+          "references": [],
+          "description": "POP inputs via the binning approach; variant absent from gnomAD.",
+          "subtype": "population_frequency",
+          "value": {
+            "approach": "binning (X-linked dominant combined table)",
+            "prevalence_estimate": "1 in 10000",
+            "penetrance": 0.2,
+            "gnomad": "absent",
+            "pop_frq_points": 0
+          }
+        }
+      ]
+    },
+    {
+      "code": "MIS",
+      "score": 5.0,
+      "strength": "strong",
+      "direction": "supports",
+      "outcome": "MIS_+5",
+      "contribution": 5.0,
+      "description": "Predictive missense + same-AA (PS1) + same-codon (PM5) evidence (PFD, illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:MIS",
+        "label": "Single-amino-acid change (MIS)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v22-F8-mis-001",
+          "references": [],
+          "description": "Strong in-silico missense support (REVEL 0.972).",
+          "subtype": "computational_prediction",
+          "value": {
+            "tool": "REVEL",
+            "score": 0.972,
+            "grantham": 125,
+            "splice_impact": "none"
+          }
+        },
+        {
+          "id": "PVS-v22-F8-mis-002",
+          "references": [],
+          "description": "A different nucleotide giving the SAME amino-acid change is LP (PS1-type), and two other same-codon changes are P/LP (PM5-type).",
+          "subtype": "same_residue_variant",
+          "value": {
+            "residue": "p.Gly474",
+            "same_aa_change": "c.1420G>A (p.Gly474Arg) is LP (PS1-type: same amino-acid change)",
+            "same_codon": [
+              "c.1421G>A (p.Gly474Glu) \u2014 Pathogenic (Grantham 98)",
+              "c.1420G>T (p.Gly474Trp) \u2014 LP (Grantham 184)"
+            ]
+          }
+        }
+      ],
+      "hasEvidenceLines": [
+        {
+          "code": "MIS_PRD",
+          "score": 4.0,
+          "strength": null,
+          "direction": "supports",
+          "outcome": "MIS_PRD_+4",
+          "contribution": null,
+          "provisional": false,
+          "description": "In-silico predictive missense assessment.",
+          "specifiedBy": {
+            "code": "svcv4:MIS_PRD",
+            "label": "Predictive missense (MIS_PRD)",
+            "version": "draft-2026-pre-release"
+          },
+          "hasEvidenceItems": [],
+          "hasEvidenceLines": [
+            {
+              "code": "MIS_PRD_INIT_REVEL",
+              "score": 4.0,
+              "strength": null,
+              "direction": "supports",
+              "outcome": "MIS_PRD_INIT_REVEL_+4",
+              "contribution": null,
+              "provisional": true,
+              "description": "Strong in-silico missense support (REVEL 0.972).",
+              "specifiedBy": {
+                "code": "svcv4:MIS_PRD_INIT_REVEL",
+                "label": "Predictor initial points (REVEL)",
+                "version": "draft-2026-pre-release"
+              },
+              "hasEvidenceItems": [
+                {
+                  "id": "PVS-v22-F8-mis-001",
+                  "references": [],
+                  "description": "Strong in-silico missense support (REVEL 0.972).",
+                  "subtype": "computational_prediction",
+                  "value": {
+                    "tool": "REVEL",
+                    "score": 0.972,
+                    "grantham": 125,
+                    "splice_impact": "none"
+                  }
+                }
+              ],
+              "hasEvidenceLines": []
+            }
+          ]
+        },
+        {
+          "code": "MIS_INF",
+          "score": 1.0,
+          "strength": null,
+          "direction": "supports",
+          "outcome": "MIS_INF_+1",
+          "contribution": null,
+          "provisional": false,
+          "description": "Same-residue comparator evidence.",
+          "specifiedBy": {
+            "code": "svcv4:MIS_INF",
+            "label": "Missense inference (MIS_INF)",
+            "version": "draft-2026-pre-release"
+          },
+          "hasEvidenceItems": [],
+          "hasEvidenceLines": [
+            {
+              "code": "INF_SAMEAA",
+              "score": 1.0,
+              "strength": null,
+              "direction": "supports",
+              "outcome": "INF_SAMEAA_+1",
+              "contribution": null,
+              "provisional": true,
+              "description": "Same-amino-acid change comparator (PS1-type; illustrative).",
+              "specifiedBy": {
+                "code": "svcv4:INF_SAMEAA",
+                "label": "Same-amino-acid tally (INF_SAMEAA)",
+                "version": "draft-2026-pre-release"
+              },
+              "hasEvidenceItems": [
+                {
+                  "id": "PVS-v22-F8-mis-002",
+                  "references": [],
+                  "description": "A different nucleotide giving the SAME amino-acid change is LP (PS1-type), and two other same-codon changes are P/LP (PM5-type).",
+                  "subtype": "same_residue_variant",
+                  "value": {
+                    "residue": "p.Gly474",
+                    "same_aa_change": "c.1420G>A (p.Gly474Arg) is LP (PS1-type: same amino-acid change)",
+                    "same_codon": [
+                      "c.1421G>A (p.Gly474Glu) \u2014 Pathogenic (Grantham 98)",
+                      "c.1420G>T (p.Gly474Trp) \u2014 LP (Grantham 184)"
+                    ]
+                  }
+                }
+              ],
+              "hasEvidenceLines": []
+            },
+            {
+              "code": "INF_DISTAA",
+              "score": 0.0,
+              "strength": null,
+              "direction": "neutral",
+              "outcome": "INF_DISTAA_+0",
+              "contribution": null,
+              "provisional": true,
+              "description": "Same-codon, different-amino-acid comparators (PM5-type; illustrative).",
+              "specifiedBy": {
+                "code": "svcv4:INF_DISTAA",
+                "label": "Distant-amino-acid tally (INF_DISTAA)",
+                "version": "draft-2026-pre-release"
+              },
+              "hasEvidenceItems": [],
+              "hasEvidenceLines": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

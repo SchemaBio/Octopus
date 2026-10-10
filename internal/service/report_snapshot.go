@@ -153,6 +153,13 @@ func (s *ReportService) prepareReportSnapshot(ctx context.Context, task *model.T
 				if e = json.Unmarshal([]byte(a.PayloadJSON), &interpretation); e != nil {
 					return e
 				}
+				if d.Table == "snv-indel" {
+					if e := validateActiveACMG(interpretation); e != nil {
+						return e
+					}
+					applyActiveACMG(interpretation, interpretation)
+					interpretation["acmgTrial"] = interpretation["activeAcmgVersion"] == "svcv4"
+				}
 				row := reportSnapshotRow{Table: d.Table, RowID: a.RowID, DatasetVersion: d.DataVersion, AdjustmentVersion: a.Version, Original: page.Rows[0], Interpretation: interpretation}
 				if version, ok := interpretation["assessmentVersion"].(string); ok && version != "" {
 					var fixed model.ResultAssessmentContext
@@ -227,10 +234,16 @@ func (s *ReportService) GenerateScopedReportDownload(ctx context.Context, a mode
 		if e != nil {
 			return nil, e
 		}
+		if e := validateReportACMGContract(raw, tmpl.ContractVersion); e != nil {
+			return nil, e
+		}
 		saved = model.ReportGeneration{ID: uuid.NewString(), TenantID: tenant, TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, ClientRequestID: req.ClientRequestID, TemplateID: tmpl.ID, ServiceRevision: tmpl.Revision, ContractVersion: tmpl.ContractVersion, SnapshotSHA256: hash, SnapshotJSON: raw, State: "pending", CreatedBy: a.UserID}
 		if e = database.GetDB().Create(&saved).Error; e != nil {
 			return nil, ErrResourceConflict
 		}
+	}
+	if e := validateReportACMGContract(saved.SnapshotJSON, saved.ContractVersion); e != nil {
+		return nil, e
 	}
 	claim := database.GetDB().Model(&model.ReportGeneration{}).Where("id=? AND state IN ?", saved.ID, []string{"pending", "failed"}).Updates(map[string]interface{}{"state": "generating", "error_code": ""})
 	if claim.Error != nil {

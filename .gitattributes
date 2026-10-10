@@ -1,0 +1,2 @@
+# Preserve the pinned upstream files byte for byte, including their original whitespace.
+parquet-query/vendor/svcv4/** -text -whitespace

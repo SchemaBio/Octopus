@@ -80,6 +80,30 @@ class QueryServerTests(unittest.TestCase):
         ))
         self.assertEqual(result["total"], 0)
 
+    def test_selected_svcv4_filters_and_export_keep_legacy_evidence(self):
+        import csv
+        row_id = server.row_id(self.dataset,self.fingerprint,self.ordinals['GENE1'])
+        payload = {'activeAcmgVersion':'svcv4','acmgOverride':'Pathogenic','acmgClassification':'Pathogenic',
+                   'svcv4Assessment':{'result':{'classification':'VUS','vusSubclass':'VUS-high','score':4,'state':'classified'}}}
+        request=self.request(overlays=[{'rowId':row_id,'version':3,'payload':payload}],
+                             filters=[{'column':'acmgClassification','operator':'equals','value':'VUS'}])
+        result=server.execute(request)
+        self.assertEqual([row['Gene'] for row in result['items']],['GENE1'])
+        self.assertEqual(result['items'][0]['__adjustments']['acmgOverride'],'Pathogenic')
+        filename=server.execute(request,export=True)
+        try:
+            with filename.open(encoding='utf-8',newline='') as stream:
+                exported=list(csv.DictReader(stream))
+            self.assertEqual(exported[0]['acmgClassification'],'VUS')
+            self.assertEqual(exported[0]['acmgVusSubclass'],'VUS-high')
+            self.assertEqual(exported[0]['acmgTrial'],'true')
+            self.assertEqual(exported[0]['activeAcmgVersion'],'svcv4')
+        finally:
+            filename.unlink()
+        payload['activeAcmgVersion']='legacy'
+        request['filters'][0]['value']='Pathogenic'
+        self.assertEqual(server.execute(request)['total'],1)
+
     def test_sort_is_stable_and_chromosomes_use_natural_order(self):
         result = server.execute(self.request(sort="Chromosome", direction="asc"))
         self.assertEqual([row["Gene"] for row in result["items"]], ["GENE4", "GENE1", "GENE2", "GENE3"])

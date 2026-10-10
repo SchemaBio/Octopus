@@ -1,0 +1,170 @@
+{
+  "proposition": {
+    "subject": {
+      "variation": {
+        "id": "CAID:CA007963",
+        "type": "Allele",
+        "_note": "Placeholder VRS Variation. Source: ClinGen Allele ID CA007963."
+      },
+      "label": "MSH6 c.107C>T (p.Ala36Val) \u2014 PVS-v26-MSH6 VBC"
+    },
+    "predicate": "is_causal_for",
+    "object": {
+      "curie": "MONDO:0005835",
+      "label": "Lynch syndrome / hereditary non-polyposis colorectal cancer"
+    },
+    "qualifiers": [
+      {
+        "moi": "AD",
+        "note": "Loss of function is an established disease mechanism."
+      }
+    ]
+  },
+  "score": 0.0,
+  "outcome": "variant_of_uncertain_significance",
+  "strength": null,
+  "direction": "neutral",
+  "contribution": null,
+  "description": "PVS-v26-MSH6 rolled-up SVCv4 classification. Illustrative \u2014 scoring lives in CSpec. Source tab: 'v26: MSH6'. A CLN_ALTV example: the proband's colorectal cancer is explained by an in-trans Pathogenic truncating variant, so it gives the VBC no positive clinical credit.",
+  "specifiedBy": {
+    "code": "svcv4:baseline",
+    "label": "ACMG/AMP/CAP/ClinGen SVCv4 Standard (baseline)",
+    "version": "draft-2026-pre-release"
+  },
+  "hasEvidenceLines": [
+    {
+      "code": "POP_FRQ",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "POP_FRQ_+0",
+      "contribution": 0.0,
+      "description": "Population frequency (illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:POP_FRQ",
+        "label": "Population allele frequency (POP_FRQ)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v26-MSH6-pop-001",
+          "references": [
+            "https://gnomad.broadinstitute.org/variant/chr2-47783340-C-T?dataset=gnomad_r4"
+          ],
+          "description": "POP inputs from the tab.",
+          "subtype": "population_frequency",
+          "value": {
+            "prevalence_estimate": "1 in 14",
+            "allelic_heterogeneity": 0.1,
+            "genetic_heterogeneity": 0.01,
+            "penetrance": 0.16,
+            "pop_frq_points": 0
+          }
+        }
+      ]
+    },
+    {
+      "code": "CLN_ALTV",
+      "score": -1.0,
+      "strength": "supporting",
+      "direction": "disputes",
+      "outcome": "CLN_ALTV_-1",
+      "contribution": -1.0,
+      "description": "Alternate cause \u2014 variant (illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:CLN_ALTV",
+        "label": "Affected with an alternate cause \u2014 variant (CLN_ALTV)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v26-MSH6-alt-001",
+          "references": [],
+          "description": "The affected phenotype is explained by an in-trans Pathogenic variant, so this proband is an alternate-cause (variant) observation \u2014 it does not credit the VBC.",
+          "subtype": "clinical_observation",
+          "value": {
+            "phenotype": "colorectal cancer",
+            "alternate_cause": "a Pathogenic truncating MSH6 variant (c.3202C>T, p.Arg1068*) confirmed in trans accounts for the dominant phenotype",
+            "pheno_severity": "MONO_EQ_EXPECTED (no CMMRD/biallelic features)"
+          }
+        }
+      ]
+    },
+    {
+      "code": "MIS",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "MIS_+0",
+      "contribution": 0.0,
+      "description": "Predictive missense evidence (PFD, illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:MIS",
+        "label": "Single-amino-acid change (MIS)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v26-MSH6-mis-001",
+          "references": [],
+          "description": "BayesDel -0.20 is mildly benign-leaning; no same-codon informative variants.",
+          "subtype": "computational_prediction",
+          "value": {
+            "tool": "BayesDel",
+            "score": -0.2,
+            "splice_impact": "none"
+          }
+        }
+      ],
+      "hasEvidenceLines": [
+        {
+          "code": "MIS_PRD",
+          "score": 0.0,
+          "strength": null,
+          "direction": "neutral",
+          "outcome": "MIS_PRD_+0",
+          "contribution": null,
+          "provisional": false,
+          "description": "In-silico predictive missense assessment.",
+          "specifiedBy": {
+            "code": "svcv4:MIS_PRD",
+            "label": "Predictive missense (MIS_PRD)",
+            "version": "draft-2026-pre-release"
+          },
+          "hasEvidenceItems": [],
+          "hasEvidenceLines": [
+            {
+              "code": "MIS_PRD_INIT_BAYESDEL",
+              "score": 0.0,
+              "strength": null,
+              "direction": "neutral",
+              "outcome": "MIS_PRD_INIT_BAYESDEL_+0",
+              "contribution": null,
+              "provisional": true,
+              "description": "BayesDel -0.20 is mildly benign-leaning; no same-codon informative variants.",
+              "specifiedBy": {
+                "code": "svcv4:MIS_PRD_INIT_BAYESDEL",
+                "label": "Predictor initial points (BAYESDEL)",
+                "version": "draft-2026-pre-release"
+              },
+              "hasEvidenceItems": [
+                {
+                  "id": "PVS-v26-MSH6-mis-001",
+                  "references": [],
+                  "description": "BayesDel -0.20 is mildly benign-leaning; no same-codon informative variants.",
+                  "subtype": "computational_prediction",
+                  "value": {
+                    "tool": "BayesDel",
+                    "score": -0.2,
+                    "splice_impact": "none"
+                  }
+                }
+              ],
+              "hasEvidenceLines": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+{
+  "proposition": {
+    "subject": {
+      "variation": {
+        "id": "CAID:CA365563886",
+        "type": "Allele",
+        "_note": "Placeholder VRS Variation. Source: ClinGen Allele ID CA365563886."
+      },
+      "label": "TRDN c.1462A>T (p.Lys488Ter) \u2014 PVS-v8-TRDN VBC"
+    },
+    "predicate": "is_causal_for",
+    "object": {
+      "curie": "MONDO:0017990",
+      "label": "catecholaminergic polymorphic ventricular tachycardia"
+    },
+    "qualifiers": [
+      {
+        "moi": "AR",
+        "note": "Loss of function is an established disease mechanism."
+      }
+    ]
+  },
+  "score": 0.0,
+  "outcome": "variant_of_uncertain_significance",
+  "strength": null,
+  "direction": "neutral",
+  "contribution": null,
+  "description": "PVS-v8-TRDN rolled-up SVCv4 classification. Illustrative \u2014 scoring lives in CSpec. Source tab: 'v8: TRDN'. VUS: the only observation is an unaffected het carrier, and the nonsense change lies outside the cardiac-predominant transcript.",
+  "specifiedBy": {
+    "code": "svcv4:baseline",
+    "label": "ACMG/AMP/CAP/ClinGen SVCv4 Standard (baseline)",
+    "version": "draft-2026-pre-release"
+  },
+  "hasEvidenceLines": [
+    {
+      "code": "POP_FRQ",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "POP_FRQ_+0",
+      "contribution": 0.0,
+      "description": "Population frequency (illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:POP_FRQ",
+        "label": "Population allele frequency (POP_FRQ)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v8-TRDN-pop-001",
+          "references": [
+            "https://gnomad.broadinstitute.org/variant/chr6-123331888-T-A?dataset=gnomad_r4"
+          ],
+          "description": "POP inputs from the tab (biallelic threshold).",
+          "subtype": "population_frequency",
+          "value": {
+            "prevalence_estimate": "1 in 7000",
+            "allelic_heterogeneity": 0.2,
+            "genetic_heterogeneity": 0.02,
+            "penetrance": 0.75,
+            "inheritance": "biallelic",
+            "pop_frq_points": 0
+          }
+        }
+      ]
+    },
+    {
+      "code": "CLN_UAF",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "CLN_UAF_+0",
+      "contribution": 0.0,
+      "description": "Unaffected heterozygous carrier (illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:CLN_UAF",
+        "label": "Clinical observation in unaffected individual(s) (CLN_UAF)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v8-TRDN-uaf-001",
+          "references": [],
+          "description": "One unaffected heterozygous carrier \u2014 expected for a recessive condition, so uninformative here.",
+          "subtype": "clinical_observation",
+          "value": {
+            "affected": false,
+            "zygosity": "HET",
+            "context": "unaffected individual with a family history of sudden cardiac death; no second TRDN variant identified"
+          }
+        }
+      ]
+    },
+    {
+      "code": "NUL",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "NUL_+0",
+      "contribution": 0.0,
+      "description": "Transcript-context-limited LoF evidence (PFD, illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:NUL",
+        "label": "Absent protein / loss of function (NUL)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v8-TRDN-nul-001",
+          "references": [],
+          "description": "Nonsense change outside the cardiac-predominant transcript region \u2192 LoF does not clearly apply.",
+          "subtype": "predicted_lof",
+          "value": {
+            "consequence": "nonsense p.Lys488Ter in exon 23 of MANE Select",
+            "cardiac_transcript": "the predominant cardiac transcript (NM_001256021.1) comprises exons 1-8; only variants there are disease-implicated",
+            "interpretation": "LoF variants after exon 8 are not classified P/LP \u2014 weight is uncertain"
+          }
+        }
+      ],
+      "hasEvidenceLines": [
+        {
+          "code": "NUL_PRD",
+          "score": 0.0,
+          "strength": null,
+          "direction": "neutral",
+          "outcome": "NUL_PRD_+0",
+          "contribution": null,
+          "provisional": false,
+          "description": "Predicted-LoF / structural nonsense assessment.",
+          "specifiedBy": {
+            "code": "svcv4:NUL_PRD",
+            "label": "Predicted loss of function (NUL_PRD)",
+            "version": "draft-2026-pre-release"
+          },
+          "hasEvidenceItems": [
+            {
+              "id": "PVS-v8-TRDN-nul-001",
+              "references": [],
+              "description": "Nonsense change outside the cardiac-predominant transcript region \u2192 LoF does not clearly apply.",
+              "subtype": "predicted_lof",
+              "value": {
+                "consequence": "nonsense p.Lys488Ter in exon 23 of MANE Select",
+                "cardiac_transcript": "the predominant cardiac transcript (NM_001256021.1) comprises exons 1-8; only variants there are disease-implicated",
+                "interpretation": "LoF variants after exon 8 are not classified P/LP \u2014 weight is uncertain"
+              }
+            }
+          ],
+          "hasEvidenceLines": []
+        }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -22,6 +23,38 @@ type ResultHandler struct {
 	svc       *service.ResultService
 	taskRepo  *repository.TaskRepository
 	eventRepo *repository.VariantReviewEventRepository
+}
+
+func (h *ResultHandler) GetSVCv4Schema(c *gin.Context) {
+	if _, ok := requireTaskAccess(c, h.taskRepo, c.Param("id")); !ok {
+		return
+	}
+	value, err := h.svc.SVCv4(c.Request.Context(), nil)
+	if err != nil {
+		ErrorInternal(c, err.Error())
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	Success(c, value)
+}
+
+func (h *ResultHandler) EvaluateSVCv4(c *gin.Context) {
+	if _, ok := requireTaskAccess(c, h.taskRepo, c.Param("id")); !ok {
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 250000)
+	var input map[string]interface{}
+	if err := c.ShouldBindJSON(&input); err != nil || input == nil {
+		ErrorBadRequest(c, "invalid SVCv4 assessment")
+		return
+	}
+	value, err := h.svc.SVCv4(c.Request.Context(), input)
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	Success(c, value)
 }
 
 func (h *ResultHandler) GetAssessmentContext(c *gin.Context) {

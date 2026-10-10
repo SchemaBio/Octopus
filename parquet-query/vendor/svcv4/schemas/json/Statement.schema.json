@@ -1,0 +1,538 @@
+{
+  "$defs": {
+    "DataItem": {
+      "additionalProperties": false,
+      "description": "A VA-Spec 1.1.0 ``Data Item`` \u2014 one structured datum a Statement consumes.\n\nA curator captures Data Items for a (VBC, MDE) curation; a Statement points at\nthem via ``hasEvidenceItems``. Per 1.1.0-ballot.2026-09 the entity ``type`` is\nalways ``\"DataItem\"`` and the datum itself lives in ``value``.\n\nVA-Spec Data Item has no ``subtype``; SVCv4 adds ``subtype`` as a profile\nextension to carry the evidence *kind* (e.g. ``computational_prediction``).",
+      "properties": {
+        "aliases": {
+          "description": "VA-Spec `aliases` (0..m).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional prose description.",
+          "title": "Description"
+        },
+        "extensions": {
+          "description": "VA-Spec `extensions` (0..m).",
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Extensions",
+          "type": "array"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VA-Spec `id` (0..1): stable identifier for the item.",
+          "title": "Id"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VA-Spec `name` (0..1): short human-readable label.",
+          "title": "Name"
+        },
+        "references": {
+          "description": "CURIEs / URLs sourcing the evidence (e.g. PMIDs).",
+          "items": {
+            "type": "string"
+          },
+          "title": "References",
+          "type": "array"
+        },
+        "subtype": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SVCv4 profile extension: the evidence *kind* (e.g. `computational_prediction`, `functional_assay`). VA-Spec Data Item has no subtype of its own.",
+          "title": "Subtype"
+        },
+        "type": {
+          "const": "DataItem",
+          "default": "DataItem",
+          "description": "VA-Spec entity `type` (1..1); always `DataItem`.",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "additionalProperties": true,
+          "description": "VA-Spec `value` (0..1): the structured datum. Shape is open in the scaffold and constrained by the SVCv4 profile per Evidence Code.",
+          "title": "Value",
+          "type": "object"
+        }
+      },
+      "title": "DataItem",
+      "type": "object"
+    },
+    "MDE": {
+      "additionalProperties": false,
+      "description": "Mendelian Disease Entity \u2014 the disease the VBC is being assessed against.\n\n`curie` is intentionally a flexible string for the scaffold.\nAcceptable namespaces include MONDO, OMIM, and Orphanet; precise\nnamespace constraints will be set by the SVCv4 VA-Spec community\nprofile.",
+      "properties": {
+        "curie": {
+          "description": "CURIE identifier (e.g. `MONDO:0007254`, `OMIM:114480`, `Orphanet:289545`).",
+          "title": "Curie",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-readable label for the disease.",
+          "title": "Label"
+        }
+      },
+      "required": [
+        "curie"
+      ],
+      "title": "MDE",
+      "type": "object"
+    },
+    "Method": {
+      "additionalProperties": false,
+      "description": "A reference to a CSpec-defined method, rule, or specification.\n\nThis class **names**, but does not **define**, a method. Method\ndefinitions \u2014 together with their evaluation logic, scoring rules,\nand version selection \u2014 live in ClinGen CSpec, which is outside\nthis repository and outside GA4GH GKS VA-Spec.\n\nUsed in two roles:\n\n1. At the `Statement` level, `method` identifies the **applied\n   SVCv4 specification version** \u2014 either the baseline SVCv4\n   Standard or a specific VCEP-specialised version that was\n   selected for the (VBC, MDE) curation.\n2. At the `EvidenceLine` level, `method` identifies the specific\n   CSpec method or rule whose invocation produced that Evidence\n   Line's score.",
+      "properties": {
+        "aliases": {
+          "description": "VA-Spec `aliases` (0..m).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "code": {
+          "description": "Opaque method/rule code as published by CSpec. CURIE-style scheme TBD; treated as an opaque string for now.",
+          "title": "Code",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional prose description; usually a pointer into CSpec.",
+          "title": "Description"
+        },
+        "extensions": {
+          "description": "VA-Spec `extensions` (0..m).",
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Extensions",
+          "type": "array"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VA-Spec `id` (0..1): stable identifier for the method.",
+          "title": "Id"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-readable label for the method/rule.",
+          "title": "Label"
+        },
+        "methodType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VA-Spec `methodType` (0..1): the kind of method (e.g. a guideline or computational procedure).",
+          "title": "Methodtype"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VA-Spec `name` (0..1): short human-readable label.",
+          "title": "Name"
+        },
+        "type": {
+          "const": "Method",
+          "default": "Method",
+          "description": "VA-Spec entity `type` (1..1); always `Method`.",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "When `code` identifies an SVCv4 specification (baseline or specialised), the version of that specification.",
+          "title": "Version"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "Method",
+      "type": "object"
+    },
+    "MolecularConsequence": {
+      "description": "The VBC's predicted molecular consequence \u2014 the evidence that routes it to a\nPFD variant-impact family (MIS / NUL / CDS / SPL).\n\nThis is the routing input read by the ``variant-impact-router`` node under PFD.\nSeveral consequences resolve to NUL *or* CDS via a branch inside their own\nvariant-type workflow (NMD / non-stop-decay / alt-start / whole-gene); the\nrouter names the candidate family set and that branch picks the final one.\nMissense is unambiguous \u2192 MIS.",
+      "enum": [
+        "MISSENSE",
+        "NONSENSE",
+        "FRAMESHIFT",
+        "INFRAME_INDEL",
+        "START_LOST",
+        "STOP_LOST",
+        "SPLICE",
+        "EXON_DELETION",
+        "EXON_DUPLICATION",
+        "INTRONIC",
+        "SYNONYMOUS"
+      ],
+      "title": "MolecularConsequence",
+      "type": "string"
+    },
+    "Predicate": {
+      "description": "Predicate of a Variant Pathogenicity Proposition.\n\nPlaceholder vocabulary; the SVCv4 VA-Spec community profile will\nconfirm the canonical predicate(s).",
+      "enum": [
+        "is_causal_for"
+      ],
+      "title": "Predicate",
+      "type": "string"
+    },
+    "Proposition": {
+      "additionalProperties": false,
+      "description": "A SPOQ-structured Proposition: **S**ubject, **P**redicate, **O**bject, **Q**ualifier(s).\n\nFor a Variant Pathogenicity Classification:\n\n- **Subject** is the `VBC` (the variant under evaluation).\n- **Predicate** is the asserted relationship (default\n  `is_causal_for`).\n- **Object** is the `MDE` (the disease being assessed).\n- **Qualifier(s)** carry additional context (mode of inheritance,\n  population, tissue, etc.). Open shape in the scaffold.",
+      "properties": {
+        "object": {
+          "$ref": "#/$defs/MDE"
+        },
+        "predicate": {
+          "$ref": "#/$defs/Predicate",
+          "default": "is_causal_for",
+          "description": "Asserted relationship between the VBC and the MDE."
+        },
+        "qualifiers": {
+          "description": "Additional contextual qualifiers. Shape will be constrained by the SVCv4 VA-Spec community profile.",
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Qualifiers",
+          "type": "array"
+        },
+        "subject": {
+          "$ref": "#/$defs/VBC"
+        }
+      },
+      "required": [
+        "subject",
+        "object"
+      ],
+      "title": "Proposition",
+      "type": "object"
+    },
+    "Statement": {
+      "additionalProperties": false,
+      "description": "A VA-Spec 1.1.0 ``Statement``, profiled for SVCv4.\n\nUsed at two levels:\n\n1. **Top level** \u2014 the rolled-up Variant Pathogenicity Classification: a\n   ``proposition`` (the SPOQ assertion about a VBC and MDE), the final\n   ``score`` / ``direction`` / ``outcome``, the applied specification\n   version (``specifiedBy``), and the composing ``hasEvidenceLines``.\n2. **Evidence-line level** \u2014 one CSpec method/rule assessment nested under a\n   parent via ``hasEvidenceLines``: its ``code``, ``score``, ``direction``,\n   ``strength``, ``outcome``, the ``hasEvidenceItems`` it consumed, and any\n   deeper ``hasEvidenceLines`` (concept \u2192 code \u2192 subcode).\n\n``score`` and ``quality`` are deprecated in VA-Spec core; SVCv4 continues to\nuse ``score`` for its Bayesian points. ``code`` and ``provisional`` are SVCv4\nprofile extensions.",
+      "properties": {
+        "aliases": {
+          "description": "VA-Spec `aliases` (0..m): alternate names/identifiers.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SVCv4 profile extension: the Evidence Code / subcode identity of an evidence-line Statement (e.g. `POP_FRQ`, `MIS_PRD`). Omitted on the top-level classification.",
+          "title": "Code"
+        },
+        "contribution": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional weighted contribution to the parent Statement's score.",
+          "title": "Contribution"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional prose summary.",
+          "title": "Description"
+        },
+        "direction": {
+          "description": "VA-Spec direction relative to the proposition (required, 1..1 per 1.1.0-ballot.2026-09): `supports` when `score` > 0, `neutral` when `score` == 0, `disputes` when `score` < 0.",
+          "enum": [
+            "supports",
+            "neutral",
+            "disputes"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "extensions": {
+          "description": "VA-Spec `extensions` (0..m): profile/implementation-specific Extension objects.",
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Extensions",
+          "type": "array"
+        },
+        "hasEvidenceItems": {
+          "description": "VA-Spec `hasEvidenceItems` (0..m): the Data Items / Study Results consumed by this Statement.",
+          "items": {
+            "$ref": "#/$defs/DataItem"
+          },
+          "title": "Hasevidenceitems",
+          "type": "array"
+        },
+        "hasEvidenceLines": {
+          "description": "VA-Spec `hasEvidenceLines` (0..m Statement): nested evidence-line assessments composing into this Statement (concept \u2192 code \u2192 subcode).",
+          "items": {
+            "$ref": "#/$defs/Statement"
+          },
+          "title": "Hasevidencelines",
+          "type": "array"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VA-Spec `id` (0..1): stable identifier for this Statement.",
+          "title": "Id"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VA-Spec `name` (0..1): a short human-readable label.",
+          "title": "Name"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VA-Spec outcome (0..1, Mappable Concept): the coded result label \u2014 the classification tier at top level (e.g. `likely_pathogenic`) or the spec-nomenclature code at line level (e.g. `POP_FRQ_-3`).",
+          "title": "Outcome"
+        },
+        "proposition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Proposition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The SPOQ proposition (VBC subject / predicate / MDE object). Present on the top-level classification; omitted on nested evidence-line Statements (0..1 per VA-Spec 1.1.0)."
+        },
+        "provisional": {
+          "default": false,
+          "description": "SVCv4 profile extension: True when `code` is a provisional SVCv4 code/subcode (combination-cap or deeper method-level) not yet in the official code list.",
+          "title": "Provisional",
+          "type": "boolean"
+        },
+        "score": {
+          "description": "The composed (top level) or produced (line level) SVCv4 points. VA-Spec core deprecates `score`; SVCv4 retains it as its Bayesian point value.",
+          "title": "Score",
+          "type": "number"
+        },
+        "specifiedBy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Method"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VA-Spec `specifiedBy`: the Method this Statement was produced by. At top level, the applied SVCv4 specification version (baseline or VCEP-specialised, resolving into CSpec); at line level, the CSpec method/rule invoked."
+        },
+        "strength": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VA-Spec strength (0..1, Mappable Concept; open vocabulary) \u2014 e.g. `supporting`, `moderate`, `strong`.",
+          "title": "Strength"
+        },
+        "type": {
+          "const": "Statement",
+          "default": "Statement",
+          "description": "VA-Spec entity `type` (1..1); always `Statement`.",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "score",
+        "direction"
+      ],
+      "title": "Statement",
+      "type": "object"
+    },
+    "VBC": {
+      "additionalProperties": false,
+      "description": "Variant Being Considered \u2014 the germline variant under evaluation.\n\nEventually typed via a GA4GH VRS `Variation`. Today this is a\nplaceholder accepting any VRS-shaped payload as a dict; wiring\nthrough to `ga4gh.vrs.models.Variation` is a follow-up once the\nSVCv4 VA-Spec community profile is locked.",
+      "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-readable label for the variant.",
+          "title": "Label"
+        },
+        "molecular_consequence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MolecularConsequence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The VBC's predicted molecular consequence (e.g. from VEP against the relevant transcript). This is the evidence the PFD variant-impact router reads to select the MIS / NUL / CDS / SPL family. None = not captured."
+        },
+        "variation": {
+          "additionalProperties": true,
+          "description": "VRS Variation payload \u2014 placeholder. Will be typed as `ga4gh.vrs.models.Variation` in a follow-up PR.",
+          "title": "Variation",
+          "type": "object"
+        }
+      },
+      "required": [
+        "variation"
+      ],
+      "title": "VBC",
+      "type": "object"
+    }
+  },
+  "$ref": "#/$defs/Statement"
+}

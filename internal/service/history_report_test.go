@@ -95,6 +95,39 @@ func TestHistoryFailureRollsBackAdjustmentAndAudit(t *testing.T) {
 	}
 }
 
+func TestHistoryVersionSwitchPreservesReportedSnapshot(t *testing.T) {
+	db, mock := newUploadTransactionTestDB(t)
+	d := model.ResultDataset{ID: "dataset", TenantID: "org:a", TaskUUID: "task", ExecutionAttemptID: "attempt", Table: "snv-indel"}
+	saved := model.ResultRowAdjustment{RowID: strings.Repeat("a", 64), Version: 2, PayloadJSON: `{"reported":true,"activeAcmgVersion":"svcv4","svcv4Assessment":{"result":{"classification":"VUS","vusSubclass":"VUS-high"}}}`}
+	event := model.ResultRowAdjustmentEvent{CreatedAt: time.Now().UTC(), BeforeJSON: `{"reported":true}`}
+	var projected *model.HistoryReport
+	if err := db.Callback().Update().Before("gorm:update").Register("test:history_snapshot", func(tx *gorm.DB) {
+		if row, ok := tx.Statement.Dest.(*model.HistoryReport); ok {
+			copy := *row
+			projected = &copy
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "history_reports"`).WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "revision", "reported", "classification", "acmg_version", "reported_classification", "reported_acmg_version"}).AddRow(historyReportID(&d, saved.RowID), d.TenantID, 1, true, "Benign", "legacy", "Benign", "legacy"))
+	mock.ExpectExec(`INSERT INTO "history_scope_revisions"`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`SELECT \* FROM "history_scope_revisions".*FOR UPDATE`).WillReturnRows(sqlmock.NewRows([]string{"tenant_id", "revision"}).AddRow(d.TenantID, 1))
+	mock.ExpectExec(`UPDATE "history_scope_revisions"`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`UPDATE "history_reports"`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	err := db.Transaction(func(tx *gorm.DB) error { return persistHistoryReport(tx, &model.Task{}, &d, &saved, &event, nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projected == nil || projected.ACMGVersion != "svcv4" || projected.Classification != "VUS" || projected.VusSubclass != "VUS-high" || projected.ReportedACMGVersion != "legacy" || projected.ReportedClassification != "Benign" || projected.ReportedVusSubclass != "" {
+		t.Fatalf("changed reported snapshot: %#v", projected)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestHistorySyncUsesStableRevisionAndIDPagination(t *testing.T) {
 	db, mock := newUploadTransactionTestDB(t)
 	previous := database.DB

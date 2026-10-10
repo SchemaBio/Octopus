@@ -1,0 +1,171 @@
+{
+  "$defs": {
+    "Gene": {
+      "additionalProperties": false,
+      "description": "A gene reference (symbol/id/transcript); ``mde_associated_gene`` flags\nwhether it is the MDE-associated gene (set when it differs from the VBC gene).",
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Gene identifier (e.g. HGNC / NCBI id).",
+          "title": "Id"
+        },
+        "mde_associated_gene": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "MDE-associated gene, required when the gene differs from the VBC gene.",
+          "title": "Mde Associated Gene"
+        },
+        "symbol": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Gene symbol.",
+          "title": "Symbol"
+        },
+        "transcript": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Transcript reference (e.g. RefSeq accession).",
+          "title": "Transcript"
+        }
+      },
+      "title": "Gene",
+      "type": "object"
+    },
+    "Phase": {
+      "description": "Phase of a variant in reference to the VBC.",
+      "enum": [
+        "TRANS",
+        "CIS",
+        "UNKNOWN"
+      ],
+      "title": "Phase",
+      "type": "string"
+    },
+    "PhaseConfidence": {
+      "description": "Confidence in a phase determination.",
+      "enum": [
+        "HIGH",
+        "MED",
+        "LOW"
+      ],
+      "title": "PhaseConfidence",
+      "type": "string"
+    },
+    "Zygosity": {
+      "description": "Zygosity of a variant in the case.",
+      "enum": [
+        "HOM",
+        "HET",
+        "HEMI"
+      ],
+      "title": "Zygosity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "An additional variant in the case (ALTV/ALTG, or AFF when present).",
+  "properties": {
+    "classification": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Variant classification; must be P/LP for the ALTV and ALTG workflows.",
+      "title": "Classification"
+    },
+    "gene": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Gene"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Id"
+    },
+    "phase_confidence": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PhaseConfidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Captured only if phase is captured (HIGH / MED / LOW)."
+    },
+    "phase_in_ref_to_vbc": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Phase"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Captured only if the additional variant shares the VBC gene."
+    },
+    "zygosity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Zygosity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "title": "AdditionalVariant",
+  "type": "object"
+}

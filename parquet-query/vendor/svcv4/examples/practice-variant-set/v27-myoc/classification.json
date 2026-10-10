@@ -1,0 +1,143 @@
+{
+  "proposition": {
+    "subject": {
+      "variation": {
+        "id": "CAID:CA343726916",
+        "type": "Allele",
+        "_note": "Placeholder VRS Variation. Source: ClinGen Allele ID CA343726916."
+      },
+      "label": "MYOC c.719A>G (p.Glu240Gly) \u2014 PVS-v27-MYOC VBC"
+    },
+    "predicate": "is_causal_for",
+    "object": {
+      "curie": "MONDO:0005338",
+      "label": "open-angle glaucoma"
+    },
+    "qualifiers": [
+      {
+        "moi": "AD",
+        "note": "Loss of function is NOT an established mechanism for MYOC-related open-angle glaucoma."
+      }
+    ]
+  },
+  "score": 0.0,
+  "outcome": "variant_of_uncertain_significance",
+  "strength": null,
+  "direction": "neutral",
+  "contribution": null,
+  "description": "PVS-v27-MYOC rolled-up SVCv4 classification. Illustrative \u2014 scoring lives in CSpec. Source tab: 'v27: MYOC'. A VUS by insufficient evidence: not yet seen in a glaucoma proband, LoF is not the mechanism, and REVEL is low.",
+  "specifiedBy": {
+    "code": "svcv4:baseline",
+    "label": "ACMG/AMP/CAP/ClinGen SVCv4 Standard (baseline)",
+    "version": "draft-2026-pre-release"
+  },
+  "hasEvidenceLines": [
+    {
+      "code": "POP_FRQ",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "POP_FRQ_+0",
+      "contribution": 0.0,
+      "description": "Population frequency (illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:POP_FRQ",
+        "label": "Population allele frequency (POP_FRQ)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v27-MYOC-pop-001",
+          "references": [
+            "https://gnomad.broadinstitute.org/variant/chr1-171638608-T-C?dataset=gnomad_r4"
+          ],
+          "description": "POP inputs from the tab.",
+          "subtype": "population_frequency",
+          "value": {
+            "prevalence_estimate": "1 in 24",
+            "allelic_heterogeneity": 0.04,
+            "genetic_heterogeneity": 0.6,
+            "penetrance": 0.56,
+            "pop_frq_points": 0
+          }
+        }
+      ]
+    },
+    {
+      "code": "MIS",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "MIS_+0",
+      "contribution": 0.0,
+      "description": "Predictive missense evidence (PFD, illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:MIS",
+        "label": "Single-amino-acid change (MIS)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v27-MYOC-mis-001",
+          "references": [],
+          "description": "REVEL 0.205 is low; no same-codon informative variants.",
+          "subtype": "computational_prediction",
+          "value": {
+            "tool": "REVEL",
+            "score": 0.205,
+            "splice_impact": "none"
+          }
+        }
+      ],
+      "hasEvidenceLines": [
+        {
+          "code": "MIS_PRD",
+          "score": 0.0,
+          "strength": null,
+          "direction": "neutral",
+          "outcome": "MIS_PRD_+0",
+          "contribution": null,
+          "provisional": false,
+          "description": "In-silico predictive missense assessment.",
+          "specifiedBy": {
+            "code": "svcv4:MIS_PRD",
+            "label": "Predictive missense (MIS_PRD)",
+            "version": "draft-2026-pre-release"
+          },
+          "hasEvidenceItems": [],
+          "hasEvidenceLines": [
+            {
+              "code": "MIS_PRD_INIT_REVEL",
+              "score": 0.0,
+              "strength": null,
+              "direction": "neutral",
+              "outcome": "MIS_PRD_INIT_REVEL_+0",
+              "contribution": null,
+              "provisional": true,
+              "description": "REVEL 0.205 is low; no same-codon informative variants.",
+              "specifiedBy": {
+                "code": "svcv4:MIS_PRD_INIT_REVEL",
+                "label": "Predictor initial points (REVEL)",
+                "version": "draft-2026-pre-release"
+              },
+              "hasEvidenceItems": [
+                {
+                  "id": "PVS-v27-MYOC-mis-001",
+                  "references": [],
+                  "description": "REVEL 0.205 is low; no same-codon informative variants.",
+                  "subtype": "computational_prediction",
+                  "value": {
+                    "tool": "REVEL",
+                    "score": 0.205,
+                    "splice_impact": "none"
+                  }
+                }
+              ],
+              "hasEvidenceLines": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

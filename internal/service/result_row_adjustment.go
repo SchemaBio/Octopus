@@ -178,7 +178,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if _, hasOverride := request.Adjustments["acmgOverride"]; hasOverride && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("ACMG override changes require an adjustment reason")
 	}
-	allowed := map[string]bool{"assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "reported": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
+	allowed := map[string]bool{"svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "reported": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
 	if _, has := request.Adjustments["cnvAssessment"]; has && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("CNV evidence changes require an adjustment reason")
 	}
@@ -190,6 +190,21 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			return nil, nil, fmt.Errorf("unsupported adjustment field")
 		}
 		switch key {
+		case "svcv4Assessment", "activeAcmgVersion":
+			if table != "snv-indel" {
+				return nil, nil, fmt.Errorf("SVCv4 is only valid for SNP/InDel")
+			}
+			if strings.TrimSpace(request.Reason) == "" {
+				return nil, nil, fmt.Errorf("ACMG version and evidence changes require an adjustment reason")
+			}
+			if key == "activeAcmgVersion" {
+				version, ok := value.(string)
+				if !ok || version != "legacy" && version != "svcv4" {
+					return nil, nil, fmt.Errorf("invalid ACMG version")
+				}
+			} else if _, ok := value.(map[string]interface{}); !ok {
+				return nil, nil, fmt.Errorf("invalid SVCv4 assessment")
+			}
 		case "assessmentVersion":
 			version, ok := value.(string)
 			if !ok || len(version) != 64 {
@@ -250,6 +265,19 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	}
 	if request.AttemptID != "" && request.AttemptID != executionAttempt(task) || request.DatasetVersion != "" && request.DatasetVersion != dataset.DataVersion {
 		return nil, nil, ErrAdjustmentConflict
+	}
+	// Submitted totals are never trusted; recompute before acquiring database locks.
+	if input, ok := request.Adjustments["svcv4Assessment"].(map[string]interface{}); ok {
+		original := request.Adjustments
+		request.Adjustments = make(map[string]interface{}, len(original))
+		for key, value := range original {
+			request.Adjustments[key] = value
+		}
+		computed, err := s.SVCv4(ctx, input)
+		if err != nil {
+			return nil, nil, err
+		}
+		request.Adjustments["svcv4Assessment"] = computed
 	}
 	if cnv, ok := request.Adjustments["cnvAssessment"].(map[string]interface{}); ok {
 		cache, err := s.historyDatasetCache(ctx, dataset)
@@ -365,6 +393,9 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			payload["acmgScore"] = assessment.Score
 			payload["acmgProfile"] = assessment.Profile
 			payload["acmgState"] = assessment.State
+		}
+		if err := validateActiveACMG(payload); err != nil {
+			return err
 		}
 		after, err := json.Marshal(payload)
 		if err != nil {

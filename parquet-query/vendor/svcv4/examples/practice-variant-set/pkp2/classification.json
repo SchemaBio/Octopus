@@ -1,0 +1,125 @@
+{
+  "proposition": {
+    "subject": {
+      "variation": {
+        "id": "CAID:CA384368604",
+        "type": "Allele",
+        "_note": "Placeholder VRS Variation. Source: ClinGen Allele ID CA384368604."
+      },
+      "label": "PKP2 c.1481C>A (p.Ser494Ter, alt transcript NM_004572.4) \u2014 PVS-PKP2 VBC"
+    },
+    "predicate": "is_causal_for",
+    "object": {
+      "curie": "MONDO:0016587",
+      "label": "arrhythmogenic right ventricular cardiomyopathy"
+    },
+    "qualifiers": [
+      {
+        "moi": "AD",
+        "note": "Loss of function is an established disease mechanism."
+      }
+    ]
+  },
+  "score": 0.0,
+  "outcome": "variant_of_uncertain_significance",
+  "strength": null,
+  "direction": "neutral",
+  "contribution": null,
+  "description": "PVS-PKP2 rolled-up SVCv4 classification. Illustrative \u2014 scoring lives in CSpec. Source tab: 'PKP2'. No clinical points: the single proband has only suspected (not clinically diagnosed) ARVC, so is not counted in CLN_AFF (nor LOC_PHE). A genuine VUS driven by transcript context.",
+  "specifiedBy": {
+    "code": "svcv4:baseline",
+    "label": "ACMG/AMP/CAP/ClinGen SVCv4 Standard (baseline)",
+    "version": "draft-2026-pre-release"
+  },
+  "hasEvidenceLines": [
+    {
+      "code": "POP_FRQ",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "POP_FRQ_+0",
+      "contribution": 0.0,
+      "description": "Population frequency (illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:POP_FRQ",
+        "label": "Population allele frequency (POP_FRQ)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-PKP2-pop-001",
+          "references": [
+            "https://gnomad.broadinstitute.org/variant/chr12-32843211-G-T?dataset=gnomad_r4"
+          ],
+          "description": "POP inputs from the tab.",
+          "subtype": "population_frequency",
+          "value": {
+            "prevalence_estimate": "1 in 1000",
+            "allelic_heterogeneity": 1.0,
+            "genetic_heterogeneity": 0.6,
+            "penetrance": 0.3,
+            "pop_frq_points": 0
+          }
+        }
+      ]
+    },
+    {
+      "code": "NUL",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "NUL_+0",
+      "contribution": 0.0,
+      "description": "Transcript-context-limited LoF evidence (PFD, illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:NUL",
+        "label": "Absent protein / loss of function (NUL)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-PKP2-nul-001",
+          "references": [],
+          "description": "Nonsense change in an exon absent from the clinically relevant transcript, so the LoF mechanism does not clearly apply.",
+          "subtype": "predicted_lof",
+          "value": {
+            "consequence": "nonsense p.Ser494Ter in an alt transcript (NM_004572.4, exon 6/10)",
+            "mane_select": "deep intronic (c.1379-2006C>A); the nonsense-bearing exon is absent from MANE Select",
+            "interpretation": "LoF weight is uncertain \u2014 the affected exon is not in the clinically relevant transcript"
+          }
+        }
+      ],
+      "hasEvidenceLines": [
+        {
+          "code": "NUL_PRD",
+          "score": 0.0,
+          "strength": null,
+          "direction": "neutral",
+          "outcome": "NUL_PRD_+0",
+          "contribution": null,
+          "provisional": false,
+          "description": "Predicted-LoF / structural nonsense assessment.",
+          "specifiedBy": {
+            "code": "svcv4:NUL_PRD",
+            "label": "Predicted loss of function (NUL_PRD)",
+            "version": "draft-2026-pre-release"
+          },
+          "hasEvidenceItems": [
+            {
+              "id": "PVS-PKP2-nul-001",
+              "references": [],
+              "description": "Nonsense change in an exon absent from the clinically relevant transcript, so the LoF mechanism does not clearly apply.",
+              "subtype": "predicted_lof",
+              "value": {
+                "consequence": "nonsense p.Ser494Ter in an alt transcript (NM_004572.4, exon 6/10)",
+                "mane_select": "deep intronic (c.1379-2006C>A); the nonsense-bearing exon is absent from MANE Select",
+                "interpretation": "LoF weight is uncertain \u2014 the affected exon is not in the clinically relevant transcript"
+              }
+            }
+          ],
+          "hasEvidenceLines": []
+        }
+      ]
+    }
+  ]
+}

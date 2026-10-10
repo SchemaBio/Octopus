@@ -1,0 +1,225 @@
+{
+  "$defs": {
+    "Gene": {
+      "additionalProperties": false,
+      "description": "A gene reference (symbol/id/transcript); ``mde_associated_gene`` flags\nwhether it is the MDE-associated gene (set when it differs from the VBC gene).",
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Gene identifier (e.g. HGNC / NCBI id).",
+          "title": "Id"
+        },
+        "mde_associated_gene": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "MDE-associated gene, required when the gene differs from the VBC gene.",
+          "title": "Mde Associated Gene"
+        },
+        "symbol": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Gene symbol.",
+          "title": "Symbol"
+        },
+        "transcript": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Transcript reference (e.g. RefSeq accession).",
+          "title": "Transcript"
+        }
+      },
+      "title": "Gene",
+      "type": "object"
+    },
+    "GeneDiseaseValidity": {
+      "description": "ClinGen gene-disease validity classification for the gene\u2194MDE pair.\n\nA classification-level *precondition*, not a per-workflow evidence input:\nit gates which final classification tiers are reachable (Limited blocks\nP/LP; Disputed/Refuted block reporting) and, per SVCv4 Supplementary\nMaterial 18, whether the molecular-mechanism multiplier may be applied at\nall (usable only at MODERATE or higher; LIMITED or below is treated as an\n'Uncertain' mechanism and zeroed). Gating is documented, not enforced this\nphase.\n\n``NOT_CLASSIFIED`` means ClinGen has no gene-disease validity classification\nfor this gene\u2194MDE pair \u2014 distinct from the field being absent (``None``),\nwhich means the value was not captured at all.",
+      "enum": [
+        "DEFINITIVE",
+        "STRONG",
+        "MODERATE",
+        "LIMITED",
+        "DISPUTED",
+        "REFUTED",
+        "NOT_CLASSIFIED"
+      ],
+      "title": "GeneDiseaseValidity",
+      "type": "string"
+    },
+    "MOI": {
+      "description": "Mode of inheritance. ALTV does not yet support AR/XLR.",
+      "enum": [
+        "AD",
+        "AR",
+        "XLD",
+        "XLR",
+        "SD"
+      ],
+      "title": "MOI",
+      "type": "string"
+    },
+    "Mde": {
+      "additionalProperties": false,
+      "description": "Mendelian Disease Entity \u2014 the curation-level disease reference the VBC is\nassessed against, shared across workflows as a parameter.\n\nCuration-level counterpart to the formal VA-Spec ``inputs.MDE``.",
+      "properties": {
+        "curie": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Disease CURIE (e.g. `MONDO:0007254`, `OMIM:114480`).",
+          "title": "Curie"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-readable disease label.",
+          "title": "Label"
+        }
+      },
+      "title": "Mde",
+      "type": "object"
+    },
+    "Vbc": {
+      "additionalProperties": false,
+      "description": "Variant Being Considered \u2014 the curation-level reference to the variant\nunder evaluation, shared across workflows as a parameter (id + gene).\n\nCuration-level counterpart to the formal VA-Spec ``inputs.VBC``; the two\nreconcile in a later phase.",
+      "properties": {
+        "gene": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Gene"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The gene the VBC is in."
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Identifier for the variant being considered.",
+          "title": "Id"
+        }
+      },
+      "title": "Vbc",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Parameters required by the workflows but not part of the Case data\nstructure. These feed the (forthcoming) workflow matrix that determines\napplicability and scoring; they are captured alongside a Case, not within it.",
+  "properties": {
+    "gene_disease_validity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GeneDiseaseValidity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "ClinGen gene-disease validity for the gene\u2194MDE pair \u2014 a classification-level precondition (see the enum docstring). Captured here; gating is documented, not enforced this phase."
+    },
+    "mde": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Mde"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The disease the VBC is assessed against."
+    },
+    "moi": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MOI"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Mode of inheritance."
+    },
+    "pop_frq_points": {
+      "anyOf": [
+        {
+          "minimum": -1.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Population-frequency points (must be >= -1.0).",
+      "title": "Pop Frq Points"
+    },
+    "vbc": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Vbc"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The variant being considered."
+    }
+  },
+  "title": "WorkflowParameters",
+  "type": "object"
+}

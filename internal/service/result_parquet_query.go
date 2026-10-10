@@ -543,6 +543,9 @@ func normalizeParquetAPIItem(table string, item map[string]interface{}) map[stri
 			}
 		}
 		row["vaf"] = item["VAF"]
+		if adjustment, ok := item["__adjustments"].(map[string]interface{}); ok {
+			applyActiveACMG(row, adjustment)
+		}
 		row["alleleFrequency"] = item["VAF"]
 		row["reviewStatus"] = map[string]interface{}{"reviewed": row["reviewed"], "reported": row["reported"]}
 		if adjustment, ok := item["__adjustments"].(map[string]interface{}); ok {

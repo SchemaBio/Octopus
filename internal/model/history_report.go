@@ -30,6 +30,10 @@ type HistoryReport struct {
 	Deleted                bool       `json:"deleted"`
 	Classification         string     `json:"classification" gorm:"size:40"`
 	ReportedClassification string     `json:"reportedClassification" gorm:"size:40"`
+	ACMGVersion            string     `json:"acmgVersion,omitempty" gorm:"size:16"`
+	VusSubclass            string     `json:"vusSubclass,omitempty" gorm:"size:16"`
+	ReportedACMGVersion    string     `json:"reportedAcmgVersion,omitempty" gorm:"size:16"`
+	ReportedVusSubclass    string     `json:"reportedVusSubclass,omitempty" gorm:"size:16"`
 	FirstReportedAt        *time.Time `json:"firstReportedAt"`
 	LastReportedAt         *time.Time `json:"lastReportedAt"`
 	ReportedBy             string     `json:"reportedBy" gorm:"size:160"`

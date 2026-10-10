@@ -1,0 +1,285 @@
+{
+  "$defs": {
+    "Age": {
+      "additionalProperties": false,
+      "description": "A structured age covering point values, bounds, and ranges.",
+      "properties": {
+        "max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Upper bound (with RANGE).",
+          "title": "Max"
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Lower bound (with RANGE).",
+          "title": "Min"
+        },
+        "qualifier": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgeQualifier"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How to interpret the value(s)."
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Original curator text, preserved verbatim.",
+          "title": "Raw"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgeUnit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Unit for value/min/max."
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Point value (with EXACT/GT/LT/APPROX).",
+          "title": "Value"
+        }
+      },
+      "title": "Age",
+      "type": "object"
+    },
+    "AgeQualifier": {
+      "description": "How to read an :class:`Age`: a point value, a bound, or a range.",
+      "enum": [
+        "EXACT",
+        "GT",
+        "LT",
+        "APPROX",
+        "RANGE"
+      ],
+      "title": "AgeQualifier",
+      "type": "string"
+    },
+    "AgeUnit": {
+      "description": "Unit for an :class:`Age` value or bounds.",
+      "enum": [
+        "DAY",
+        "WEEK",
+        "MONTH",
+        "YEAR"
+      ],
+      "title": "AgeUnit",
+      "type": "string"
+    },
+    "Phenotype": {
+      "additionalProperties": false,
+      "description": "A phenotype as a ``{name, code}`` pair; either may stand alone.",
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "HPO id/code, preferred (e.g. `HP:0001250`).",
+          "title": "Code"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Label of the coded entry when a code is given; otherwise a free-text term the curator could not confidently match to HPO.",
+          "title": "Name"
+        }
+      },
+      "title": "Phenotype",
+      "type": "object"
+    },
+    "Sex": {
+      "description": "Proband sex: Male / Female / Unknown / Trans.",
+      "enum": [
+        "M",
+        "F",
+        "U",
+        "T"
+      ],
+      "title": "Sex",
+      "type": "string"
+    },
+    "TriState": {
+      "description": "Tri-state truth value.\n\n``TRUE``/``FALSE`` \u2014 the curator established the value. ``UNKNOWN`` \u2014\nthe curator looked and could not determine it. A ``null`` field (absent)\nmeans the value was **not captured at all**; ``UNKNOWN`` and ``null`` are\nsemantically distinct.",
+      "enum": [
+        "TRUE",
+        "FALSE",
+        "UNKNOWN"
+      ],
+      "title": "TriState",
+      "type": "string"
+    },
+    "Zygosity": {
+      "description": "Zygosity of a variant in the case.",
+      "enum": [
+        "HOM",
+        "HET",
+        "HEMI"
+      ],
+      "title": "Zygosity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A relative of the proband, captured for segregation (LOC_SEG).",
+  "properties": {
+    "affected_w_mde": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TriState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Whether the relative is affected with the MDE."
+    },
+    "age": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Age"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "cmp_het_variant_exists": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TriState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Whether a compound-het variant exists in the relative."
+    },
+    "parent_of_proband": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TriState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Whether this relative is a parent of the proband."
+    },
+    "phenotypes": {
+      "description": "0..many phenotypes for the relative.",
+      "items": {
+        "$ref": "#/$defs/Phenotype"
+      },
+      "title": "Phenotypes",
+      "type": "array"
+    },
+    "severe_phenotype": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TriState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Whether the relative has a severe phenotype. Required for semi-dominant and X-linked when affected. Distinct from `pheno_severity`."
+    },
+    "sex": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Sex"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Relative sex; required if X-linked."
+    },
+    "vbc_exists": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TriState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Whether the VBC is present in the relative."
+    },
+    "vbc_zygosity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Zygosity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Zygosity of the VBC in the relative."
+    }
+  },
+  "title": "CaseRelative",
+  "type": "object"
+}

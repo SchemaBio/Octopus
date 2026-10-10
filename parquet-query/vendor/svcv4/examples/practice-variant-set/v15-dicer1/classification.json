@@ -1,0 +1,127 @@
+{
+  "proposition": {
+    "subject": {
+      "variation": {
+        "id": "CAID:CA10583232",
+        "type": "Allele",
+        "_note": "Placeholder VRS Variation. Source: ClinGen Allele ID CA10583232."
+      },
+      "label": "DICER1 c.2T>C (p.Met1Thr, start-loss) \u2014 PVS-v15-DICER1 VBC"
+    },
+    "predicate": "is_causal_for",
+    "object": {
+      "curie": "MONDO:0100216",
+      "label": "DICER1-related tumor predisposition"
+    },
+    "qualifiers": [
+      {
+        "moi": "AD",
+        "note": "Loss of function is an established disease mechanism."
+      }
+    ]
+  },
+  "score": 0.0,
+  "outcome": "variant_of_uncertain_significance",
+  "strength": null,
+  "direction": "neutral",
+  "contribution": null,
+  "description": "PVS-v15-DICER1 rolled-up SVCv4 classification. Illustrative \u2014 scoring lives in CSpec. Source tab: 'v15: DICER1'. A 'why nothing counts' example: proband 1 is unaffected and DICER1 penetrance is low (no CLN_UAF), and proband 2's breast cancer is non-specific with a Pathogenic BRCA1 variant and high genetic heterogeneity (no CLN_AFF, no CLN_ALT). VUS.",
+  "specifiedBy": {
+    "code": "svcv4:baseline",
+    "label": "ACMG/AMP/CAP/ClinGen SVCv4 Standard (baseline)",
+    "version": "draft-2026-pre-release"
+  },
+  "hasEvidenceLines": [
+    {
+      "code": "POP_FRQ",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "POP_FRQ_+0",
+      "contribution": 0.0,
+      "description": "Population frequency (illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:POP_FRQ",
+        "label": "Population allele frequency (POP_FRQ)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v15-DICER1-pop-001",
+          "references": [
+            "https://gnomad.broadinstitute.org/variant/chr14-95133457-A-G?dataset=gnomad_r4"
+          ],
+          "description": "POP inputs from the tab; note low penetrance (0.10).",
+          "subtype": "population_frequency",
+          "value": {
+            "prevalence_estimate": "1 in 800",
+            "allelic_heterogeneity": 0.07,
+            "genetic_heterogeneity": 1.0,
+            "penetrance": 0.1,
+            "pop_frq_points": 0
+          }
+        }
+      ]
+    },
+    {
+      "code": "NUL",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "NUL_+0",
+      "contribution": 0.0,
+      "description": "Start-loss with uncertain LoF (PFD, illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:NUL",
+        "label": "Absent protein / loss of function (NUL)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v15-DICER1-nul-001",
+          "references": [],
+          "description": "Start-loss with plausible downstream alternate start codons, so the LoF effect is uncertain.",
+          "subtype": "predicted_lof",
+          "value": {
+            "consequence": "start-loss (p.Met1Thr)",
+            "alternate_starts": "p.Met11/Met17/Met24 present; p.M1 not highly conserved",
+            "impact": "loss of first ~24 aa removes only ~1.2% of the protein; no critical domain there",
+            "interpretation": "LoF weight is uncertain \u2014 alternative Met usage may rescue translation"
+          }
+        }
+      ],
+      "hasEvidenceLines": [
+        {
+          "code": "NUL_PRD",
+          "score": 0.0,
+          "strength": null,
+          "direction": "neutral",
+          "outcome": "NUL_PRD_+0",
+          "contribution": null,
+          "provisional": false,
+          "description": "Predicted-LoF / structural nonsense assessment.",
+          "specifiedBy": {
+            "code": "svcv4:NUL_PRD",
+            "label": "Predicted loss of function (NUL_PRD)",
+            "version": "draft-2026-pre-release"
+          },
+          "hasEvidenceItems": [
+            {
+              "id": "PVS-v15-DICER1-nul-001",
+              "references": [],
+              "description": "Start-loss with plausible downstream alternate start codons, so the LoF effect is uncertain.",
+              "subtype": "predicted_lof",
+              "value": {
+                "consequence": "start-loss (p.Met1Thr)",
+                "alternate_starts": "p.Met11/Met17/Met24 present; p.M1 not highly conserved",
+                "impact": "loss of first ~24 aa removes only ~1.2% of the protein; no critical domain there",
+                "interpretation": "LoF weight is uncertain \u2014 alternative Met usage may rescue translation"
+              }
+            }
+          ],
+          "hasEvidenceLines": []
+        }
+      ]
+    }
+  ]
+}

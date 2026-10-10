@@ -230,6 +230,9 @@ func (s *ResultService) historyDatasetCache(ctx context.Context, d *model.Result
 }
 
 func historyEffectiveClassification(tx *gorm.DB, d *model.ResultDataset, rowID string, payload map[string]interface{}) (string, error) {
+	if stringAdjustment(payload, "activeAcmgVersion") == "svcv4" {
+		return stringAdjustment(svcResult(payload), "classification"), nil
+	}
 	if override := stringAdjustment(payload, "acmgOverride"); override != "" {
 		return override, nil
 	}
@@ -289,6 +292,17 @@ func persistHistoryReport(tx *gorm.DB, task *model.Task, d *model.ResultDataset,
 		return ErrAdjustmentConflict
 	}
 	previousClassification := row.Classification
+	previousVersion, previousSubclass := row.ACMGVersion, row.VusSubclass
+	if d.Table == "snv-indel" {
+		row.ACMGVersion = stringAdjustment(payload, "activeAcmgVersion")
+		if row.ACMGVersion == "" {
+			row.ACMGVersion = "legacy"
+		}
+		row.VusSubclass = ""
+		if row.ACMGVersion == "svcv4" {
+			row.VusSubclass = stringAdjustment(svcResult(payload), "vusSubclass")
+		}
+	}
 	row.Classification, err = historyEffectiveClassification(tx, d, saved.RowID, payload)
 	if err != nil {
 		return err
@@ -297,7 +311,7 @@ func persistHistoryReport(tx *gorm.DB, task *model.Task, d *model.ResultDataset,
 	_ = json.Unmarshal([]byte(event.BeforeJSON), &before)
 	wasReported := row.Reported
 	row.Reported = payload["reported"] == true
-	if row.Revision > 0 && row.Reported == wasReported && row.Classification == previousClassification {
+	if row.Revision > 0 && row.Reported == wasReported && row.Classification == previousClassification && row.ACMGVersion == previousVersion && row.VusSubclass == previousSubclass {
 		return tx.Model(&row).Update("adjustment_version", saved.Version).Error
 	}
 	if row.Reported && !wasReported {
@@ -307,6 +321,7 @@ func persistHistoryReport(tx *gorm.DB, task *model.Task, d *model.ResultDataset,
 			row.FirstReportedAt = &now
 		}
 		row.ReportedClassification = row.Classification
+		row.ReportedACMGVersion, row.ReportedVusSubclass = row.ACMGVersion, row.VusSubclass
 		row.ReportedBy = event.Actor
 	}
 	row.AdjustmentVersion = saved.Version

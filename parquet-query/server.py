@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import duckdb
+import svcv4
 
 ROOT = Path(os.environ.get("PARQUET_CACHE_ROOT", "/data/parquet-cache")).resolve()
 ASSESSMENT_ROOT = Path(os.environ.get("PARQUET_ASSESSMENT_ROOT", "/data/parquet-assessments")).resolve()
@@ -22,6 +23,7 @@ MAX_FILTERS = 40
 FIELD_PROFILE_VERSION = "parquet-fields-v2"
 ACMG_PROFILE = "acmg-snv-points-v2"
 OVERLAY_FIELDS = {
+    "activeAcmgVersion", "svcv4Assessment", "acmgVusSubclass", "acmgTrial",
     "reviewed", "reported", "interpretation", "acmgClassification", "acmgEvidence",
     "cnvAssessment", "cnvClassification", "cnvScore", "acmgScore", "acmgProfile", "acmgState", "acmgOverride", "acmgOverrideReason",
 }
@@ -62,6 +64,17 @@ def automatic_expr(columns, table):
 
 
 def field_expr(column, columns, table):
+    if column == 'activeAcmgVersion':
+        return "COALESCE(" + overlay_expr(column) + ", 'legacy')"
+    if column == 'acmgTrial':
+        return "CASE WHEN " + overlay_expr('activeAcmgVersion') + "='svcv4' THEN 'true' ELSE 'false' END"
+    if column == 'acmgVusSubclass':
+        return "CASE WHEN " + overlay_expr('activeAcmgVersion') + "='svcv4' THEN json_extract_string(o.payload, '$.svcv4Assessment.result.vusSubclass') END"
+    if column in {'acmgClassification', 'acmgScore', 'acmgProfile', 'acmgState'}:
+        key = {'acmgClassification':'classification','acmgScore':'score','acmgState':'state'}.get(column)
+        legacy = legacy_acmg_expr(column, columns, table)
+        current = "'svcv4-draft-reference'" if key is None else "json_extract_string(o.payload, '$.svcv4Assessment.result." + key + "')"
+        return "CASE WHEN " + overlay_expr('activeAcmgVersion') + "='svcv4' THEN " + current + " ELSE " + legacy + " END"
     if column in {"cnvClassification", "cnvScore", "cnvAssessment"}:
         if column == "cnvAssessment": return overlay_expr(column)
         key = "classification" if column == "cnvClassification" else "totalScore"
@@ -81,6 +94,14 @@ def field_expr(column, columns, table):
     if column not in columns:
         raise ValueError("unknown filter field")
     return "t." + ident(column)
+
+
+def legacy_acmg_expr(column, columns, table):
+    key = {'acmgClassification':'classification','acmgScore':'score','acmgProfile':'profile','acmgState':'state'}[column]
+    base = "json_extract_string(" + automatic_expr(columns, table) + ", '$." + key + "')"
+    if column == 'acmgClassification':
+        return "COALESCE(NULLIF(" + overlay_expr('acmgOverride') + ", ''), CASE WHEN json_exists(o.payload, '$.acmgEvidence') THEN NULLIF(" + overlay_expr(column) + ", '') ELSE " + base + " END)"
+    return "CASE WHEN json_exists(o.payload, '$.acmgEvidence') THEN " + overlay_expr(column) + " ELSE " + base + " END"
 
 
 def predicate(column, operator, value, columns, table):
@@ -163,13 +184,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
-        if self.path == "/health":
+        if self.path == "/v1/svcv4/schema":
+            self.send_json(200, svcv4.schema())
+        elif self.path == "/health":
             self.send_json(200, {"status": "ok", "duckdb": duckdb.__version__})
         else:
             self.send_json(404, {"error": "not_found"})
 
     def do_POST(self):
-        if self.path not in {"/v1/query", "/v1/prepare", "/v1/export"}:
+        if self.path not in {"/v1/query", "/v1/prepare", "/v1/export", "/v1/svcv4/evaluate"}:
             self.send_json(404, {"error": "not_found"})
             return
         try:
@@ -186,7 +209,9 @@ class Handler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(length))
             if not isinstance(request, dict):
                 raise ValueError("query body must be an object")
-            if self.path == "/v1/prepare":
+            if self.path == "/v1/svcv4/evaluate":
+                self.send_json(200, svcv4.evaluate(request))
+            elif self.path == "/v1/prepare":
                 with PREPARE_LOCK:
                     self.send_json(200, prepare_automatic_acmg(request))
             elif self.path == "/v1/export":

@@ -1,0 +1,143 @@
+{
+  "proposition": {
+    "subject": {
+      "variation": {
+        "id": "CAID:CA021404",
+        "type": "Allele",
+        "_note": "Placeholder VRS Variation. Source: ClinGen Allele ID CA021404."
+      },
+      "label": "TNNI3 c.236G>T (p.Arg79Leu) \u2014 PVS-v18-TNNI3 VBC"
+    },
+    "predicate": "is_causal_for",
+    "object": {
+      "curie": "MONDO:0005045",
+      "label": "hypertrophic cardiomyopathy"
+    },
+    "qualifiers": [
+      {
+        "moi": "AD",
+        "note": "Loss of function is NOT an established mechanism for TNNI3-related HCM."
+      }
+    ]
+  },
+  "score": 0.0,
+  "outcome": "variant_of_uncertain_significance",
+  "strength": null,
+  "direction": "neutral",
+  "contribution": null,
+  "description": "PVS-v18-TNNI3 rolled-up SVCv4 classification. Illustrative \u2014 scoring lives in CSpec. Source tab: 'v18: TNNI3'. A VUS: the only proband (Framingham/Jackson Heart Study) has no clinical phenotype details, so no CLN_AFF or CLN_UAF points, and REVEL is intermediate.",
+  "specifiedBy": {
+    "code": "svcv4:baseline",
+    "label": "ACMG/AMP/CAP/ClinGen SVCv4 Standard (baseline)",
+    "version": "draft-2026-pre-release"
+  },
+  "hasEvidenceLines": [
+    {
+      "code": "POP_FRQ",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "POP_FRQ_+0",
+      "contribution": 0.0,
+      "description": "Population frequency (illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:POP_FRQ",
+        "label": "Population allele frequency (POP_FRQ)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v18-TNNI3-pop-001",
+          "references": [
+            "https://gnomad.broadinstitute.org/variant/chr19-55156247-C-A?dataset=gnomad_r4"
+          ],
+          "description": "POP inputs from the tab.",
+          "subtype": "population_frequency",
+          "value": {
+            "prevalence_estimate": "1 in 200",
+            "allelic_heterogeneity": 0.1,
+            "genetic_heterogeneity": 0.05,
+            "penetrance": 0.3,
+            "pop_frq_points": 0
+          }
+        }
+      ]
+    },
+    {
+      "code": "MIS",
+      "score": 0.0,
+      "strength": null,
+      "direction": "neutral",
+      "outcome": "MIS_+0",
+      "contribution": 0.0,
+      "description": "Predictive missense evidence (PFD, illustrative).",
+      "specifiedBy": {
+        "code": "svcv4:MIS",
+        "label": "Single-amino-acid change (MIS)",
+        "version": "draft-2026-pre-release"
+      },
+      "hasEvidenceItems": [
+        {
+          "id": "PVS-v18-TNNI3-mis-001",
+          "references": [],
+          "description": "REVEL 0.542 is intermediate \u2014 uninformative on its own.",
+          "subtype": "computational_prediction",
+          "value": {
+            "tool": "REVEL",
+            "score": 0.542,
+            "splice_impact": "none"
+          }
+        }
+      ],
+      "hasEvidenceLines": [
+        {
+          "code": "MIS_PRD",
+          "score": 0.0,
+          "strength": null,
+          "direction": "neutral",
+          "outcome": "MIS_PRD_+0",
+          "contribution": null,
+          "provisional": false,
+          "description": "In-silico predictive missense assessment.",
+          "specifiedBy": {
+            "code": "svcv4:MIS_PRD",
+            "label": "Predictive missense (MIS_PRD)",
+            "version": "draft-2026-pre-release"
+          },
+          "hasEvidenceItems": [],
+          "hasEvidenceLines": [
+            {
+              "code": "MIS_PRD_INIT_REVEL",
+              "score": 0.0,
+              "strength": null,
+              "direction": "neutral",
+              "outcome": "MIS_PRD_INIT_REVEL_+0",
+              "contribution": null,
+              "provisional": true,
+              "description": "REVEL 0.542 is intermediate \u2014 uninformative on its own.",
+              "specifiedBy": {
+                "code": "svcv4:MIS_PRD_INIT_REVEL",
+                "label": "Predictor initial points (REVEL)",
+                "version": "draft-2026-pre-release"
+              },
+              "hasEvidenceItems": [
+                {
+                  "id": "PVS-v18-TNNI3-mis-001",
+                  "references": [],
+                  "description": "REVEL 0.542 is intermediate \u2014 uninformative on its own.",
+                  "subtype": "computational_prediction",
+                  "value": {
+                    "tool": "REVEL",
+                    "score": 0.542,
+                    "splice_impact": "none"
+                  }
+                }
+              ],
+              "hasEvidenceLines": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -140,9 +140,22 @@ func (s *ResultService) BackfillHistoryReports(ctx context.Context, execute bool
 							source.LastReportedAt = &at
 						}
 						source.ReportedBy = event.Actor
+						if d.Table == "snv-indel" {
+							source.ReportedVusSubclass = ""
+							source.ReportedACMGVersion = stringAdjustment(after, "activeAcmgVersion")
+							if source.ReportedACMGVersion == "" {
+								source.ReportedACMGVersion = "legacy"
+							}
+							if source.ReportedACMGVersion == "svcv4" {
+								source.ReportedVusSubclass = stringAdjustment(svcResult(after), "vusSubclass")
+							}
+						}
 						source.ReportedClassification = stringAdjustment(after, "acmgOverride")
 						if source.ReportedClassification == "" {
 							source.ReportedClassification = stringAdjustment(after, "acmgClassification")
+						}
+						if source.ReportedACMGVersion == "svcv4" {
+							source.ReportedClassification = stringAdjustment(svcResult(after), "classification")
 						}
 					}
 				}
@@ -180,6 +193,16 @@ func (s *ResultService) BackfillHistoryReports(ctx context.Context, execute bool
 					source.UpdatedAt = time.Now().UTC()
 					var err error
 					source.Classification, err = historyEffectiveClassification(tx, &d, rowID, payload)
+					if d.Table == "snv-indel" {
+						source.VusSubclass = ""
+						source.ACMGVersion = stringAdjustment(payload, "activeAcmgVersion")
+						if source.ACMGVersion == "" {
+							source.ACMGVersion = "legacy"
+						}
+						if source.ACMGVersion == "svcv4" {
+							source.VusSubclass = stringAdjustment(svcResult(payload), "vusSubclass")
+						}
+					}
 					if err != nil {
 						return err
 					}

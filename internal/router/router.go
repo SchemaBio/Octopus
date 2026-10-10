@@ -235,6 +235,8 @@ func New(cfg *config.Config) *gin.Engine {
 			results.POST("/tables/:table/query", resultHandler.QueryParquetTable)
 			results.GET("/tables/:table/browser", resultHandler.GetBrowserDataset)
 			results.GET("/assessment/context", resultHandler.GetAssessmentContext)
+			results.GET("/assessment/svcv4/schema", resultHandler.GetSVCv4Schema)
+			results.POST("/assessment/svcv4/evaluate", resultHandler.EvaluateSVCv4)
 			results.POST("/assessment/context", resultHandler.ActivateAssessmentContext)
 			results.GET("/tables/:table/adjustments", resultHandler.GetBrowserAdjustments)
 			results.GET("/tables/:table/views", resultHandler.ListPersonalViews)

@@ -1,0 +1,131 @@
+{
+  "$defs": {
+    "MDE": {
+      "additionalProperties": false,
+      "description": "Mendelian Disease Entity \u2014 the disease the VBC is being assessed against.\n\n`curie` is intentionally a flexible string for the scaffold.\nAcceptable namespaces include MONDO, OMIM, and Orphanet; precise\nnamespace constraints will be set by the SVCv4 VA-Spec community\nprofile.",
+      "properties": {
+        "curie": {
+          "description": "CURIE identifier (e.g. `MONDO:0007254`, `OMIM:114480`, `Orphanet:289545`).",
+          "title": "Curie",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-readable label for the disease.",
+          "title": "Label"
+        }
+      },
+      "required": [
+        "curie"
+      ],
+      "title": "MDE",
+      "type": "object"
+    },
+    "MolecularConsequence": {
+      "description": "The VBC's predicted molecular consequence \u2014 the evidence that routes it to a\nPFD variant-impact family (MIS / NUL / CDS / SPL).\n\nThis is the routing input read by the ``variant-impact-router`` node under PFD.\nSeveral consequences resolve to NUL *or* CDS via a branch inside their own\nvariant-type workflow (NMD / non-stop-decay / alt-start / whole-gene); the\nrouter names the candidate family set and that branch picks the final one.\nMissense is unambiguous \u2192 MIS.",
+      "enum": [
+        "MISSENSE",
+        "NONSENSE",
+        "FRAMESHIFT",
+        "INFRAME_INDEL",
+        "START_LOST",
+        "STOP_LOST",
+        "SPLICE",
+        "EXON_DELETION",
+        "EXON_DUPLICATION",
+        "INTRONIC",
+        "SYNONYMOUS"
+      ],
+      "title": "MolecularConsequence",
+      "type": "string"
+    },
+    "Predicate": {
+      "description": "Predicate of a Variant Pathogenicity Proposition.\n\nPlaceholder vocabulary; the SVCv4 VA-Spec community profile will\nconfirm the canonical predicate(s).",
+      "enum": [
+        "is_causal_for"
+      ],
+      "title": "Predicate",
+      "type": "string"
+    },
+    "VBC": {
+      "additionalProperties": false,
+      "description": "Variant Being Considered \u2014 the germline variant under evaluation.\n\nEventually typed via a GA4GH VRS `Variation`. Today this is a\nplaceholder accepting any VRS-shaped payload as a dict; wiring\nthrough to `ga4gh.vrs.models.Variation` is a follow-up once the\nSVCv4 VA-Spec community profile is locked.",
+      "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-readable label for the variant.",
+          "title": "Label"
+        },
+        "molecular_consequence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MolecularConsequence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The VBC's predicted molecular consequence (e.g. from VEP against the relevant transcript). This is the evidence the PFD variant-impact router reads to select the MIS / NUL / CDS / SPL family. None = not captured."
+        },
+        "variation": {
+          "additionalProperties": true,
+          "description": "VRS Variation payload \u2014 placeholder. Will be typed as `ga4gh.vrs.models.Variation` in a follow-up PR.",
+          "title": "Variation",
+          "type": "object"
+        }
+      },
+      "required": [
+        "variation"
+      ],
+      "title": "VBC",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A SPOQ-structured Proposition: **S**ubject, **P**redicate, **O**bject, **Q**ualifier(s).\n\nFor a Variant Pathogenicity Classification:\n\n- **Subject** is the `VBC` (the variant under evaluation).\n- **Predicate** is the asserted relationship (default\n  `is_causal_for`).\n- **Object** is the `MDE` (the disease being assessed).\n- **Qualifier(s)** carry additional context (mode of inheritance,\n  population, tissue, etc.). Open shape in the scaffold.",
+  "properties": {
+    "object": {
+      "$ref": "#/$defs/MDE"
+    },
+    "predicate": {
+      "$ref": "#/$defs/Predicate",
+      "default": "is_causal_for",
+      "description": "Asserted relationship between the VBC and the MDE."
+    },
+    "qualifiers": {
+      "description": "Additional contextual qualifiers. Shape will be constrained by the SVCv4 VA-Spec community profile.",
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Qualifiers",
+      "type": "array"
+    },
+    "subject": {
+      "$ref": "#/$defs/VBC"
+    }
+  },
+  "required": [
+    "subject",
+    "object"
+  ],
+  "title": "Proposition",
+  "type": "object"
+}

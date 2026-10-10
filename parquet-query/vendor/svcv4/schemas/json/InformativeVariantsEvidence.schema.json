@@ -1,0 +1,180 @@
+{
+  "$defs": {
+    "AminoAcidRelation": {
+      "description": "An informative missense variant's amino-acid change relative to the VBC (SM 19).",
+      "enum": [
+        "same",
+        "distinct"
+      ],
+      "title": "AminoAcidRelation",
+      "type": "string"
+    },
+    "InformativeVariant": {
+      "additionalProperties": false,
+      "description": "A single distinct variant (not the VBC) informative for the VBC's\nclassification. Only distinct variants count; observation counts are\nirrelevant (SM 19).",
+      "properties": {
+        "aa": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AminoAcidRelation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Amino-acid change relative to the VBC: same or distinct (SM 19 missense)."
+        },
+        "attributes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Path-matching attributes for SM 19 INF scoring \u2014 the criteria the variant satisfies relative to the VBC. Missense uses `aa` (same|distinct amino-acid change) and `grantham_vs_vbc` (le|ge); other families use their own keys.",
+          "title": "Attributes",
+          "type": "object"
+        },
+        "circularity_checked": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether the analyst confirmed the VBC was not used as evidence for this variant's classification (circularity avoided).",
+          "title": "Circularity Checked"
+        },
+        "classification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VariantClassification"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The informative variant's own pathogenicity classification."
+        },
+        "distinct_evidence_from_vbc": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether it reached its classification via different evidence codes/weights than the VBC \u2014 required for it to count (SM 19).",
+          "title": "Distinct Evidence From Vbc"
+        },
+        "grantham": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Grantham score of this variant's amino-acid change. On distinct-AA groups the difference VBC_grantham \u2212 this (passed via evaluate) selects the group.",
+          "title": "Grantham"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Identifier for the informative variant.",
+          "title": "Id"
+        },
+        "similarity_basis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SimilarityBasis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why it is informative for the VBC (position/exon/effect/deletion)."
+        },
+        "star_rating": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ClinVar review star rating, for external classifications (usable only at 3-4 stars with circularity avoided).",
+          "title": "Star Rating"
+        },
+        "transcript": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Transcript on which the change is expressed; SM 19 presumes the VBC and informative variant are compared on equivalent transcript sequences.",
+          "title": "Transcript"
+        }
+      },
+      "title": "InformativeVariant",
+      "type": "object"
+    },
+    "SimilarityBasis": {
+      "description": "Why a variant is informative for the VBC (SM 19) \u2014 variant-type dependent.",
+      "enum": [
+        "SIMILAR_POSITION",
+        "SAME_EXON",
+        "SIMILAR_EFFECT",
+        "GENE_DELETION"
+      ],
+      "title": "SimilarityBasis",
+      "type": "string"
+    },
+    "VariantClassification": {
+      "description": "A variant's pathogenicity classification. Introduced for informative\nvariants (SM 19), whose scoring keys on P/LP vs B/LB. Not (yet) applied to\nthe placeholder ``classification`` strings on other Case sub-models.",
+      "enum": [
+        "PATHOGENIC",
+        "LIKELY_PATHOGENIC",
+        "VUS",
+        "LIKELY_BENIGN",
+        "BENIGN"
+      ],
+      "title": "VariantClassification",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "SM 19 informative-variants inputs for a PFD assessment.\n\nCaptured; the scoring (+2.0 first distinct P / +1.0 each additional, cap\n\u00b18; mirror negatives for B/LB) is documented, not computed.",
+  "properties": {
+    "variants": {
+      "description": "0..many distinct informative variants (observation counts do not matter).",
+      "items": {
+        "$ref": "#/$defs/InformativeVariant"
+      },
+      "title": "Variants",
+      "type": "array"
+    }
+  },
+  "title": "InformativeVariantsEvidence",
+  "type": "object"
+}
