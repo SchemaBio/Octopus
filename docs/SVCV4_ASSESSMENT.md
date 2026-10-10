@@ -13,7 +13,7 @@ inframe_indel、non_coding 未提供评分实现，暂不支持。
 全部缺失返回未评定（score/classification 为 null）；有效零分仍是已评定，可为 VUS-low。
 
 GET `/api/v1/tasks/:taskId/results/assessment/svcv4/schema`
-和 POST `.../evaluate` 使用现有任务权限，通过既有内部 parquet-query 服务计算。
+和 POST `.../evaluate` 使用现有任务权限，通过 Octopus 内部 `internal/svcv4` 纯 Go 模块计算；规则提交及 JSON schema 不变。
 保存时重新计算，忽略客户端提交的总分和分类；无需在线访问 ClinGen。
 
 ## 数据与采用
@@ -37,7 +37,7 @@ HistoryReport 增加当前/报出时版本与子类四个字段；旧空版本�
 
 ## 部署与报告契约
 
-同时构建并更新 YiJian、Octopus 和 **既有 parquet-query 容器**；Python requirements 新增固定 Pydantic/PyYAML 依赖。
+构建并更新 YiJian、Octopus；结果准备和 SVC 评分由 Octopus Go 进程完成。Python requirements 及固定参考源码仅供开发期对照测试，不进入运行镜像。迁移说明见 `PARQUET_QUERY_GO_MIGRATION.md`。
 无需新增服务器，Squid 现有 tasks 代理已覆盖新接口。Octopus AutoMigrate 自动增加历史索引字段。
 CNV 仍使用已有 ACMG/ClinGen 体系。
 

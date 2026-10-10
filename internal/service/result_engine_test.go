@@ -18,7 +18,7 @@ func TestGoEngineBridgeAndExportCleanup(t *testing.T) {
 	root, _ := filepath.Abs("../resultengine/testdata")
 	temp := t.TempDir()
 	cfg := &config.Config{}
-	cfg.ResultQuery = config.ResultQueryConfig{CacheDir: root, AssessmentDir: temp, TempDir: temp, Backend: "go", ServiceURL: "http://unused.invalid"}
+	cfg.ResultQuery = config.ResultQueryConfig{CacheDir: root, AssessmentDir: temp, TempDir: temp}
 	s := NewResultService(cfg)
 	data, _ := os.ReadFile(filepath.Join(root, "snappy.parquet"))
 	hash := sha256.Sum256(data)

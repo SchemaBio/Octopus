@@ -2,7 +2,7 @@
 
 ## First release and acceptance window
 
-First-stage commit `3911b63` retains independent `RESULT_ENGINE_BACKEND` and
+The final release is Go-only. First-stage commit `caf63b4` retains independent `RESULT_ENGINE_BACKEND` and
 `SVC_ENGINE_BACKEND` switches. Application defaults remain Python during this
 stage; the deployment override explicitly selects Go. There is no error-driven
 fallback. The current pinned Python rollback image is built separately and kept
@@ -42,3 +42,25 @@ Keep Python source, pinned vendor tree and tests exclusively as development tool
 Retain the first-stage Git commit, exact images and saved environment/Compose
 files for rollback. Image cleanup excludes running/stopped-container references
 and named rollback images; never prune volumes or unrelated services.
+
+## Rollback after final removal
+
+The final binary has no implementation switch. Restore the retained first-stage
+image and Compose override together; do not set obsolete variables on the final
+image. On this CVM the saved override is
+`/home/ubuntu/schema/backups/svcv4-20261010T051418Z/first-go-compose.yaml`.
+From `/home/ubuntu/schema/saas-deploy`:
+
+```sh
+OCTOPUS_IMAGE=schemabio/octopus:go-migration-caf63b4 \
+PARQUET_QUERY_IMAGE=schemabio/parquet-query:rollback-cf91aca \
+RESULT_ENGINE_BACKEND=python SVC_ENGINE_BACKEND=python \
+docker compose -p schemabio-saas -f compose.yaml \
+  -f /home/ubuntu/schema/backups/svcv4-20261010T051418Z/first-go-compose.yaml \
+  up -d parquet-cache-init parquet-query octopus
+```
+
+Then check health, authenticated table loading, exports and SVC previews.
+For Go rollback within that first-stage image, set both selectors to `go`.
+The first-stage initializer restores shared group access. Old objects, reports
+and clinical assessments must remain untouched in either direction.

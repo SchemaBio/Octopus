@@ -2,9 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -47,21 +44,15 @@ func TestSVCv4AdoptionRequiresConfirmedPinnedClassification(t *testing.T) {
 	}
 }
 
-func TestSVCv4ProxyChecksReferenceRevision(t *testing.T) {
+func TestSVCv4GoChecksReferenceRevision(t *testing.T) {
 	for _, revision := range []string{SVCv4Revision, "other"} {
-		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodPost || r.URL.Path != "/v1/svcv4/evaluate" {
-				t.Error("wrong scoring route")
-			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"revision": revision, "authoritative": false})
-		}))
 		cfg := &config.Config{}
-		cfg.ResultQuery.ServiceURL = upstream.URL
-		cfg.ResultQuery.SVCBackend = "python"
-		_, err := (&ResultService{cfg: cfg}).SVCv4(context.Background(), map[string]interface{}{"inputs": map[string]interface{}{}})
-		upstream.Close()
+		result, err := (&ResultService{cfg: cfg}).SVCv4(context.Background(), map[string]interface{}{"revision": revision, "disease": "Synthetic", "moi": "AD", "inputs": map[string]interface{}{}})
 		if (err == nil) != (revision == SVCv4Revision) {
 			t.Fatalf("version check failed: %v", err)
+		}
+		if err == nil && (result["revision"] != SVCv4Revision || result["authoritative"] != false) {
+			t.Fatal("lost reference provenance")
 		}
 	}
 }

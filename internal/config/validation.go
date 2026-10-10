@@ -4,15 +4,16 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
 
 // ValidateStartup checks the configuration for common mistakes at server startup.
 func ValidateStartup(cfg *Config) error {
-	for name, value := range map[string]string{"RESULT_ENGINE_BACKEND": cfg.ResultQuery.Backend, "SVC_ENGINE_BACKEND": cfg.ResultQuery.SVCBackend} {
-		if value != "" && value != "go" && value != "python" {
-			return fmt.Errorf("%s must be go or python", name)
+	for _, name := range []string{"PARQUET_QUERY_URL", "RESULT_ENGINE_BACKEND", "SVC_ENGINE_BACKEND"} {
+		if strings.TrimSpace(os.Getenv(name)) != "" {
+			return fmt.Errorf("%s was removed: result and SVC engines now run inside Octopus; remove this legacy environment setting", name)
 		}
 	}
 	if cfg.Storage.ResultDownloadLinkTTL != 0 && (cfg.Storage.ResultDownloadLinkTTL < time.Minute || cfg.Storage.ResultDownloadLinkTTL > time.Hour) {

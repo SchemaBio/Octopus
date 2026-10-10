@@ -38,24 +38,32 @@ initialization.
 Use `sudo bash ./deploy.sh up|down`, `bash ./deploy.sh status`, and
 `bash ./deploy.sh credentials` for ongoing operation.
 
-## COS Parquet query service
+## COS Parquet and SVC engines
 
 SaaS deployments can merge `saas-parquet-query.override.yaml` with their
-existing Compose file. The override adds a DuckDB sidecar on a private Docker
-network, a read-only Parquet cache mount, and a separate assessment directory.
-The Octopus application container must use UID 1000; the sidecar runs as
-UID 10001 with group 1000 so it can read the cache and Octopus can read the
-versioned ACMG assessment files. The one-shot cache initializer sets these
-permissions without exposing a host port.
+existing Compose file. The override mounts writable Parquet cache and assessment
+directories for Octopus UID/GID 1000 and initializes their permissions. Query,
+preparation, export, schema and pinned SVC scoring run inside Octopus's pure Go
+process. Python and DuckDB are not runtime dependencies. The override filename
+is retained for existing deployment commands; it no longer adds a query service
+or dedicated network. Ordinary SaaS auth/workflow dependencies remain unchanged.
 
 Build and apply it from the SaaS deployment directory with
-`PARQUET_QUERY_IMAGE` set to the image tag built from this repository:
+`OCTOPUS_IMAGE` set to the image tag built from this repository. Remove
+`PARQUET_QUERY_URL`, `RESULT_ENGINE_BACKEND` and `SVC_ENGINE_BACKEND` from
+Octopus's environment; startup rejects obsolete runtime settings explicitly:
 
 ```sh
 docker compose -f compose.yaml \
   -f ../Octopus/deploy/saas-parquet-query.override.yaml \
-  up -d --build octopus parquet-query
+  up -d octopus
 ```
+
+`RESULT_ENGINE_TEMP_DIR` defaults to the cache's `tmp` subdirectory. Both data
+directories must be writable; cache objects and existing assessments are retained.
+Resource limits, acceptance evidence and first-stage rollback instructions are in
+[migration](../docs/PARQUET_QUERY_GO_MIGRATION.md) and
+[acceptance](../docs/PARQUET_QUERY_GO_ACCEPTANCE.md).
 
 ## Reverse proxy contract
 

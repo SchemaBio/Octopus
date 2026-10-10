@@ -5,11 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/resultengine"
@@ -27,52 +25,24 @@ func (s *ResultService) resultEngine() (*resultengine.Engine, error) {
 	s.engineOnce.Do(func() { s.engine = resultengine.New(root, s.cfg.ResultQuery.AssessmentDir, temp) })
 	return s.engine, nil
 }
-func wireRequest(wire interface{}) (resultengine.Request, []byte, error) {
+func wireRequest(wire interface{}) (resultengine.Request, error) {
 	encoded, err := json.Marshal(wire)
 	if err != nil {
-		return resultengine.Request{}, nil, err
+		return resultengine.Request{}, err
 	}
 	if len(encoded) > 16<<20 {
-		return resultengine.Request{}, nil, fmt.Errorf("request_too_large")
+		return resultengine.Request{}, fmt.Errorf("request_too_large")
 	}
 	var q resultengine.Request
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.UseNumber()
 	err = decoder.Decode(&q)
-	return q, encoded, err
-}
-
-// legacyResultRequest is temporary and removed after the monitored cutover.
-func (s *ResultService) legacyResultRequest(ctx context.Context, endpoint string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.ResultQuery.ServiceURL+endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := (&http.Client{Timeout: 70 * time.Second}).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return nil, fmt.Errorf("Parquet operation failed (status %d)", resp.StatusCode)
-	}
-	return resp, nil
+	return q, err
 }
 func (s *ResultService) queryResultEngine(ctx context.Context, wire parquetQueryWireRequest) (*model.ParquetQueryResponse, error) {
-	q, body, err := wireRequest(wire)
+	q, err := wireRequest(wire)
 	if err != nil {
 		return nil, err
-	}
-	if s.cfg.ResultQuery.Backend == "python" {
-		resp, err := s.legacyResultRequest(ctx, "/v1/query", body)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		var result model.ParquetQueryResponse
-		err = json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&result)
-		return &result, err
 	}
 	engine, err := s.resultEngine()
 	if err != nil {
@@ -92,19 +62,9 @@ func (s *ResultService) queryResultEngine(ctx context.Context, wire parquetQuery
 	return &model.ParquetQueryResponse{Items: r.Items, Total: r.Total, RowCount: r.RowCount, Offset: r.Offset, Limit: r.Limit, Columns: r.Columns, ColumnTypes: r.ColumnTypes, FieldProfileVersion: r.FieldProfileVersion}, nil
 }
 func (s *ResultService) prepareResultEngine(ctx context.Context, wire resultengine.Request) (*parquetPrepareResponse, error) {
-	q, body, err := wireRequest(wire)
+	q, err := wireRequest(wire)
 	if err != nil {
 		return nil, err
-	}
-	if s.cfg.ResultQuery.Backend == "python" {
-		resp, err := s.legacyResultRequest(ctx, "/v1/prepare", body)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		var p parquetPrepareResponse
-		err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&p)
-		return &p, err
 	}
 	engine, err := s.resultEngine()
 	if err != nil {
@@ -131,12 +91,9 @@ func (b *exportFileBody) Close() error {
 	return removeErr
 }
 func (s *ResultService) exportResultEngine(ctx context.Context, wire parquetQueryWireRequest) (*http.Response, error) {
-	q, body, err := wireRequest(wire)
+	q, err := wireRequest(wire)
 	if err != nil {
 		return nil, err
-	}
-	if s.cfg.ResultQuery.Backend == "python" {
-		return s.legacyResultRequest(ctx, "/v1/export", body)
 	}
 	engine, err := s.resultEngine()
 	if err != nil {

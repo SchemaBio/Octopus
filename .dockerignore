@@ -22,3 +22,12 @@ docker-compose*
 # Docs
 README.md
 docs/
+
+# Development-only Python/reference and benchmark artifacts
+parquet-query/
+scripts/resultengine_oracle/
+.gotmp/
+cmd/resultengine-bench/
+cmd/resultengine-oracle/
+internal/resultengine/testdata/
+internal/svcv4/testdata/
