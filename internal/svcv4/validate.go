@@ -1,6 +1,7 @@
 package svcv4
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -120,10 +121,10 @@ func normalize(v interface{}, s, root object, path string) (interface{}, error) 
 				n = num(1)
 			}
 		}
-		if n == nil || math.IsNaN(*n) || math.IsInf(*n, 0) {
+		if n == nil {
 			return failure()
 		}
-		if s["type"] == "integer" && math.Trunc(*n) != *n {
+		if s["type"] == "integer" && (math.Trunc(*n) != *n || math.IsInf(*n, 0) || math.IsNaN(*n)) {
 			return failure()
 		}
 		for _, bound := range []string{"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"} {
@@ -131,16 +132,16 @@ func normalize(v interface{}, s, root object, path string) (interface{}, error) 
 			if limit == nil {
 				continue
 			}
-			bad := false
+			bad := math.IsNaN(*n)
 			switch bound {
 			case "minimum":
-				bad = *n < *limit
+				bad = bad || *n < *limit
 			case "maximum":
-				bad = *n > *limit
+				bad = bad || *n > *limit
 			case "exclusiveMinimum":
-				bad = *n <= *limit
+				bad = bad || *n <= *limit
 			case "exclusiveMaximum":
-				bad = *n >= *limit
+				bad = bad || *n >= *limit
 			}
 			if bad {
 				return failure()
@@ -184,6 +185,44 @@ func normalize(v interface{}, s, root object, path string) (interface{}, error) 
 		return nil, fmt.Errorf("%s: invalid constant", path)
 	}
 	return v, nil
+}
+func pythonInputLength(inputs object) int {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if encoder.Encode(inputs) != nil {
+		return 200001
+	}
+	data := strings.TrimSuffix(buffer.String(), "\n")
+	count := 0
+	quoted, escaped := false, false
+	for _, r := range data {
+		if r > 127 {
+			if r > 0xffff {
+				count += 12
+			} else {
+				count += 6
+			}
+		} else {
+			count++
+		}
+		if escaped {
+			escaped = false
+			continue
+		}
+		if quoted && r == '\\' {
+			escaped = true
+			continue
+		}
+		if r == '"' {
+			quoted = !quoted
+			continue
+		}
+		if !quoted && (r == ',' || r == ':') {
+			count++
+		}
+	}
+	return count
 }
 func validateModel(name string, input interface{}) (object, error) {
 	schema := schemaDocument

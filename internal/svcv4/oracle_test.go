@@ -30,7 +30,12 @@ func compareOracle(t *testing.T, got interface{}, want json.RawMessage) {
 	}
 }
 func TestEvaluatePythonOracle(t *testing.T) {
-	data, err := os.ReadFile("testdata/evaluate.json")
+	for _, name := range []string{"evaluate", "validation"} {
+		t.Run(name, func(t *testing.T) { testEvaluateFile(t, name) })
+	}
+}
+func testEvaluateFile(t *testing.T, name string) {
+	data, err := os.ReadFile("testdata/" + name + ".json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,6 +48,9 @@ func TestEvaluatePythonOracle(t *testing.T) {
 			var input object
 			json.Unmarshal(c.Input, &input)
 			result, err := Evaluate(input)
+			if err == nil {
+				_, err = json.Marshal(result)
+			}
 			if c.Error != nil {
 				if err == nil {
 					t.Fatal("expected rejection")

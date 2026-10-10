@@ -1,7 +1,6 @@
 package svcv4
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -22,8 +21,7 @@ func Evaluate(request object) (object, error) {
 		rawInputs = object{}
 	}
 	inputs, ok := rawInputs.(map[string]interface{})
-	encoded, _ := json.Marshal(inputs)
-	if !ok || len(encoded) > 200000 {
+	if !ok || pythonInputLength(inputs) > 200000 {
 		return nil, fmt.Errorf("新版证据输入无效或过大")
 	}
 	allowed := map[string]bool{"workflow": true, "impact": true, "population": true, "cases": true, "caseControl": true, "family": true}

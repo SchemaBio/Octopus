@@ -1,12 +1,19 @@
 package svcv4
 
-import "math"
-
 func Cap(v *float64, lo, hi float64) *float64 {
 	if v == nil {
 		return nil
 	}
-	return num(math.Max(lo, math.Min(hi, *v)))
+	// Python max(lo, min(hi, value)) compares in that order; in particular a
+	// permissively parsed NaN string takes hi. Preserve the pinned behavior.
+	inner := hi
+	if *v < hi {
+		inner = *v
+	}
+	if inner > lo {
+		return num(inner)
+	}
+	return num(lo)
 }
 func Hold(lo, hi float64, parts ...*float64) *float64 {
 	sum := 0.0

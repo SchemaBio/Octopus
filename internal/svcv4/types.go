@@ -138,7 +138,15 @@ func value(v interface{}) *float64 {
 			return num(n)
 		}
 	case string:
-		n, e := strconv.ParseFloat(x, 64)
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "nan", "+nan", "-nan":
+			return num(math.NaN())
+		case "infinity", "+infinity", "inf", "+inf":
+			return num(math.Inf(1))
+		case "-infinity", "-inf":
+			return num(math.Inf(-1))
+		}
+		n, e := strconv.ParseFloat(strings.TrimSpace(x), 64)
 		if e == nil {
 			return num(n)
 		}
