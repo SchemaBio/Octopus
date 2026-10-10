@@ -20,6 +20,7 @@ import (
 
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/resultengine"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -89,28 +90,11 @@ func (s *ResultService) QueryParquetTable(ctx context.Context, task *model.Task,
 		}
 		wire.Overlays = append(wire.Overlays, parquetOverlayWire{RowID: overlay.RowID, Payload: payload, Version: overlay.Version})
 	}
-	body, err := json.Marshal(wire)
+	queried, err := s.queryResultEngine(ctx, wire)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.ResultQuery.ServiceURL+"/v1/query", strings.NewReader(string(body)))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 35 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("Parquet query service unavailable")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Parquet query failed (status %d)", resp.StatusCode)
-	}
-	var result model.ParquetQueryResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&result); err != nil {
-		return nil, fmt.Errorf("invalid Parquet query response")
-	}
+	result := *queried
 	if dataset.ExpectedRows != nil && result.RowCount != *dataset.ExpectedRows {
 		return nil, ErrParquetIncomplete
 	}
@@ -266,31 +250,11 @@ func (s *ResultService) ensureAutomaticAssessments(ctx context.Context, task *mo
 	if table != "snv-indel" || dataset.AutomaticAssessmentReady && dataset.AutomaticAssessmentProfile == automaticACMGProfile {
 		return nil
 	}
-	requestBody, err := json.Marshal(map[string]string{
-		"table":        table,
-		"filePath":     filepath.Join(s.cfg.ResultQuery.CacheDir, dataset.ID+"-"+dataset.ObjectSHA256+".parquet"),
-		"datasetId":    dataset.ID,
-		"objectSha256": dataset.ObjectSHA256,
-	})
+	prepared, err := s.prepareResultEngine(ctx, resultengine.Request{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, dataset.ID+"-"+dataset.ObjectSHA256+".parquet"), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, RowCount: dataset.Rows})
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.ResultQuery.ServiceURL+"/v1/prepare", strings.NewReader(string(requestBody)))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 40 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("automatic ACMG preparation service unavailable")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("automatic ACMG preparation failed (status %d)", resp.StatusCode)
-	}
-	var prepared parquetPrepareResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&prepared); err != nil || prepared.Profile != automaticACMGProfile {
+	if prepared.Profile != automaticACMGProfile {
 		return fmt.Errorf("invalid automatic ACMG preparation response")
 	}
 	assessmentRoot, err := filepath.Abs(s.cfg.ResultQuery.AssessmentDir)
@@ -679,20 +643,9 @@ func (s *ResultService) verifyParquetRow(ctx context.Context, task *model.Task, 
 		return nil, err
 	}
 	wire := parquetQueryWireRequest{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, currentCacheName(dataset.ID, dataset.ObjectSHA256)), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, RowID: rowID, Limit: 1}
-	body, _ := json.Marshal(wire)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.ResultQuery.ServiceURL+"/v1/query", strings.NewReader(string(body)))
+	result, err := s.queryResultEngine(ctx, wire)
 	if err != nil {
 		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := (&http.Client{Timeout: 35 * time.Second}).Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("row identity verification unavailable")
-	}
-	defer resp.Body.Close()
-	var result model.ParquetQueryResponse
-	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result) != nil {
-		return nil, fmt.Errorf("row identity verification failed")
 	}
 	if dataset.ExpectedRows != nil && result.RowCount != *dataset.ExpectedRows {
 		return nil, ErrParquetIncomplete
@@ -730,21 +683,7 @@ func (s *ResultService) ExportParquetTable(ctx context.Context, task *model.Task
 		}
 		wire.Overlays = append(wire.Overlays, parquetOverlayWire{RowID: row.RowID, Payload: payload, Version: row.Version})
 	}
-	body, _ := json.Marshal(wire)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.ResultQuery.ServiceURL+"/v1/export", strings.NewReader(string(body)))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := (&http.Client{Timeout: 35 * time.Second}).Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("effective result export unavailable")
-	}
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return nil, fmt.Errorf("effective result export failed")
-	}
-	return resp, nil
+	return s.exportResultEngine(ctx, wire)
 }
 
 func archiveParquetRefKey(bucket, prefix, ref string) (string, error) {

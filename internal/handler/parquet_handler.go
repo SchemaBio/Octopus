@@ -90,7 +90,7 @@ func (h *ParquetHandler) GetTableRows(c *gin.Context) {
 		return
 	}
 
-	result, err := h.reader.ReadPage(filepath.Join(task.OutputDir, tableName+".parquet"), offset, limit)
+	result, err := h.reader.ReadPageContext(c.Request.Context(), filepath.Join(task.OutputDir, tableName+".parquet"), offset, limit)
 	if err != nil {
 		ErrorNotFound(c, "Parquet table not found: "+tableName)
 		return

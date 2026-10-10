@@ -1,8 +1,10 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/SchemaBio/Octopus/internal/resultengine"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -44,71 +46,45 @@ func NewParquetReader() *ParquetReader {
 // offset: start row (0-indexed)
 // limit: max rows to return
 func (pr *ParquetReader) ReadPage(filePath string, offset, limit int64) (*ParquetPageResult, error) {
+	return pr.ReadPageContext(context.Background(), filePath, offset, limit)
+}
+func (pr *ParquetReader) ReadPageContext(ctx context.Context, filePath string, offset, limit int64) (*ParquetPageResult, error) {
 	safePath, err := resolveParquetRegularFile(filepath.Dir(filePath), filePath)
 	if err != nil {
-		return nil, fmt.Errorf("parquet file not found: %s", filePath)
+		return nil, err
 	}
-
-	fr, err := local.NewLocalFileReader(safePath)
+	r, err := resultengine.Open(ctx, filepath.Dir(safePath), safePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open parquet file: %w", err)
+		return nil, err
 	}
-	defer fr.Close()
-
-	// Read into generic []map
-	prReader, err := reader.NewParquetReader(fr, nil, 4)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create parquet reader: %w", err)
-	}
-	defer prReader.ReadStop()
-
-	totalRows := int64(prReader.GetNumRows())
-
-	offset, limit = normalizeParquetPage(totalRows, offset, limit)
-	var pageRows []map[string]interface{}
+	defer r.Close()
+	total := r.NumRows()
+	offset, limit = normalizeParquetPage(total, offset, limit)
+	rows := []map[string]interface{}{}
 	if limit > 0 {
-		if offset > 0 {
-			if err := prReader.SkipRows(offset); err != nil {
-				return nil, fmt.Errorf("failed to seek parquet data: %w", err)
-			}
+		if err = r.SkipRows(offset); err != nil {
+			return nil, err
 		}
-		rawRows, err := prReader.ReadByNumber(int(limit))
+		rows, err = r.ReadBatch(int(limit))
 		if err != nil {
-			return nil, fmt.Errorf("failed to read parquet data: %w", err)
-		}
-		pageRows, err = parquetRowsToMaps(rawRows)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert parquet data: %w", err)
+			return nil, err
 		}
 	}
-
-	if pageRows == nil {
-		pageRows = []map[string]interface{}{}
+	columns := []ParquetColumn{}
+	for _, c := range r.Columns() {
+		kind := c.Type
+		switch kind {
+		case "integer":
+			kind = "int64"
+		case "number":
+			kind = "float64"
+		case "boolean":
+			kind = "bool"
+		}
+		columns = append(columns, ParquetColumn{Name: c.Name, Type: kind})
 	}
-
-	// Clean up values: convert byte arrays to strings (common in parquet-go)
-	cleanedRows := make([]map[string]interface{}, len(pageRows))
-	for i, row := range pageRows {
-		cleanedRows[i] = cleanRowValues(row)
-	}
-
-	// Extract columns from first row
-	columns := pr.extractColumns(pageRows)
-
-	table := strings.TrimSuffix(filepath.Base(safePath), ".parquet")
-
-	result := &ParquetPageResult{
-		Table:     table,
-		Columns:   columns,
-		Rows:      cleanedRows,
-		TotalRows: totalRows,
-		Offset:    offset,
-		Limit:     limit,
-	}
-
-	return result, nil
+	return &ParquetPageResult{Table: strings.TrimSuffix(filepath.Base(safePath), ".parquet"), Columns: columns, Rows: rows, TotalRows: total, Offset: offset, Limit: limit}, nil
 }
-
 func normalizeParquetPage(totalRows, offset, limit int64) (int64, int64) {
 	if offset < 0 {
 		offset = 0

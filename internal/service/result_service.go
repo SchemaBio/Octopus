@@ -11,10 +11,14 @@ import (
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
+	"github.com/SchemaBio/Octopus/internal/resultengine"
+	"sync"
 )
 
 // ResultService handles result business logic
 type ResultService struct {
+	engineOnce      sync.Once
+	engine          *resultengine.Engine
 	cfg             *config.Config
 	repo            *repository.ResultRepository
 	geneListRepo    *repository.GeneListRepository

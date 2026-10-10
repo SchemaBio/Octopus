@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/SchemaBio/Octopus/internal/svcv4"
 	"io"
 	"net/http"
 	"strings"
@@ -13,8 +14,34 @@ import (
 
 const SVCv4Revision = "ef66faff51a265fef7b5c4e6439905f3aa540c46"
 
-// Uses the existing internal Python service and its pinned, offline reference scorer.
+// The temporary Python selector permits an explicit rollback during cutover.
 func (s *ResultService) SVCv4(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if s.cfg.ResultQuery.Backend != "python" {
+		if input == nil {
+			return svcv4.Schema(), nil
+		}
+		encoded, err := json.Marshal(input)
+		if err != nil || len(encoded) > 250000 {
+			return nil, fmt.Errorf("SVCv4 evidence is invalid or too large")
+		}
+		result, err := svcv4.Evaluate(input)
+		if err != nil {
+			return nil, fmt.Errorf("SVCv4: %w", err)
+		}
+		// Existing save/projection code consumes JSON maps, not internal DTOs.
+		encoded, err = json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+		var output map[string]interface{}
+		if err = json.Unmarshal(encoded, &output); err != nil {
+			return nil, err
+		}
+		return output, nil
+	}
 	method, endpoint := http.MethodGet, "/v1/svcv4/schema"
 	var body io.Reader
 	if input != nil {
