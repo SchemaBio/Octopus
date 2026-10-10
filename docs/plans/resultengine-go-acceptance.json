@@ -1,0 +1,554 @@
+{
+  "go-acceptance-benchmark.json": [
+    {
+      "rows": 100000,
+      "fixture": "synthetic-flat",
+      "operation": "query",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":0.145066349,\"implementation\":\"Go\",\"operation\":\"query\",\"result\":100000,\"rows\":100000}",
+      "resources": "PEAK_RSS_KIB=75776"
+    },
+    {
+      "rows": 100000,
+      "fixture": "synthetic-flat",
+      "operation": "sort",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":0.694758746,\"implementation\":\"Go\",\"operation\":\"sort\",\"result\":100000,\"rows\":100000}",
+      "resources": "PEAK_RSS_KIB=85460"
+    },
+    {
+      "rows": 100000,
+      "fixture": "synthetic-flat",
+      "operation": "filter",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":0.681556147,\"implementation\":\"Go\",\"operation\":\"filter\",\"result\":17142,\"rows\":100000}",
+      "resources": "PEAK_RSS_KIB=92972"
+    },
+    {
+      "rows": 100000,
+      "fixture": "synthetic-flat",
+      "operation": "export",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":1.903081493,\"implementation\":\"Go\",\"operation\":\"export\",\"result\":38005089,\"rows\":100000}",
+      "resources": "PEAK_RSS_KIB=95360"
+    },
+    {
+      "rows": 100000,
+      "fixture": "synthetic-flat",
+      "operation": "prepare",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":0.181945287,\"implementation\":\"Go\",\"operation\":\"prepare\",\"result\":100000,\"rows\":100000}",
+      "resources": "PEAK_RSS_KIB=7168"
+    },
+    {
+      "rows": 1000000,
+      "fixture": "synthetic-flat",
+      "operation": "query",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":0.264263984,\"implementation\":\"Go\",\"operation\":\"query\",\"result\":1000000,\"rows\":1000000}",
+      "resources": "PEAK_RSS_KIB=68608"
+    },
+    {
+      "rows": 1000000,
+      "fixture": "synthetic-flat",
+      "operation": "sort",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":6.607112121,\"implementation\":\"Go\",\"operation\":\"sort\",\"result\":1000000,\"rows\":1000000}",
+      "resources": "PEAK_RSS_KIB=126872"
+    },
+    {
+      "rows": 1000000,
+      "fixture": "synthetic-flat",
+      "operation": "filter",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":6.823596338,\"implementation\":\"Go\",\"operation\":\"filter\",\"result\":171428,\"rows\":1000000}",
+      "resources": "PEAK_RSS_KIB=128656"
+    },
+    {
+      "rows": 1000000,
+      "fixture": "synthetic-flat",
+      "operation": "export",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":20.558080065,\"implementation\":\"Go\",\"operation\":\"export\",\"result\":381048086,\"rows\":1000000}",
+      "resources": "PEAK_RSS_KIB=147656"
+    },
+    {
+      "rows": 1000000,
+      "fixture": "synthetic-flat",
+      "operation": "prepare",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":1.945342833,\"implementation\":\"Go\",\"operation\":\"prepare\",\"result\":1000000,\"rows\":1000000}",
+      "resources": "PEAK_RSS_KIB=9088"
+    },
+    {
+      "rows": 55041,
+      "fixture": "shape-only.parquet",
+      "operation": "query",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":0.307473693,\"implementation\":\"Go\",\"operation\":\"query\",\"result\":55041,\"rows\":55041}",
+      "resources": "PEAK_RSS_KIB=123520"
+    },
+    {
+      "rows": 55041,
+      "fixture": "shape-only.parquet",
+      "operation": "sort",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":1.528422357,\"implementation\":\"Go\",\"operation\":\"sort\",\"result\":55041,\"rows\":55041}",
+      "resources": "PEAK_RSS_KIB=140544"
+    },
+    {
+      "rows": 55041,
+      "fixture": "shape-only.parquet",
+      "operation": "filter",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":1.644488485,\"implementation\":\"Go\",\"operation\":\"filter\",\"result\":551,\"rows\":55041}",
+      "resources": "PEAK_RSS_KIB=140928"
+    },
+    {
+      "rows": 55041,
+      "fixture": "shape-only.parquet",
+      "operation": "export",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":2.504475223,\"implementation\":\"Go\",\"operation\":\"export\",\"result\":33280237,\"rows\":55041}",
+      "resources": "PEAK_RSS_KIB=155264"
+    },
+    {
+      "rows": 55041,
+      "fixture": "shape-only.parquet",
+      "operation": "prepare",
+      "exit": 0,
+      "output": "{\"elapsedSeconds\":2.04609938,\"implementation\":\"Go\",\"operation\":\"prepare\",\"result\":55041,\"rows\":55041}",
+      "resources": "PEAK_RSS_KIB=145916"
+    }
+  ],
+  "go-cold-prepare.json": {
+    "operation": "cold prepare",
+    "exit": 0,
+    "output": "{\"elapsedSeconds\":14.697128919,\"implementation\":\"Go\",\"operation\":\"prepare\",\"result\":1000000,\"rows\":1000000}",
+    "resources": "PEAK_RSS_KIB=135680"
+  },
+  "shape-manifest.json": {
+    "rows": 55041,
+    "columns": 46,
+    "bytes": 406849,
+    "basis": "aggregate schema/length/null statistics only; every cell synthetic",
+    "statistics": [
+      {
+        "type": "VARCHAR",
+        "meanLength": 5,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 2,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 2,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 1,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 1,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 1,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 16,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 14,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 3,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 1,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 20,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 5,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 3,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 2,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 2,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 4,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 98,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 17,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 35,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 6,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 10,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 5,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 3,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 8,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 8,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 5,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 5,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 4,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 10,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 5,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 6,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 10,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 5,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 2,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 2,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 3,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 3,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 8,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 4,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 1,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 12,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 3,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 6,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 1,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 3,
+        "nullPerThousand": 0
+      },
+      {
+        "type": "VARCHAR",
+        "meanLength": 9,
+        "nullPerThousand": 0
+      }
+    ]
+  },
+  "shape-parity.json": [
+    {
+      "case": 0,
+      "equal": true,
+      "legacyExit": 0,
+      "goExit": 0
+    },
+    {
+      "case": 1,
+      "equal": true,
+      "legacyExit": 0,
+      "goExit": 0
+    },
+    {
+      "case": 2,
+      "equal": true,
+      "legacyExit": 0,
+      "goExit": 0
+    },
+    {
+      "case": 3,
+      "equal": true,
+      "legacyExit": 0,
+      "goExit": 0
+    },
+    {
+      "case": 4,
+      "equal": true,
+      "legacyExit": 0,
+      "goExit": 0
+    },
+    {
+      "case": 5,
+      "equal": true,
+      "legacyExit": 0,
+      "goExit": 0
+    },
+    {
+      "case": 6,
+      "equal": true,
+      "legacyExit": 0,
+      "goExit": 0
+    },
+    {
+      "case": "sorted CSV",
+      "equal": true,
+      "legacy": "{\"bytes\": 33280237, \"sha256\": \"999edebfda2d3fa3d630cb8998609d1bdc91855ab8fcd52ec951d8875ee8abc9\"}",
+      "go": "{\"bytes\":33280237,\"sha256\":\"999edebfda2d3fa3d630cb8998609d1bdc91855ab8fcd52ec951d8875ee8abc9\"}"
+    }
+  ],
+  "first-go-acceptance.json": {
+    "requests": 138,
+    "tables": [
+      {
+        "task": "3987e24e-4eb6-4ce0-916e-198771b04bda",
+        "table": "cnv-exon",
+        "total": 18412,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "3987e24e-4eb6-4ce0-916e-198771b04bda",
+        "table": "cnv-segment",
+        "total": 64732,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "3987e24e-4eb6-4ce0-916e-198771b04bda",
+        "table": "mei",
+        "total": 40,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "3987e24e-4eb6-4ce0-916e-198771b04bda",
+        "table": "mt",
+        "total": 302,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "3987e24e-4eb6-4ce0-916e-198771b04bda",
+        "table": "roh",
+        "total": 0,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "3987e24e-4eb6-4ce0-916e-198771b04bda",
+        "table": "snv-indel",
+        "total": 55459,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "3987e24e-4eb6-4ce0-916e-198771b04bda",
+        "table": "str",
+        "total": 37,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "3987e24e-4eb6-4ce0-916e-198771b04bda",
+        "export": {
+          "bytes": 31807384,
+          "sha256": "4b5bdf17af533c3a4de3f3f3875efb94fa7065326ee03e8774fc6d024a3bf6d2"
+        },
+        "svcZeroScore": true
+      },
+      {
+        "task": "fc5ebe5d-1a87-4901-864d-6b75428ef5ae",
+        "table": "cnv-exon",
+        "total": 18412,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "fc5ebe5d-1a87-4901-864d-6b75428ef5ae",
+        "table": "cnv-segment",
+        "total": 64732,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "fc5ebe5d-1a87-4901-864d-6b75428ef5ae",
+        "table": "mei",
+        "total": 40,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "fc5ebe5d-1a87-4901-864d-6b75428ef5ae",
+        "table": "mt",
+        "total": 302,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "fc5ebe5d-1a87-4901-864d-6b75428ef5ae",
+        "table": "roh",
+        "total": 0,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "fc5ebe5d-1a87-4901-864d-6b75428ef5ae",
+        "table": "snv-indel",
+        "total": 55459,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "fc5ebe5d-1a87-4901-864d-6b75428ef5ae",
+        "table": "str",
+        "total": 37,
+        "query": true,
+        "sort": true
+      },
+      {
+        "task": "fc5ebe5d-1a87-4901-864d-6b75428ef5ae",
+        "export": {
+          "bytes": 31807385,
+          "sha256": "8bd03707fbe577682b428b550440ebcdf65d3993449ba7c8f129ca53ae834ca1"
+        },
+        "svcZeroScore": true
+      }
+    ],
+    "concurrentAPI": {
+      "samples": 40,
+      "p50Ms": 31.823784112930298,
+      "p95Ms": 42.34308376908302,
+      "p99Ms": 50.236817449331284,
+      "activeQueryCompletions": [
+        1,
+        1
+      ],
+      "gateMs": 156.636,
+      "passed": true
+    }
+  },
+  "first-go-resources.json": {
+    "peakBytes": 212410368,
+    "oomKilled": false,
+    "memoryLimitBytes": 1073741824
+  }
+}

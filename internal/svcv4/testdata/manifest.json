@@ -4,8 +4,12 @@
   "upstreamVectors": 623,
   "evaluateVectors": 193,
   "sha256": {
-    "internal/svcv4/testdata/upstream.json": "f5fab10cc25078ce9aed9d565909d43508d0bc5ad9d0181d16d92255da3da5eb",
-    "internal/svcv4/testdata/evaluate.json": "d140529eb4890308dd97b5217f452af47de05682eedb274276825f897810a9c5",
-    "internal/svcv4/schema.json": "40221db1b25f726c882e14012c19d8e38742bc32162926b187b5d4136af1f5bd"
-  }
+    "internal/svcv4/testdata/upstream.json": "f31c970c4b811882dd4750351d2836b6731d682f1f546a15e39c936e3ee3b5bb",
+    "internal/svcv4/testdata/evaluate.json": "5f51f3a4ba23c0c42bec6b443d3bb4adb939c564ce896d3ecd19e2c654447fa8",
+    "internal/svcv4/schema.json": "9aaccca5055dc4df788bff0f21da170f37d6b5ff9e4886f6233e491b4f015153",
+    "internal/svcv4/testdata/validation.json": "f31a57c1ea56e1d75e7299f6589f751bdd3f97be1ec816ec379d4a4eea54a564",
+    "internal/svcv4/branches.json": "680df15662c94600278a0efa29c515a0f830d47a74cd60ec5b598ea7549f2014"
+  },
+  "validationVectors": 375,
+  "hashEncoding": "canonical LF for JSON; raw bytes for binary fixtures"
 }
