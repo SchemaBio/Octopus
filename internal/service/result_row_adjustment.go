@@ -194,8 +194,8 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			if table != "snv-indel" {
 				return nil, nil, fmt.Errorf("SVCv4 is only valid for SNP/InDel")
 			}
-			if strings.TrimSpace(request.Reason) == "" {
-				return nil, nil, fmt.Errorf("ACMG version and evidence changes require an adjustment reason")
+			if key == "svcv4Assessment" && strings.TrimSpace(request.Reason) == "" {
+				return nil, nil, fmt.Errorf("SVCv4 evidence changes require an adjustment reason")
 			}
 			if key == "activeAcmgVersion" {
 				version, ok := value.(string)
