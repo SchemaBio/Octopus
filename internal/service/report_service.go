@@ -259,7 +259,7 @@ func (s *ReportService) httpClient() *http.Client {
 // without invoking the report-generation POST operation.
 func (s *ReportService) ValidateTemplateEndpoint(ctx context.Context, endpoint, apiKey string) (int, error) {
 	endpoint = strings.TrimSpace(endpoint)
-	if err := validateReportAPIEndpoint(endpoint); err != nil {
+	if err := validateReportAPIEndpointWithResolver(endpoint, net.LookupIP); err != nil {
 		return 0, err
 	}
 	apiKey = strings.TrimSpace(apiKey)
@@ -515,13 +515,11 @@ func (s *ReportService) DeleteTemplate(ownerUserID uint, id string, actors ...mo
 	return s.templateRepo.DeleteByID(tmpl.ID)
 }
 
+// Validate configuration without DNS or network access: services may be configured
+// before deployment. Actual requests enforce public destination IPs at dial time.
 func validateReportAPIEndpoint(rawURL string) error {
-	return validateReportAPIEndpointWithResolver(rawURL, net.LookupIP)
-}
-
-func validateReportAPIEndpointWithResolver(rawURL string, lookup func(string) ([]net.IP, error)) error {
 	u, err := url.Parse(rawURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	if err != nil || u.Scheme == "" || u.Host == "" || u.Hostname() == "" {
 		return fmt.Errorf("invalid report API endpoint")
 	}
 	if u.User != nil {
@@ -535,7 +533,18 @@ func validateReportAPIEndpointWithResolver(rawURL string, lookup func(string) ([
 	if strings.EqualFold(host, "localhost") {
 		return fmt.Errorf("report API endpoint host is not allowed")
 	}
+	if ip := net.ParseIP(host); ip != nil && !isPublicIP(ip) {
+		return fmt.Errorf("report API endpoint must resolve to public IP addresses")
+	}
+	return nil
+}
 
+func validateReportAPIEndpointWithResolver(rawURL string, lookup func(string) ([]net.IP, error)) error {
+	if err := validateReportAPIEndpoint(rawURL); err != nil {
+		return err
+	}
+	u, _ := url.Parse(rawURL)
+	host := u.Hostname()
 	ips, err := lookup(host)
 	if err != nil {
 		return fmt.Errorf("failed to resolve report API endpoint host: %w", err)

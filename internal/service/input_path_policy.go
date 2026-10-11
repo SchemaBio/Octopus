@@ -52,6 +52,15 @@ func validateActorTaskFileInputs(cfg *config.Config, actor model.OverlayActor, i
 }
 
 func isTaskFileInputKey(key string) bool {
+	// WDL keys include a workflow namespace. CNVBaselineFix is not a file
+	// parameter: its assembly and prefix inputs are ordinary string values.
+	if dot := strings.LastIndex(key, "."); dot >= 0 {
+		key = key[dot+1:]
+	}
+	switch strings.ToLower(key) {
+	case "read_1", "read_2", "fasta", "existing_reference", "ref_dir":
+		return true
+	}
 	return containsAny(key, "fastq", "fq", "bam", "cram", "vcf", "gvcf", "bed", "file", "baseline")
 }
 

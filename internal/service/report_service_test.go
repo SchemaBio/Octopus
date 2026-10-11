@@ -18,6 +18,28 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+func TestReportEndpointConfigurationDoesNotRequireDNS(t *testing.T) {
+	for _, endpoint := range []string{"https://test.test.test/generate", "https://not-deployed.invalid/report"} {
+		if err := validateReportAPIEndpoint(endpoint); err != nil {
+			t.Fatalf("endpoint must be configurable before DNS is available: %v", err)
+		}
+	}
+}
+
+func TestGenerateReportDownloadReturnsConnectionFailureAtCallTime(t *testing.T) {
+	called := false
+	svc := &ReportService{http: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		called = true
+		return nil, fmt.Errorf("report service is not online")
+	})}}
+	_, err := svc.generateReportDownload(context.Background(),
+		&model.ReportTemplate{Name: "preconfigured", APIEndpoint: "https://not-deployed.invalid/report", APIKey: "test-key"},
+		&model.Task{UUID: "task-1"}, &model.ReportCreateRequest{Name: "report"}, "user")
+	if !called || err == nil || !strings.Contains(err.Error(), "report API request failed") {
+		t.Fatalf("expected error from actual report request, called=%v err=%v", called, err)
+	}
+}
+
 func TestValidateReportAPIEndpointRejectsPrivateIP(t *testing.T) {
 	err := validateReportAPIEndpointWithResolver("https://reports.example.com/generate", func(string) ([]net.IP, error) {
 		return []net.IP{net.ParseIP("10.0.0.10")}, nil
