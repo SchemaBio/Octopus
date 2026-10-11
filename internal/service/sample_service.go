@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -98,6 +99,54 @@ func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreat
 // GetSample gets a sample by UUID
 func (s *SampleService) GetSample(ctx context.Context, id string) (*model.Sample, error) {
 	return s.repo.FindByUUID(id)
+}
+
+// GetDataLink resolves the effective pair by exact storage identity within the
+// caller's scope. Browser responses contain public file metadata, never keys.
+func (s *SampleService) GetDataLink(ctx context.Context, id string, actor model.OverlayActor) (*SampleDataLinkResponse, error) {
+	sample, err := s.repo.FindScopedByUUID(id, actor)
+	if err != nil {
+		return nil, err
+	}
+	return resolveSampleDataLink(sample.GetMatchedPair(), func(key string) (*model.DataAsset, error) {
+		return s.assetRepo.FindCompletedByStorageKey(key, actor)
+	}, time.Now())
+}
+
+type SampleDataLinkResponse struct {
+	Read1       *model.DataAssetResponse `json:"read1"`
+	Read2       *model.DataAssetResponse `json:"read2"`
+	Unavailable bool                     `json:"unavailable"`
+}
+
+func resolveSampleDataLink(pair *model.MatchedPair, lookup func(string) (*model.DataAsset, error), now time.Time) (*SampleDataLinkResponse, error) {
+	result := &SampleDataLinkResponse{}
+	if pair == nil {
+		return result, nil
+	}
+	for _, item := range []struct {
+		key    string
+		read   model.ReadType
+		target **model.DataAssetResponse
+	}{
+		{pair.R1Path, model.ReadTypeRead1, &result.Read1}, {pair.R2Path, model.ReadTypeRead2, &result.Read2},
+	} {
+		asset, err := lookup(item.key)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			result.Unavailable = true
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if asset == nil || asset.Status != model.FileStatusCompleted || asset.ReadType != item.read || (asset.ExpiresAt != nil && !asset.ExpiresAt.After(now)) {
+			result.Unavailable = true
+			continue
+		}
+		response := model.DataAssetToResponse(asset)
+		*item.target = &response
+	}
+	return result, nil
 }
 
 // LinkDataAssets creates an explicit manual R1/R2 relationship. Automatic

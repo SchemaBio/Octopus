@@ -96,7 +96,17 @@ func (h *SampleHandler) GetSample(c *gin.Context) {
 	Success(c, h.svc.SampleToDetailResponse(sample))
 }
 
-// UpdateSample updates sample information
+// GetDataLink returns the effective pair's public, organization-scoped metadata.
+func (h *SampleHandler) GetDataLink(c *gin.Context) {
+	result, err := h.svc.GetDataLink(c.Request.Context(), c.Param("id"), taskActorFromContext(c))
+	if err != nil {
+		ErrorNotFound(c, "Sample data link unavailable")
+		return
+	}
+	Success(c, result)
+}
+
+// UpdateSample updates sample information.
 func (h *SampleHandler) UpdateSample(c *gin.Context) {
 	id := c.Param("id")
 

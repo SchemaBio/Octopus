@@ -295,6 +295,7 @@ func New(cfg *config.Config) *gin.Engine {
 			samples.PUT("/:id", sampleHandler.UpdateSample)
 			samples.POST("/:id/matched-pair/upload-job", sampleHandler.MatchFromUploadJob)
 			samples.PUT("/:id/data-link", sampleHandler.LinkDataAssets)
+			samples.GET("/:id/data-link", sampleHandler.GetDataLink)
 			samples.DELETE("/:id/data-link", sampleHandler.ClearMatchedPair)
 			samples.DELETE("/:id/matched-pair", sampleHandler.ClearMatchedPair)
 			samples.DELETE("/:id", sampleHandler.DeleteSample)

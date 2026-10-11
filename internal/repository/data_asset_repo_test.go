@@ -23,3 +23,18 @@ func TestFindCompletedDataAssetByStorageKeyUsesStandaloneScope(t *testing.T) {
 		t.Fatalf("SQL expectations: %v", err)
 	}
 }
+
+func TestFindCompletedDataAssetByStorageKeyUsesOrganizationScope(t *testing.T) {
+	db, mock := newUploadRepositoryTestDB(t)
+	repo := NewDataAssetRepository()
+	repo.Repository.db = db
+	mock.ExpectQuery(`SELECT \* FROM "data_assets" WHERE \(storage_key = \$1 AND status = \$2\) AND external_org_id = \$3 ORDER BY "data_assets"\."id" LIMIT \$4`).
+		WithArgs("other-org/read1.fastq.gz", model.FileStatusCompleted, "org-a", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	if _, err := repo.FindCompletedByStorageKey("other-org/read1.fastq.gz", model.OverlayActor{OrgID: "org-a", UserID: 42}); err == nil {
+		t.Fatal("cross-organization file should not resolve")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
