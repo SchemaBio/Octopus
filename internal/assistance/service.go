@@ -644,4 +644,4 @@ func (s *Service) process(ctx context.Context, r Request) {
 	}
 }
 
-func ValidateReason(reason string) bool { return len([]rune(strings.TrimSpace(reason))) >= 6 }
+func ValidateReason(reason string) bool { return len([]rune(strings.TrimSpace(reason))) <= 500 }

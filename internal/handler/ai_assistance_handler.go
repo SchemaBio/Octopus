@@ -45,7 +45,7 @@ func (h *AIAssistanceHandler) SaveSettings(c *gin.Context) {
 		return
 	}
 	if h.saas && !assistance.ValidateReason(draft.Reason) {
-		ErrorBadRequest(c, "请填写至少 6 字的操作原因")
+		ErrorBadRequest(c, "操作原因不能超过 500 字")
 		return
 	}
 	_, org, user := aiIdentity(c)
@@ -61,7 +61,7 @@ func (h *AIAssistanceHandler) TestProvider(c *gin.Context) {
 	var draft assistance.Draft
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
 	if c.ShouldBindJSON(&draft) != nil || !assistance.ValidateReason(draft.Reason) {
-		ErrorBadRequest(c, "请提供模型配置和至少 6 字的测试原因")
+		ErrorBadRequest(c, "模型配置格式无效或操作原因超过 500 字")
 		return
 	}
 	_, org, user := aiIdentity(c)
