@@ -223,7 +223,6 @@ func New(cfg *config.Config) *gin.Engine {
 			reportTemplates.POST("", reportHandler.CreateTemplate)
 			reportTemplates.POST("/validate-endpoint", reportHandler.ValidateTemplateEndpoint)
 			reportTemplates.PUT("/:id", reportHandler.UpdateTemplate)
-			reportTemplates.POST("/:id/publish", reportHandler.PublishTemplate)
 			reportTemplates.PUT("/:id/status", reportHandler.UpdateTemplateStatus)
 			reportTemplates.DELETE("/:id", reportHandler.DeleteTemplate)
 		}

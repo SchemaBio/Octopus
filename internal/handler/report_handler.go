@@ -268,28 +268,13 @@ func writeReportTemplateError(c *gin.Context, err error) {
 		ErrorConflict(c, err.Error())
 	case errors.Is(err, service.ErrReportTemplateActive):
 		ErrorBadRequest(c, err.Error())
-	case strings.Contains(err.Error(), "report API endpoint") || strings.Contains(err.Error(), "authentication key") || strings.Contains(err.Error(), "name is required") || strings.Contains(err.Error(), "API key is required") || strings.Contains(err.Error(), "templateId is required"):
+	case strings.Contains(err.Error(), "only report-snapshot-v2 is supported") || strings.Contains(err.Error(), "report API endpoint") || strings.Contains(err.Error(), "authentication key") || strings.Contains(err.Error(), "name is required") || strings.Contains(err.Error(), "API key is required") || strings.Contains(err.Error(), "templateId is required"):
 		ErrorBadRequest(c, err.Error())
 	default:
 		ErrorInternal(c, err.Error())
 	}
 }
 
-func (h *ReportHandler) PublishTemplate(c *gin.Context) {
-	var req struct {
-		ExpectedRevision uint64 `json:"expectedRevision"`
-	}
-	if c.ShouldBindJSON(&req) != nil {
-		ErrorBadRequest(c, "expectedRevision required")
-		return
-	}
-	r, e := h.svc.PublishTemplate(c.Param("id"), taskActorFromContext(c), req.ExpectedRevision)
-	if e != nil {
-		writeReportTemplateError(c, e)
-		return
-	}
-	Success(c, r)
-}
 func (h *ReportHandler) Generations(c *gin.Context) {
 	t, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
 	if !ok {

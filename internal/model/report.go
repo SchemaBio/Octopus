@@ -2,6 +2,8 @@ package model
 
 import "time"
 
+const ReportContractV2 = "report-snapshot-v2"
+
 // ReportStatus represents the status of a report
 type ReportStatus string
 
@@ -40,7 +42,7 @@ func (Report) TableName() string {
 // ReportTemplate represents an available report generation template/API
 type ReportTemplate struct {
 	ExternalOrgID   string    `json:"-" gorm:"size:100;not null;default:'';index"`
-	ContractVersion string    `json:"contractVersion" gorm:"size:40;not null;default:'legacy-v1'"`
+	ContractVersion string    `json:"contractVersion" gorm:"size:40;not null;default:'report-snapshot-v2'"`
 	Revision        uint64    `json:"revision" gorm:"not null;default:1"`
 	ID              string    `json:"id" gorm:"primaryKey;size:36"`
 	OwnerUserID     uint      `json:"-" gorm:"index:idx_report_templates_owner_name,unique"`

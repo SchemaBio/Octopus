@@ -119,19 +119,11 @@ func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.
 		return nil, fmt.Errorf("report API key is required")
 	}
 
-	var packageStatus *model.ResultPackageResponse
-	if s.packageSvc != nil && tmpl.ContractVersion != "report-snapshot-v2" {
-		var packageErr error
-		packageStatus, packageErr = s.packageSvc.Status(ctx, task)
-		if packageErr != nil {
-			return nil, packageErr
-		}
-		if packageStatus.Status != model.ResultPackageReady || packageStatus.ResultPackageURL == "" {
-			if strings.TrimSpace(packageStatus.Error) != "" {
-				return nil, fmt.Errorf("%w: %s", ErrResultPackageNotReady, packageStatus.Error)
-			}
-			return nil, ErrResultPackageNotReady
-		}
+	if tmpl.ContractVersion != model.ReportContractV2 {
+		return nil, errors.New("only report-snapshot-v2 is supported")
+	}
+	if req.SnapshotJSON == "" || !json.Valid([]byte(req.SnapshotJSON)) {
+		return nil, errors.New("valid report snapshot is required")
 	}
 
 	requestID := req.GenerationID
@@ -152,23 +144,13 @@ func (s *ReportService) generateReportDownload(ctx context.Context, tmpl *model.
 		"report_name":      reportName,
 		"created_by":       userID,
 	}
-	if packageStatus != nil {
-		payload["task_uuid"] = task.UUID
-		payload["result_package_url"] = packageStatus.ResultPackageURL
-		payload["result_package_filename"] = packageStatus.FileName
-		payload["result_package_size_bytes"] = packageStatus.SizeBytes
-		payload["result_package_expires_at"] = packageStatus.ExpiresAt
+	payload["contract_version"] = model.ReportContractV2
+	payload["report_snapshot"] = json.RawMessage(req.SnapshotJSON)
+	payload["report_snapshot_sha256"] = req.SnapshotSHA256
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
 	}
-
-	if tmpl.ContractVersion == "report-snapshot-v2" {
-		if req.SnapshotJSON == "" {
-			return nil, errors.New("report snapshot is required")
-		}
-		payload["contract_version"] = "report-snapshot-v2"
-		payload["report_snapshot"] = json.RawMessage(req.SnapshotJSON)
-		payload["report_snapshot_sha256"] = req.SnapshotSHA256
-	}
-	body, _ := json.Marshal(payload)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, tmpl.APIEndpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -392,6 +374,9 @@ func (s *ReportService) ListTemplatesForOwner(ownerUserID uint, actors ...model.
 
 // CreateTemplate creates a new report template.
 func (s *ReportService) CreateTemplate(ownerUserID uint, req *model.ReportTemplateCreateRequest, actors ...model.OverlayActor) (*model.ReportTemplateAdminResponse, error) {
+	if err := validateReportContract(req.ContractVersion); err != nil {
+		return nil, err
+	}
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
 	req.APIEndpoint = strings.TrimSpace(req.APIEndpoint)
@@ -413,7 +398,7 @@ func (s *ReportService) CreateTemplate(ownerUserID uint, req *model.ReportTempla
 
 	tmpl := &model.ReportTemplate{
 		ID:          uuid.New().String(),
-		OwnerUserID: ownerUserID, ExternalOrgID: reportActor(ownerUserID, actors).OrgID, ContractVersion: reportContract(req.ContractVersion), Revision: 1,
+		OwnerUserID: ownerUserID, ExternalOrgID: reportActor(ownerUserID, actors).OrgID, ContractVersion: model.ReportContractV2, Revision: 1,
 		Name:        req.Name,
 		Description: req.Description,
 		APIEndpoint: req.APIEndpoint,
@@ -425,11 +410,15 @@ func (s *ReportService) CreateTemplate(ownerUserID uint, req *model.ReportTempla
 		return nil, err
 	}
 	resp := tmpl.ToAdminResponse()
+	resp.CanMaintain = true
 	return &resp, nil
 }
 
 // UpdateTemplate updates mutable report template metadata and optionally rotates the API key.
 func (s *ReportService) UpdateTemplate(ownerUserID uint, id string, req *model.ReportTemplateUpdateRequest, actors ...model.OverlayActor) (*model.ReportTemplateAdminResponse, error) {
+	if err := validateReportContract(req.ContractVersion); err != nil {
+		return nil, err
+	}
 	a := reportActor(ownerUserID, actors)
 	tmpl, err := s.templateRepo.FindScoped(strings.TrimSpace(id), a)
 	if err != nil {
@@ -467,15 +456,14 @@ func (s *ReportService) UpdateTemplate(ownerUserID uint, id string, req *model.R
 		tmpl.IsActive = *req.IsActive
 	}
 
-	if req.ContractVersion != "" {
-		tmpl.ContractVersion = reportContract(req.ContractVersion)
-	}
+	tmpl.ContractVersion = model.ReportContractV2
 	old := tmpl.Revision
 	tmpl.Revision++
 	if err := s.saveTemplateRevision(tmpl, old); err != nil {
 		return nil, err
 	}
 	resp := tmpl.ToAdminResponse()
+	resp.CanMaintain = true
 	return &resp, nil
 }
 
@@ -496,6 +484,7 @@ func (s *ReportService) SetTemplateActive(ownerUserID uint, id string, active bo
 		return nil, err
 	}
 	resp := tmpl.ToAdminResponse()
+	resp.CanMaintain = true
 	return &resp, nil
 }
 
@@ -625,11 +614,11 @@ func reportActor(id uint, actors []model.OverlayActor) model.OverlayActor {
 	}
 	return model.OverlayActor{UserID: id}
 }
-func reportContract(value string) string {
-	if value == "report-snapshot-v2" {
-		return value
+func validateReportContract(value string) error {
+	if value != "" && value != model.ReportContractV2 {
+		return errors.New("only report-snapshot-v2 is supported")
 	}
-	return "legacy-v1"
+	return nil
 }
 func (s *ReportService) findTemplateName(name string, a model.OverlayActor) (*model.ReportTemplate, error) {
 	var t model.ReportTemplate

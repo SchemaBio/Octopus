@@ -210,6 +210,9 @@ func (s *ReportService) GenerateScopedReportDownload(ctx context.Context, a mode
 	if tmpl == nil || !tmpl.IsActive {
 		return nil, ErrReportTemplateNotFound
 	}
+	if tmpl.ContractVersion != model.ReportContractV2 {
+		return nil, errors.New("only report-snapshot-v2 is supported")
+	}
 	tenant := model.TenantIDForTask(task)
 	var saved model.ReportGeneration
 	e = database.GetDB().WithContext(ctx).Where("tenant_id=? AND client_request_id=?", tenant, req.ClientRequestID).First(&saved).Error
@@ -295,27 +298,6 @@ func (s *ReportService) openGeneratedReport(ctx context.Context, g *model.Report
 		return nil, errors.New("generated report object unavailable")
 	}
 	return &ReportDownload{FileName: g.FileName, ContentType: g.ContentType, ContentLength: -1, Body: body}, nil
-}
-func (s *ReportService) PublishTemplate(id string, a model.OverlayActor, expected uint64) (*model.ReportTemplateAdminResponse, error) {
-	t, e := s.templateRepo.FindScoped(id, a)
-	if e != nil {
-		return nil, e
-	}
-	if t == nil || t.ExternalOrgID != "" || a.OrgID == "" || !a.ResourceMaintenance(t.OwnerUserID) {
-		return nil, ErrReportTemplateNotFound
-	}
-	res := database.GetDB().Model(&model.ReportTemplate{}).Where("id=? AND revision=? AND external_org_id=''", id, expected).Updates(map[string]interface{}{"external_org_id": a.OrgID, "revision": gorm.Expr("revision+1")})
-	if res.Error != nil {
-		return nil, res.Error
-	}
-	if res.RowsAffected != 1 {
-		return nil, ErrResourceConflict
-	}
-	t.ExternalOrgID = a.OrgID
-	t.Revision++
-	r := t.ToAdminResponse()
-	r.CanMaintain = true
-	return &r, nil
 }
 func (s *ReportService) ListGenerations(ctx context.Context, task *model.Task) ([]model.ReportGeneration, error) {
 	rows := []model.ReportGeneration{}

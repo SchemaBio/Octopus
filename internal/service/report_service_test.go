@@ -33,8 +33,8 @@ func TestGenerateReportDownloadReturnsConnectionFailureAtCallTime(t *testing.T) 
 		return nil, fmt.Errorf("report service is not online")
 	})}}
 	_, err := svc.generateReportDownload(context.Background(),
-		&model.ReportTemplate{Name: "preconfigured", APIEndpoint: "https://not-deployed.invalid/report", APIKey: "test-key"},
-		&model.Task{UUID: "task-1"}, &model.ReportCreateRequest{Name: "report"}, "user")
+		&model.ReportTemplate{Name: "preconfigured", APIEndpoint: "https://not-deployed.invalid/report", APIKey: "test-key", ContractVersion: model.ReportContractV2},
+		&model.Task{UUID: "task-1"}, &model.ReportCreateRequest{Name: "report", SnapshotJSON: `{}`}, "user")
 	if !called || err == nil || !strings.Contains(err.Error(), "report API request failed") {
 		t.Fatalf("expected error from actual report request, called=%v err=%v", called, err)
 	}
@@ -109,9 +109,9 @@ func TestGenerateReportDownloadStreamsAPIResponse(t *testing.T) {
 
 	download, err := svc.generateReportDownload(
 		context.Background(),
-		&model.ReportTemplate{Name: "clinical", APIEndpoint: "https://8.8.8.8/generate", APIKey: "secret"},
+		&model.ReportTemplate{Name: "clinical", APIEndpoint: "https://8.8.8.8/generate", APIKey: "secret", ContractVersion: model.ReportContractV2},
 		&model.Task{UUID: "task-1", Name: "Task One", SampleID: "sample-1", Pipeline: "wes"},
-		&model.ReportCreateRequest{Name: "ignored-name", TemplateName: "clinical"},
+		&model.ReportCreateRequest{Name: "ignored-name", TemplateName: "clinical", SnapshotJSON: `{}`},
 		"user@example.com",
 	)
 	if err != nil {
@@ -195,9 +195,9 @@ func TestGenerateReportDownloadReturnsAPIError(t *testing.T) {
 
 	_, err := svc.generateReportDownload(
 		context.Background(),
-		&model.ReportTemplate{Name: "clinical", APIEndpoint: "https://8.8.8.8/generate", APIKey: "secret"},
+		&model.ReportTemplate{Name: "clinical", APIEndpoint: "https://8.8.8.8/generate", APIKey: "secret", ContractVersion: model.ReportContractV2},
 		&model.Task{UUID: "task-1"},
-		&model.ReportCreateRequest{Name: "report", TemplateName: "clinical"},
+		&model.ReportCreateRequest{Name: "report", TemplateName: "clinical", SnapshotJSON: `{}`},
 		"user@example.com",
 	)
 	if err == nil || !strings.Contains(err.Error(), "report API returned 502") {

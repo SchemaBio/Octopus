@@ -2,22 +2,16 @@ package service
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
+	"github.com/SchemaBio/Octopus/internal/model"
 )
 
-// The legacy report contract reads archived files and cannot convey selected overlays.
 func validateReportACMGContract(raw, contract string) error {
-	if contract == "report-snapshot-v2" {
-		return nil
+	if contract != model.ReportContractV2 {
+		return errors.New("only report-snapshot-v2 is supported")
 	}
-	var snapshot reportSnapshot
-	if err := json.Unmarshal([]byte(raw), &snapshot); err != nil {
-		return err
-	}
-	for _, row := range snapshot.Reported {
-		if stringAdjustment(row.Interpretation, "activeAcmgVersion") == "svcv4" {
-			return fmt.Errorf("采用 SVC v4.0 的位点须使用 report-snapshot-v2 报告服务，以保留版本及试行标记")
-		}
+	if !json.Valid([]byte(raw)) {
+		return errors.New("valid report snapshot is required")
 	}
 	return nil
 }

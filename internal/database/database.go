@@ -109,6 +109,9 @@ func AutoMigrate() error {
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)
 	}
+	if err := migrateReportProtocol(); err != nil {
+		return err
+	}
 	for _, sql := range []string{
 		"CREATE UNIQUE INDEX IF NOT EXISTS gene_lists_org_name ON gene_lists(external_org_id,lower(name)) WHERE external_org_id<>''",
 		"CREATE UNIQUE INDEX IF NOT EXISTS gene_lists_user_name ON gene_lists(created_by,lower(name)) WHERE external_org_id=''",
@@ -532,4 +535,14 @@ func CloseDB() error {
 		return err
 	}
 	return sqlDB.Close()
+}
+
+// Upgrade configurations only; generation records retain their original metadata.
+func migrateReportProtocol() error {
+	if err := DB.Model(&model.ReportTemplate{}).
+		Where("contract_version IS NULL OR contract_version <> ?", model.ReportContractV2).
+		Updates(map[string]interface{}{"contract_version": model.ReportContractV2, "revision": gorm.Expr("revision + 1")}).Error; err != nil {
+		return fmt.Errorf("migrate report service protocol: %w", err)
+	}
+	return nil
 }

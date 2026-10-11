@@ -65,7 +65,7 @@ func TestReportContractRequiresVersionProvenance(t *testing.T) {
 	if err := validateReportACMGContract(raw, "report-snapshot-v2"); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateReportACMGContract(`{"reported_variants":[]}`, "legacy-v1"); err != nil {
-		t.Fatal(err)
+	if err := validateReportACMGContract(`{"reported_variants":[]}`, "legacy-v1"); err == nil {
+		t.Fatal("legacy protocol must be rejected even without SVC variants")
 	}
 }
