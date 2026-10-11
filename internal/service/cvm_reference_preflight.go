@@ -52,6 +52,21 @@ func validateCVMReferenceObjects(ctx context.Context, storage cvmReferenceObject
 	if err != nil {
 		return err
 	}
+	return validateCVMReferenceKeys(ctx, storage, keys)
+}
+
+func cvmBaselineReferenceObjectKeys(genome string, requireDefaultBED bool) ([]string, error) {
+	keys, err := cvmReferenceObjectKeys(genome, requireDefaultBED)
+	if err != nil {
+		return nil, err
+	}
+	for _, suffix := range []string{".amb", ".ann", ".bwt", ".pac", ".sa"} {
+		keys = append(keys, keys[0]+suffix)
+	}
+	return append(keys, path.Join("database", genome, "schema_bundle", genome+"_reference.cnvkit.cnn")), nil
+}
+
+func validateCVMReferenceKeys(ctx context.Context, storage cvmReferenceObjectStorage, keys []string) error {
 	for _, key := range keys {
 		size, statErr := storage.stat(ctx, key)
 		if statErr != nil || size <= 0 {
@@ -82,6 +97,13 @@ func (s *TaskService) preflightCVMReferences(ctx context.Context, genome, templa
 	bed, bedErr := cvmAnalysisBEDInput(template, inputs)
 	if bedErr == nil && bed == path.Join("/mnt/data/database", genome+"_default.bed") {
 		requireDefaultBED = true
+	}
+	if template == "baseline_fix" {
+		keys, err := cvmBaselineReferenceObjectKeys(genome, requireDefaultBED)
+		if err != nil {
+			return err
+		}
+		return validateCVMReferenceKeys(ctx, storage, keys)
 	}
 	return validateCVMReferenceObjects(ctx, storage, genome, requireDefaultBED)
 }

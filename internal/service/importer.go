@@ -112,6 +112,21 @@ func (imp *Importer) importFromArchive(taskID string, archiveDir string) (*Impor
 		Success: false,
 		Counts:  make(map[string]int),
 	}
+	// A baseline correction produces a reference, not a WES QC/variant report.
+	// The CVM archive was verified and registered before reaching this importer.
+	if imp.task != nil && imp.task.Template == "baseline_fix" {
+		data, err := (&Archiver{cfg: imp.cfg}).readArchiveJSONFile(archiveDir, "outputs.resolved.json")
+		if err != nil {
+			return result, err
+		}
+		if baselineOutputFromJSON(string(data)) == "" {
+			return result, fmt.Errorf("CNV baseline archive is missing the final reference")
+		}
+		result.Success = true
+		result.Counts["cnv_baseline"] = 1
+		result.SourceFiles = []string{filepath.Join(archiveDir, "outputs.resolved.json")}
+		return result, nil
+	}
 	if imp.tenantID != "" {
 		if err := imp.repo.DeleteTaskAttemptResults(taskID, imp.tenantID, imp.attemptID); err != nil {
 			return result, fmt.Errorf("clear current result attempt: %w", err)

@@ -2535,6 +2535,20 @@ func (s *TaskService) stageCOSArchive(task *model.Task, metadata model.SepiidaAr
 	if _, err := os.Stat(filepath.Join(archiveDir, "outputs.resolved.json")); err != nil {
 		return fmt.Errorf("COS archive is missing outputs.resolved.json")
 	}
+	if task.Template == "baseline_fix" {
+		data, err := (&Archiver{cfg: s.cfg}).readArchiveJSONFile(archiveDir, "outputs.resolved.json")
+		if err != nil {
+			return err
+		}
+		reference, err := validatedCNVBaselineArchiveOutput(string(data), prefix,
+			s.cfg.Storage.S3Bucket+".cos."+s.cfg.Storage.S3Region+".myqcloud.com", objects)
+		if err != nil {
+			return err
+		}
+		if err := s.registerArchivedCNVBaseline(task, reference); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

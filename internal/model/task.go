@@ -225,6 +225,7 @@ type TaskListQuery struct {
 
 // TaskResponse matches frontend AnalysisTask type
 type TaskResponse struct {
+	Template                  string     `json:"template"`
 	RetryStartedAt            *time.Time `json:"retryStartedAt,omitempty"`
 	InterpretationCompletedAt *time.Time `json:"interpretationCompletedAt,omitempty"`
 	InterpretationCompletedBy string     `json:"interpretationCompletedBy,omitempty"`
@@ -256,6 +257,7 @@ type TaskResponse struct {
 
 // TaskDetailResponse matches frontend AnalysisTaskDetail type
 type TaskDetailResponse struct {
+	Template                  string     `json:"template"`
 	RetryStartedAt            *time.Time `json:"retryStartedAt,omitempty"`
 	InterpretationCompletedAt *time.Time `json:"interpretationCompletedAt,omitempty"`
 	InterpretationCompletedBy string     `json:"interpretationCompletedBy,omitempty"`
@@ -464,6 +466,7 @@ type Template struct {
 // ToResponse converts Task to TaskResponse
 func (t *Task) ToResponse() TaskResponse {
 	resp := TaskResponse{
+		Template:                  t.Template,
 		RetryStartedAt:            t.RetryStartedAt,
 		InterpretationCompletedAt: t.InterpretationCompletedAt, InterpretationCompletedBy: t.InterpretationCompletedBy,
 		ExecutionPhase: t.ExecutionPhase, ExecutionReasonCode: t.ExecutionReasonCode, AttemptID: t.ExecutionAttemptID, PhaseUpdatedAt: t.PhaseUpdatedAt,
@@ -497,6 +500,7 @@ func (t *Task) ToResponse() TaskResponse {
 // ToDetailResponse converts Task to TaskDetailResponse
 func (t *Task) ToDetailResponse() TaskDetailResponse {
 	resp := TaskDetailResponse{
+		Template:                  t.Template,
 		RetryStartedAt:            t.RetryStartedAt,
 		InterpretationCompletedAt: t.InterpretationCompletedAt, InterpretationCompletedBy: t.InterpretationCompletedBy,
 		ExecutionPhase: t.ExecutionPhase, ExecutionReasonCode: t.ExecutionReasonCode, AttemptID: t.ExecutionAttemptID, PhaseUpdatedAt: t.PhaseUpdatedAt,

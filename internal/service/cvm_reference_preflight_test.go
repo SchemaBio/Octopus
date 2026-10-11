@@ -47,6 +47,26 @@ func TestCVMReferenceObjectKeys(t *testing.T) {
 	}
 }
 
+func TestBaselineReferencePreflightIncludesMappingIndexesAndReference(t *testing.T) {
+	for _, genome := range []string{"hg19", "hg38"} {
+		keys, err := cvmBaselineReferenceObjectKeys(genome, false)
+		if err != nil || len(keys) != 8 {
+			t.Fatalf("baseline resource keys=%v error=%v", keys, err)
+		}
+		storage := &fakeCVMReferenceStorage{sizes: map[string]int64{}, errs: map[string]error{}}
+		for _, key := range keys {
+			storage.sizes[key] = 10
+		}
+		if err := validateCVMReferenceKeys(context.Background(), storage, keys); err != nil {
+			t.Fatal(err)
+		}
+		delete(storage.sizes, keys[len(keys)-1])
+		if err := validateCVMReferenceKeys(context.Background(), storage, keys); err == nil {
+			t.Fatal("missing built-in baseline accepted")
+		}
+	}
+}
+
 func TestCVMReferencePreflightRejectsMissingEmptyAndStorageErrors(t *testing.T) {
 	base := map[string]int64{
 		"database/hg38/Homo_sapiens.GRCh38.dna.primary_assembly.fa":     100,
