@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1.7
+# Build the normal Octopus image first. The second build accepts a local,
+# verified SepiLens release directory as the named sepilens_release context.
+ARG OCTOPUS_IMAGE=octopus:ai-base
+FROM alpine:3.22 AS sepilens
+ARG TARGETARCH=amd64
+ARG SEPILENS_VERSION=0.2.0-rc2
+ARG SEPILENS_AMD64_SHA256=a510828f7ca8c1cbd0129f7237c04001b09d23bd976d42c0ab1968406d03af7d
+ARG SEPILENS_ARM64_SHA256=c416c0e3f623a834836d0175b78105a0ad7b27c1734f8ba0329ad8bfd435588a
+ARG SEPILENS_AMD64_BINARY_SHA256=c6d68f400bc2467cd775c6a6df2e28b062725895f419ee00b5fde8f896f9a342
+ARG SEPILENS_ARM64_BINARY_SHA256=26073c22f10598fff2e90ae864fa3980d80c21d67f3c467397872cf51a19e433
+COPY --from=sepilens_release /sepilens-${SEPILENS_VERSION}-linux-${TARGETARCH}.tar.gz /tmp/release.tar.gz
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) archive_sha="$SEPILENS_AMD64_SHA256"; binary_sha="$SEPILENS_AMD64_BINARY_SHA256" ;; \
+      arm64) archive_sha="$SEPILENS_ARM64_SHA256"; binary_sha="$SEPILENS_ARM64_BINARY_SHA256" ;; \
+      *) exit 1 ;; \
+    esac; \
+    printf '%s  /tmp/release.tar.gz\n' "$archive_sha" | sha256sum -c -; \
+    mkdir /release; tar -xzf /tmp/release.tar.gz -C /release --strip-components=1; \
+    printf '%s  /release/sepilens\n' "$binary_sha" | sha256sum -c -; \
+    test -d /release/knowledge/hpo; chmod 755 /release/sepilens
+
+FROM ${OCTOPUS_IMAGE}
+USER root
+COPY --from=sepilens /release/sepilens /app/sepilens/sepilens
+COPY --from=sepilens /release/knowledge/hpo /app/sepilens/knowledge/hpo
+COPY --from=sepilens /release/LICENSE /app/sepilens/LICENSE
+COPY --from=sepilens /release/THIRD_PARTY_NOTICES.md /app/sepilens/THIRD_PARTY_NOTICES.md
+RUN mkdir -p /data/sepilens && chown octopus:octopus /data/sepilens
+ENV AI_ASSISTANCE_MANAGED_PROCESS=true \
+    AI_ASSISTANCE_BASE_URL=http://127.0.0.1:18081 \
+    AI_ASSISTANCE_DATA_DIR=/data/sepilens \
+    AI_ASSISTANCE_BINARY=/app/sepilens/sepilens \
+    AI_ASSISTANCE_BILLING_ENABLED=false
+USER octopus

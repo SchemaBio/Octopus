@@ -142,6 +142,15 @@ func New(cfg *config.Config) *gin.Engine {
 
 		// ========== Task management (protected) ==========
 		taskHandler := handler.NewTaskHandler(cfg)
+		assistanceHandler := handler.NewAIAssistanceHandler(cfg)
+		assistance := v1.Group("/ai-assistance", middleware.JWTAuth(cfg))
+		assistance.GET("/settings", assistanceHandler.Settings)
+		assistance.PUT("/settings", middleware.RequireAdmin(), middleware.IPRateLimit(10, time.Minute), assistanceHandler.SaveSettings)
+		assistance.POST("/settings/test", middleware.RequireAdmin(), middleware.IPRateLimit(3, time.Minute), assistanceHandler.TestProvider)
+		assistance.POST("/requests", middleware.IPRateLimit(30, time.Minute), assistanceHandler.DecodeInput, taskHandler.InterpretationEditGuard, assistanceHandler.Generate)
+		assistance.GET("/requests/:requestID", assistanceHandler.Get)
+		assistance.DELETE("/requests/:requestID", assistanceHandler.DeleteResult)
+		assistance.POST("/requests/:requestID/cancel", assistanceHandler.Cancel)
 		v1.POST("/internal/cvm/events", taskHandler.CVMStateEvent)
 		v1.POST("/internal/cvm/inputs/refresh", taskHandler.CVMInputRefresh)
 		storageHandler := handler.NewStorageHandler(cfg)

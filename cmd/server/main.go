@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SchemaBio/Octopus/internal/assistance"
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/middleware"
@@ -114,6 +115,9 @@ func main() {
 	defer stopSignals()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	stopSepiLens := assistance.StartProcess(ctx)
+	aiService := assistance.New(database.GetDB(), cfg.ExternalAuth.Enabled, cfg.Overlay.BaseURL, cfg.Overlay.SharedSecret)
+	waitAI := aiService.Start(ctx)
 
 	// Start Sepiida status sync for running tasks (every 30s)
 	taskSvc := service.NewTaskService(cfg)
@@ -147,12 +151,16 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to listen on %s: %v\n", server.Addr, err)
 		cancel()
+		waitAI()
+		stopSepiLens()
 		database.CloseDB()
 		os.Exit(1)
 	}
 	fmt.Printf("Starting schema-platform server on port %s...\n", cfg.Server.Port)
 	serveErr := serveHTTPServer(ctx, server, listener)
 	cancel()
+	waitAI()
+	stopSepiLens()
 	database.CloseDB()
 	if serveErr != nil {
 		fmt.Fprintf(os.Stderr, "Server stopped with an error: %v\n", serveErr)

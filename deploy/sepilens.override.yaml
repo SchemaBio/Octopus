@@ -1,0 +1,15 @@
+# Use the image built with Dockerfile.sepilens. Each Octopus replica needs its
+# own volume; do not share this SQLite volume between replicas.
+services:
+  octopus:
+    environment:
+      AI_ASSISTANCE_TOKEN_FILE: /run/secrets/sepilens-token
+      AI_ASSISTANCE_MASTER_KEY_FILE: /run/secrets/sepilens-master-key
+      AI_ASSISTANCE_BILLING_ENABLED: "false"
+      AI_ASSISTANCE_INSTANCE_ID: ${SEPILENS_INSTANCE_ID:?set stable SEPILENS_INSTANCE_ID for this data volume}
+    volumes:
+      - sepilens-data:/data/sepilens
+      - ${SEPILENS_TOKEN_FILE:?set SEPILENS_TOKEN_FILE}:/run/secrets/sepilens-token:ro
+      - ${SEPILENS_MASTER_KEY_FILE:?set SEPILENS_MASTER_KEY_FILE}:/run/secrets/sepilens-master-key:ro
+volumes:
+  sepilens-data:
