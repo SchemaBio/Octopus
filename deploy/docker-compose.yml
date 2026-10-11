@@ -23,6 +23,24 @@ services:
       timeout: 5s
       retries: 30
 
+  sepiida-keys:
+    image: alpine:3.22
+    user: "0:0"
+    restart: "no"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        cp /source/agent-keys.txt /keys/agent-keys.txt
+        cp /source/query-keys.txt /keys/query-keys.txt
+        chown -R 1000:1000 /keys
+        chmod 0700 /keys
+        chmod 0600 /keys/agent-keys.txt /keys/query-keys.txt
+    volumes:
+      - ./.generated/sepiida-agent-keys.txt:/source/agent-keys.txt:ro
+      - ./.generated/sepiida-query-keys.txt:/source/query-keys.txt:ro
+      - sepiida-keys:/keys
+
   sepiida-server:
     build:
       context: ../../Sepiida
@@ -35,13 +53,14 @@ services:
       SEPIIDA_QUERY_KEY_FILE: /etc/sepiida/keys/query-keys.txt
       SEPIIDA_KEY_REFRESH_SECONDS: "30"
     volumes:
-      - ./.generated/sepiida-agent-keys.txt:/etc/sepiida/keys/agent-keys.txt:ro
-      - ./.generated/sepiida-query-keys.txt:/etc/sepiida/keys/query-keys.txt:ro
+      - sepiida-keys:/etc/sepiida/keys:ro
     ports:
       - "127.0.0.1:${SEPIIDA_PORT:-9090}:9090"
     depends_on:
       postgres:
         condition: service_healthy
+      sepiida-keys:
+        condition: service_completed_successfully
 
   yijian:
     build:
@@ -63,3 +82,4 @@ services:
 
 volumes:
   postgres-data:
+  sepiida-keys:

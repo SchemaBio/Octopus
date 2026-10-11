@@ -63,7 +63,12 @@ init_config() {
     existing_or_random OCTOPUS_DB_PASSWORD 24
     existing_or_random SEPIIDA_DB_PASSWORD 24
     existing_or_random OCTOPUS_JWT_SECRET 32
-    existing_or_random DEFAULT_ADMIN_PASSWORD 18
+    if [ -n "${DEFAULT_ADMIN_PASSWORD:-}" ]; then
+      printf 'DEFAULT_ADMIN_PASSWORD=%s\n' "$DEFAULT_ADMIN_PASSWORD"
+    else
+      # The release backend requires at least three character classes.
+      printf 'DEFAULT_ADMIN_PASSWORD=Aa1%s\n' "$(random_hex 18)"
+    fi
     existing_or_random SEPIIDA_QUERY_KEY 32
     existing_or_random SEPIIDA_AGENT_KEY 32
   } >"$tmp"
@@ -75,6 +80,13 @@ init_config() {
   printf '%s\n' "$SEPIIDA_QUERY_KEY" >"$GENERATED_DIR/sepiida-query-keys.txt"
   printf '%s\n' "$SEPIIDA_AGENT_KEY" >"$GENERATED_DIR/sepiida-agent-keys.txt"
   chmod 600 "$GENERATED_DIR/sepiida-query-keys.txt" "$GENERATED_DIR/sepiida-agent-keys.txt"
+  # A sudo install must preserve the operator's ability to read credentials.
+  if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    local config_owner
+    config_owner="$(stat -c '%u:%g' "$USER_ENV")"
+    chown "$config_owner" "$GENERATED_DIR" "$RUNTIME_ENV" \
+      "$GENERATED_DIR/sepiida-query-keys.txt" "$GENERATED_DIR/sepiida-agent-keys.txt"
+  fi
   printf 'Self-hosted configuration initialized.\n'
 }
 
@@ -321,7 +333,7 @@ case "$command_name" in
     check_config
     install_host_services
     compose up -d --build
-    systemctl start schemabio-octopus.service schemabio-sepiida-agent.service
+    systemctl restart schemabio-octopus.service schemabio-sepiida-agent.service
     ;;
   up)
     require_root
