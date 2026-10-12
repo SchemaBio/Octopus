@@ -45,10 +45,21 @@ func lockTaskAssets(tx *gorm.DB, links []model.TaskDataAsset) error {
 	return nil
 }
 func lockPipelineBED(tx *gorm.DB, p *model.Pipeline) error {
-	if p.BEDAssetID == nil {
-		return nil
+	if p.BEDAssetID != nil {
+		if err := lockTaskAssets(tx, []model.TaskDataAsset{{AssetID: *p.BEDAssetID}}); err != nil {
+			return err
+		}
 	}
-	return lockTaskAssets(tx, []model.TaskDataAsset{{AssetID: *p.BEDAssetID}})
+	if p.CNVBaselineID != nil {
+		var baseline model.CNVBaseline
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&baseline, *p.CNVBaselineID).Error; err != nil {
+			return err
+		}
+		if baseline.OutputPath == "" {
+			return errors.New("CNV baseline is unavailable")
+		}
+	}
+	return nil
 }
 
 func checkBEDReferences(tx *gorm.DB, a *model.DataAsset) error {
@@ -107,7 +118,7 @@ func validateSavedTaskResources(tx *gorm.DB, t *model.Task) error {
 		}
 		if snap.BaselineID != 0 {
 			var b model.CNVBaseline
-			if e := tx.First(&b, snap.BaselineID).Error; e != nil || b.OutputPath == "" {
+			if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&b, snap.BaselineID).Error; e != nil || b.OutputPath == "" {
 				return fmt.Errorf("saved CNV baseline is unavailable")
 			}
 		}

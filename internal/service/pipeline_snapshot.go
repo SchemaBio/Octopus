@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type pipelineResourceSnapshot struct {
@@ -60,7 +61,7 @@ func freezeTaskResourceIdentities(tx *gorm.DB, t *model.Task, links []model.Task
 	}
 	if snap.BaselineID != 0 {
 		var b model.CNVBaseline
-		if e := tx.First(&b, snap.BaselineID).Error; e != nil {
+		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&b, snap.BaselineID).Error; e != nil {
 			return e
 		}
 		snap.BaselineUUID = b.UUID

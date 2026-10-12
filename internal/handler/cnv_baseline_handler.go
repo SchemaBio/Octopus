@@ -1,11 +1,29 @@
 package handler
 
 import (
+	"errors"
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/service"
 	"github.com/gin-gonic/gin"
+	"net/http"
 )
+
+func (h *CNVBaselineHandler) Delete(c *gin.Context) {
+	err := h.svc.Delete(c.Request.Context(), c.Param("uuid"), taskActorFromContext(c))
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrCNVBaselineNotFound):
+			ErrorNotFound(c, err.Error())
+		case errors.Is(err, service.ErrCNVBaselineInUse):
+			Error(c, http.StatusConflict, err.Error())
+		default:
+			ErrorInternal(c, "删除 CNV 基线失败")
+		}
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
 
 type CNVBaselineHandler struct{ svc *service.CNVBaselineService }
 

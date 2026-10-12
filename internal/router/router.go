@@ -433,6 +433,7 @@ func New(cfg *config.Config) *gin.Engine {
 			cnvBaselines.POST("", cnvBaselineHandler.Create)
 			cnvBaselines.GET("", cnvBaselineHandler.List)
 			cnvBaselines.GET("/:uuid", cnvBaselineHandler.Get)
+			cnvBaselines.DELETE("/:uuid", cnvBaselineHandler.Delete)
 		}
 
 		// ========== Result import batches (audit, protected) ==========
