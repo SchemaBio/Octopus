@@ -50,18 +50,18 @@ func TestCVMReferenceObjectKeys(t *testing.T) {
 func TestBaselineReferencePreflightIncludesMappingIndexesAndReference(t *testing.T) {
 	for _, genome := range []string{"hg19", "hg38"} {
 		keys, err := cvmBaselineReferenceObjectKeys(genome, false)
-		if err != nil || len(keys) != 8 {
+		if err != nil || len(keys) != 5 {
 			t.Fatalf("baseline resource keys=%v error=%v", keys, err)
 		}
 		storage := &fakeCVMReferenceStorage{sizes: map[string]int64{}, errs: map[string]error{}}
 		for _, key := range keys {
 			storage.sizes[key] = 10
 		}
-		if err := validateCVMReferenceKeys(context.Background(), storage, keys); err != nil {
+		if err := validateCVMBaselineReferences(context.Background(), storage, genome, false); err != nil {
 			t.Fatal(err)
 		}
 		delete(storage.sizes, keys[len(keys)-1])
-		if err := validateCVMReferenceKeys(context.Background(), storage, keys); err == nil {
+		if err := validateCVMBaselineReferences(context.Background(), storage, genome, false); err == nil {
 			t.Fatal("missing built-in baseline accepted")
 		}
 	}
@@ -97,6 +97,50 @@ func TestCVMReferencePreflightRejectsMissingEmptyAndStorageErrors(t *testing.T) 
 				t.Fatalf("preflight error = %v, want platform reference failure", err)
 			}
 		})
+	}
+}
+
+func TestBaselinePreflightPrefersMinibwaAndRequiresCompleteFallback(t *testing.T) {
+	for _, genome := range []string{"hg19", "hg38"} {
+		keys, _ := cvmBaselineReferenceObjectKeys(genome, false)
+		for _, mapper := range []string{"minibwa", "bwa", "incomplete", "empty"} {
+			t.Run(genome+"/"+mapper, func(t *testing.T) {
+				storage := &fakeCVMReferenceStorage{sizes: map[string]int64{}}
+				for _, key := range keys {
+					storage.sizes[key] = 10
+				}
+				if mapper != "minibwa" {
+					delete(storage.sizes, keys[0]+".mbw")
+				}
+				if mapper == "bwa" || mapper == "incomplete" {
+					for _, suffix := range []string{".amb", ".ann", ".bwt", ".pac", ".sa"} {
+						storage.sizes[keys[0]+suffix] = 20
+					}
+					if mapper == "incomplete" {
+						delete(storage.sizes, keys[0]+".sa")
+					}
+				}
+				if mapper == "empty" {
+					storage.sizes[keys[0]+".mbw"] = 0
+				}
+				err := validateCVMBaselineReferences(context.Background(), storage, genome, false)
+				if mapper == "incomplete" || mapper == "empty" {
+					var objectErr *CVMInputObjectError
+					if !errors.As(err, &objectErr) || objectErr.ReasonCode != "REFERENCE_DATABASE_FAILED" {
+						t.Fatalf("incomplete mapping indexes accepted: %v", err)
+					}
+				} else if err != nil {
+					t.Fatal(err)
+				}
+				if mapper == "minibwa" {
+					for _, key := range storage.seen {
+						if key == keys[0]+".amb" {
+							t.Fatal("standard BWA must not be checked when minibwa is ready")
+						}
+					}
+				}
+			})
+		}
 	}
 }
 

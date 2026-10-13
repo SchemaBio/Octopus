@@ -60,10 +60,39 @@ func cvmBaselineReferenceObjectKeys(genome string, requireDefaultBED bool) ([]st
 	if err != nil {
 		return nil, err
 	}
-	for _, suffix := range []string{".amb", ".ann", ".bwt", ".pac", ".sa"} {
+	for _, suffix := range []string{".l2b", ".mbw"} {
 		keys = append(keys, keys[0]+suffix)
 	}
 	return append(keys, path.Join("database", genome, "schema_bundle", genome+"_reference.cnvkit.cnn")), nil
+}
+
+// Validate shared resources first, then prefer the complete minibwa index pair.
+// Standard BWA is supported only when all five of its indexes are available.
+func validateCVMBaselineReferences(ctx context.Context, storage cvmReferenceObjectStorage, genome string, requireDefaultBED bool) error {
+	keys, err := cvmBaselineReferenceObjectKeys(genome, requireDefaultBED)
+	if err != nil {
+		return err
+	}
+	shared, err := cvmReferenceObjectKeys(genome, requireDefaultBED)
+	if err != nil {
+		return err
+	}
+	shared = append(shared, keys[len(keys)-1])
+	if err := validateCVMReferenceKeys(ctx, storage, shared); err != nil {
+		return err
+	}
+	fasta := shared[0]
+	if err := validateCVMReferenceKeys(ctx, storage, []string{fasta + ".l2b", fasta + ".mbw"}); err == nil {
+		return nil
+	}
+	var bwa []string
+	for _, suffix := range []string{".amb", ".ann", ".bwt", ".pac", ".sa"} {
+		bwa = append(bwa, fasta+suffix)
+	}
+	if err := validateCVMReferenceKeys(ctx, storage, bwa); err != nil {
+		return &CVMInputObjectError{ReasonCode: "REFERENCE_DATABASE_FAILED", err: fmt.Errorf("reference mapping indexes are missing or unreadable: a complete minibwa (.l2b, .mbw) or BWA (.amb, .ann, .bwt, .pac, .sa) set is required")}
+	}
+	return nil
 }
 
 func validateCVMReferenceKeys(ctx context.Context, storage cvmReferenceObjectStorage, keys []string) error {
@@ -99,11 +128,7 @@ func (s *TaskService) preflightCVMReferences(ctx context.Context, genome, templa
 		requireDefaultBED = true
 	}
 	if template == "baseline_fix" {
-		keys, err := cvmBaselineReferenceObjectKeys(genome, requireDefaultBED)
-		if err != nil {
-			return err
-		}
-		return validateCVMReferenceKeys(ctx, storage, keys)
+		return validateCVMBaselineReferences(ctx, storage, genome, requireDefaultBED)
 	}
 	return validateCVMReferenceObjects(ctx, storage, genome, requireDefaultBED)
 }

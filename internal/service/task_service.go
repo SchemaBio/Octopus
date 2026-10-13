@@ -3173,7 +3173,8 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	if event.DiagnosticHoldUntil != nil || (event.ExecutionPhase != "" && event.ExecutionPhase != "diagnostic_hold") {
 		task.DiagnosticHoldUntil = event.DiagnosticHoldUntil
 	}
-	task.ExecutionReasonCode = event.ReasonCode
+	failureMessage, reasonCode := cvmFailureDiagnostic(task, event)
+	task.ExecutionReasonCode = reasonCode
 	previousStatus := task.Status
 	// Squid may deliver a cancellation callback after the user-facing delete
 	// request already transitioned the task locally.  Keep the state update
@@ -3240,10 +3241,7 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	}
 	if event.TaskStatus == model.TaskStatusFailed && task.Status != model.TaskStatusCompleted && task.Status != model.TaskStatusCancelled {
 		task.Status = model.TaskStatusFailed
-		task.Error = strings.TrimSpace(event.Message)
-		if task.Error == "" {
-			task.Error = "CVM instance terminated before the workflow completed"
-		}
+		task.Error = failureMessage
 		now := time.Now()
 		task.FinishedAt = &now
 	}
@@ -3306,6 +3304,20 @@ func terminalOverlayEventForCVMState(eventStatus, currentStatus model.TaskStatus
 		}
 	}
 	return ""
+}
+
+// A release acknowledgement can carry only task.failed after a concrete
+// preflight error. Preserve that diagnosis for the already-matched attempt.
+func cvmFailureDiagnostic(task *model.Task, event model.CVMStateEvent) (string, string) {
+	message, reason := strings.TrimSpace(event.Message), event.ReasonCode
+	if event.TaskStatus == model.TaskStatusFailed && task.Status == model.TaskStatusFailed &&
+		reason == "" && (message == "" || message == model.OverlayTaskEventFailed) && strings.TrimSpace(task.Error) != "" {
+		return task.Error, task.ExecutionReasonCode
+	}
+	if message == "" {
+		message = "CVM instance terminated before the workflow completed"
+	}
+	return message, reason
 }
 
 func cvmStateEventMatchesCurrentAttempt(task *model.Task, event model.CVMStateEvent) bool {

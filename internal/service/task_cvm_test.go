@@ -152,6 +152,25 @@ func TestCVMStateEventOnlyMatchesCurrentAttempt(t *testing.T) {
 	}
 }
 
+func TestCVMFailureDiagnosticPreservesPreflightError(t *testing.T) {
+	task := &model.Task{Status: model.TaskStatusFailed, Error: "reference mapping indexes are missing", ExecutionReasonCode: "REFERENCE_DATABASE_FAILED"}
+	for _, message := range []string{"", model.OverlayTaskEventFailed} {
+		got, reason := cvmFailureDiagnostic(task, model.CVMStateEvent{TaskStatus: model.TaskStatusFailed, Message: message})
+		if got != task.Error || reason != task.ExecutionReasonCode {
+			t.Fatalf("generic release callback erased preflight diagnosis: %q %q", got, reason)
+		}
+	}
+	got, reason := cvmFailureDiagnostic(task, model.CVMStateEvent{TaskStatus: model.TaskStatusFailed, Message: "input download failed", ReasonCode: "INPUT_DOWNLOAD_FAILED"})
+	if got != "input download failed" || reason != "INPUT_DOWNLOAD_FAILED" {
+		t.Fatalf("explicit diagnosis did not replace previous error: %q %q", got, reason)
+	}
+	task.Status = model.TaskStatusQueued
+	got, reason = cvmFailureDiagnostic(task, model.CVMStateEvent{TaskStatus: model.TaskStatusFailed})
+	if got == task.Error || reason != "" {
+		t.Fatal("a newly failing task must not inherit a stale failure")
+	}
+}
+
 func TestCVMEventBusinessStartClassification(t *testing.T) {
 	if cvmEventCarriesBusinessStart(model.CVMStateEvent{TaskStatus: model.TaskStatusQueued, ExecutionPhase: "bootstrapping", StartedAt: ptrTimeForCVMTest(time.Now())}) {
 		t.Fatal("bootstrap timestamp must not mark the workflow as running")
