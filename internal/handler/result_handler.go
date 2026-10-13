@@ -62,6 +62,16 @@ func (h *ResultHandler) GetAssessmentContext(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if c.Query("summary") == "1" {
+		value, err := h.svc.AssessmentContextSummary(c.Request.Context(), task)
+		if err != nil {
+			ErrorInternal(c, "assessment context unavailable")
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		Success(c, value)
+		return
+	}
 	value, err := h.svc.AssessmentContext(c.Request.Context(), task)
 	if err != nil {
 		ErrorInternal(c, "assessment context unavailable")

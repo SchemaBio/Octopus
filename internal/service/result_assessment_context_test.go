@@ -2,9 +2,31 @@ package service
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestSupplementManifestPinsVersionAndRejectsInvalidOrMissing(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "manifest.json")
+	if _, err := assessmentSupplementVersion(file); err == nil {
+		t.Fatal("missing manifest accepted")
+	}
+	digest := strings.Repeat("a", 64)
+	for _, raw := range []string{`{"schema":1,"version":"fixture","digest":"` + digest + `"}`, `{"schema":2,"version":"fixture","digest":"` + digest + `"}`, `{"schema":1,"digest":"old"}`} {
+		if err := os.WriteFile(file, []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		value, err := assessmentSupplementVersion(file)
+		if strings.Contains(raw, `"schema":1,"version"`) {
+			if err != nil || value != digest {
+				t.Fatal("valid manifest rejected")
+			}
+		} else if err == nil {
+			t.Fatal("invalid manifest accepted")
+		}
+	}
+}
 
 func TestAssessmentPublishedPackage(t *testing.T) {
 	filename := os.Getenv("ASSESSMENT_TEST_REFERENCE")
@@ -27,6 +49,13 @@ func TestAssessmentHPOExcludesNegatedAndInvalidTerms(t *testing.T) {
 	}
 	if len(positiveAssessmentHPO("invalid")) != 0 {
 		t.Fatal("invalid JSON must not create phenotype evidence")
+	}
+	warnings := assessmentHPOWarnings(`[{"id":"HP:bad"},{"id":"HP:0000003","negated":true}]`)
+	if len(warnings) != 2 || warnings[0] != "phenotype.invalidHPO" || warnings[1] != "phenotype.negatedHPO" {
+		t.Fatalf("excluded inputs must be explained: %v", warnings)
+	}
+	if len(assessmentHPOWarnings(`[{"id":"HP:0000002"}]`)) != 0 {
+		t.Fatal("valid positive HPO must not produce warnings")
 	}
 }
 

@@ -22,23 +22,24 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const browserAssessmentProfile = "germline-browser-assessment-v2-fast-snv"
+const browserAssessmentProfile = "germline-browser-assessment-v3-hpo-priority"
 
 var validHPO = regexp.MustCompile(`^HP:\d{7}$`)
 
 type BrowserAssessmentContext struct {
-	TaskID       string                     `json:"taskId"`
-	AttemptID    string                     `json:"attemptId"`
-	Version      string                     `json:"version"`
-	Reference    string                     `json:"reference"`
-	HPO          []string                   `json:"hpo"`
-	HPOVersion   string                     `json:"hpoVersion"`
-	Pack         json.RawMessage            `json:"pack"`
-	Proofs       map[string]json.RawMessage `json:"proofs"`
-	Members      interface{}                `json:"members"`
-	Availability []string                   `json:"availability"`
-	Tables       []string                   `json:"tables"`
-	Profile      string                     `json:"profile"`
+	ReferenceVersion string                     `json:"referenceVersion,omitempty"`
+	TaskID           string                     `json:"taskId"`
+	AttemptID        string                     `json:"attemptId"`
+	Version          string                     `json:"version"`
+	Reference        string                     `json:"reference"`
+	HPO              []string                   `json:"hpo"`
+	HPOVersion       string                     `json:"hpoVersion"`
+	Pack             json.RawMessage            `json:"pack"`
+	Proofs           map[string]json.RawMessage `json:"proofs"`
+	Members          interface{}                `json:"members"`
+	Availability     []string                   `json:"availability"`
+	Tables           []string                   `json:"tables"`
+	Profile          string                     `json:"profile"`
 }
 type BrowserAssessmentEnvelope struct {
 	Active                *BrowserAssessmentContext `json:"active"`
@@ -78,9 +79,20 @@ func (s *ResultService) latestAssessmentContext(ctx context.Context, task *model
 		}
 		if err == nil {
 			c.HPO = positiveAssessmentHPO(sample.HPOTerms)
+			c.Availability = append(c.Availability, assessmentHPOWarnings(sample.HPOTerms)...)
 		}
 	}
 	sort.Strings(c.HPO)
+	// A small immutable manifest pins supplementary SQLite resources without reading databases.
+	manifestPath := os.Getenv("ASSESSMENT_SUPPLEMENT_MANIFEST")
+	if manifestPath != "" {
+		version, err := assessmentSupplementVersion(manifestPath)
+		if err != nil {
+			c.Availability = append(c.Availability, "phenotype.unavailable")
+		} else {
+			c.ReferenceVersion = version
+		}
+	}
 	c.HPOVersion = digestAssessment([]byte(fmt.Sprint(c.HPO)))
 	empty := map[string]interface{}{"version": "unavailable", "reference": reference, "licenses": []interface{}{}, "hpo": map[string]interface{}{}, "diseases": []interface{}{}, "dosage": []interface{}{}, "str": []interface{}{}, "imprinting": []interface{}{}}
 	c.Pack, _ = json.Marshal(empty)
@@ -159,6 +171,52 @@ func (s *ResultService) latestAssessmentContext(ctx context.Context, task *model
 	}{c, workspace.Version})
 	c.Version = digestAssessment(versionBytes)
 	return c, nil
+}
+
+func assessmentSupplementVersion(filename string) (string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, 256*1024+1))
+	var release struct {
+		Digest  string `json:"digest"`
+		Version string `json:"version"`
+		Schema  int    `json:"schema"`
+	}
+	if err != nil || len(raw) > 256*1024 || json.Unmarshal(raw, &release) != nil || release.Schema != 1 || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(release.Digest) || release.Version == "" {
+		return "", fmt.Errorf("invalid supplement manifest")
+	}
+	return release.Digest, nil
+}
+
+func assessmentHPOWarnings(raw string) []string {
+	var terms []struct {
+		ID        string `json:"id"`
+		Negated   bool   `json:"negated"`
+		Excluded  bool   `json:"excluded"`
+		Qualifier string `json:"qualifier"`
+	}
+	if raw == "" {
+		return nil
+	}
+	if json.Unmarshal([]byte(raw), &terms) != nil {
+		return []string{"phenotype.invalidHPO"}
+	}
+	invalid, negated := false, false
+	for _, term := range terms {
+		invalid = invalid || !validHPO.MatchString(term.ID)
+		negated = negated || term.Negated || term.Excluded || term.Qualifier == "NOT"
+	}
+	var warnings []string
+	if invalid {
+		warnings = append(warnings, "phenotype.invalidHPO")
+	}
+	if negated {
+		warnings = append(warnings, "phenotype.negatedHPO")
+	}
+	return warnings
 }
 
 func positiveAssessmentHPO(raw string) []string {
@@ -322,6 +380,26 @@ func (s *ResultService) AssessmentContext(ctx context.Context, task *model.Task)
 		return nil, err
 	}
 	return &BrowserAssessmentEnvelope{Active: &active, LatestVersion: latest.Version, ReassessmentAvailable: active.Version != latest.Version}, nil
+}
+
+// Summary reads only the fixed metadata snapshot. No public pack, proofs or Parquet is expanded.
+func (s *ResultService) AssessmentContextSummary(ctx context.Context, task *model.Task) (*BrowserAssessmentEnvelope, error) {
+	var saved model.ResultAssessmentContext
+	err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=?", model.TenantIDForTask(task), task.UUID, executionAttempt(task)).Order("activated_at DESC, created_at DESC, id DESC").First(&saved).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return &BrowserAssessmentEnvelope{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var active BrowserAssessmentContext
+	if json.Unmarshal([]byte(saved.PayloadJSON), &active) != nil {
+		return nil, fmt.Errorf("invalid assessment snapshot")
+	}
+	active.Pack = nil
+	active.Proofs = nil
+	active.Members = nil
+	return &BrowserAssessmentEnvelope{Active: &active, LatestVersion: active.Version}, nil
 }
 func (s *ResultService) ActivateAssessmentContext(ctx context.Context, task *model.Task, expected string) (*BrowserAssessmentContext, error) {
 	latest, err := s.latestAssessmentContext(ctx, task)
