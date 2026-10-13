@@ -5,6 +5,14 @@ Sepiida Server, and YiJian run in Docker Compose. Octopus and Sepiida Agent run
 as host systemd services so Octopus can call the operator-installed miniwdl
 and both processes can access the same workflow output tree.
 
+## YiJian interface language
+
+Set `YIJIAN_DEFAULT_LOCALE` in the deployment `.env` to `zh-CN` (default),
+`zh-Hant`, `en`, or `es-419`. Recreate the YiJian container after changing it;
+the image does not need rebuilding. A browser's saved language takes priority.
+Users choose their preference under Settings → Personal settings → Interface language
+and click Save. The preference is retained in that browser after logout.
+
 ## Requirements
 
 - Linux with systemd, Docker Engine, Docker Compose v2, Bash, and OpenSSL

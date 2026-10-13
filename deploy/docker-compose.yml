@@ -74,6 +74,7 @@ services:
     environment:
       YIJIAN_API_URL: /api
       YIJIAN_BACKEND: octopus
+      YIJIAN_DEFAULT_LOCALE: ${YIJIAN_DEFAULT_LOCALE:-zh-CN}
       YIJIAN_SERVER_API_URL: http://octopus:8080/api
       YIJIAN_SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support@schemabio.com}
       PORT: "3000"
