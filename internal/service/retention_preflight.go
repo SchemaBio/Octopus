@@ -48,7 +48,7 @@ type RetentionPreflight struct {
 // original creation rather than a mutable client input or completion time.
 func ResearchRetentionPreflight(ctx context.Context, db *gorm.DB, cfg *config.Config, now time.Time, objects bool) (*RetentionPreflight, error) {
 	out := &RetentionPreflight{ReadOnly: true, Cutoff: now.UTC(), Edition: cfg.Edition, CleanupEnabled: cfg.RetentionCleanupEnabled, BackupVerificationConfigured: cfg.RetentionBackupPolicyVerified, CloudBackupVerification: "external verification required", Resources: []RetentionInventory{}}
-	if err := db.Raw("SELECT has_schema_privilege(current_user,'public','CREATE')").Scan(&out.SchemaCreateAllowed).Error; err != nil {
+	if err := db.Raw("SELECT has_schema_privilege(current_user,current_schema(),'CREATE')").Scan(&out.SchemaCreateAllowed).Error; err != nil {
 		return nil, err
 	}
 	for _, item := range [][2]string{{"tasks", "task"}, {"samples", "sample"}} {

@@ -18,7 +18,7 @@ octopus research-retention-preflight --objects > retention-preflight.json
 
 SQL 回归脚本位于 `scripts/tests/research_retention_sql.py`。与 Squid 源码放在同级目录，生成 SQL 后通过 `psql -X -v ON_ERROR_STOP=1` 执行。所有对象位于 `pg_temp`，事务最终 `ROLLBACK`，覆盖期限不可变、JSON 迁移幂等、到期写入限制、历史受控删除、执行防重建、多租户及租约恢复。不要移除临时命名空间或回滚语句。
 
-先确认 `schema_create_allowed=true`；若为 false，需由数据库管理员授予迁移所需的公共 schema 创建权限。对象清单失败必须解决权限或服务兼容性问题，不得把无法列举版本视为没有版本。制作成功的基线需先验证独立资源副本，不能把任务前缀整体删除当作基线搬迁。
+先确认 `schema_create_allowed=true`；若为 false，需由数据库管理员授予迁移所需的当前应用 schema 创建权限，无需授予公共 schema 权限。对象清单失败必须解决权限或服务兼容性问题，不得把无法列举版本视为没有版本。制作成功的基线需先验证独立资源副本，不能把任务前缀整体删除当作基线搬迁。
 
 上线前由运维核验并留存不含分析数据的证据：
 
