@@ -49,6 +49,11 @@ func EnableSaaSRetention() error {
 		if err := tx.Exec("CREATE TABLE IF NOT EXISTS research_schema_changes(id text PRIMARY KEY)").Error; err != nil {
 			return err
 		}
+		// Legacy ZIP jobs carry their task identity only in the scoped object key.
+		// Persist it before installing the admission fence or enabling hard deletion.
+		if err := tx.Exec(`UPDATE raw_result_packages r SET task_uuid=t.uuid FROM tasks t WHERE (r.task_uuid IS NULL OR r.task_uuid='') AND split_part(r.object_key,'/',1)='organizations' AND split_part(r.object_key,'/',2)=t.external_org_id AND split_part(r.object_key,'/',3)='workflows' AND split_part(r.object_key,'/',4)=t.uuid`).Error; err != nil {
+			return err
+		}
 		provenance := tx.Exec("INSERT INTO research_schema_changes(id) VALUES ('sample-member-provenance-v1') ON CONFLICT DO NOTHING")
 		if provenance.Error != nil {
 			return provenance.Error
@@ -134,7 +139,7 @@ func installRetentionWriteFences(tx *gorm.DB) error {
 			field = stmt.Schema.LookUpField("TaskID")
 		}
 		if field == nil {
-			return fmt.Errorf("task content lacks scope")
+			return fmt.Errorf("task content %s lacks scope", stmt.Schema.Table)
 		}
 		table := stmt.Schema.Table
 		if err := tx.Exec("DROP TRIGGER IF EXISTS research_task_content_fence ON " + table).Error; err != nil {

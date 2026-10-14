@@ -29,6 +29,7 @@ type ResultDownload struct {
 
 type RawResultPackage struct {
 	ID        string `gorm:"primaryKey;size:64"`
+	TaskUUID  string `gorm:"size:36;index"`
 	ObjectKey string `gorm:"size:1000"`
 	Status    string `gorm:"size:16"`
 	Error     string `gorm:"size:255"`

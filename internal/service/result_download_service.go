@@ -322,7 +322,7 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	}
 	claimed := false
 	err = database.DB.Transaction(func(tx *gorm.DB) error {
-		row := model.RawResultPackage{ID: downloadID(key), ObjectKey: key, Status: "pending"}
+		row := model.RawResultPackage{ID: downloadID(key), TaskUUID: task.UUID, ObjectKey: key, Status: "pending"}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 			return err
 		}

@@ -45,3 +45,18 @@ func TestRetentionScopeCoversListsCountsAndContent(t *testing.T) {
 		}
 	}
 }
+
+func TestRetentionWriteFenceModelsHaveTaskScope(t *testing.T) {
+	connection, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: connection}), &gorm.Config{DisableAutomaticPing: true, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := installRetentionWriteFences(db); err != nil {
+		t.Fatal(err)
+	}
+}
