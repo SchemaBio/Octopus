@@ -15,9 +15,9 @@ type RetentionInventory struct {
 	OrgID     string            `json:"org_id"`
 	ExpiresAt time.Time         `json:"expires_at"`
 	Prefix    string            `json:"prefix,omitempty"`
-	Current   []RetentionObject `json:"current,omitempty"`
-	Versions  []RetentionObject `json:"versions,omitempty"`
-	Multipart []RetentionObject `json:"multipart,omitempty"`
+	Current   []RetentionObject `json:"current,omitempty" gorm:"-"`
+	Versions  []RetentionObject `json:"versions,omitempty" gorm:"-"`
+	Multipart []RetentionObject `json:"multipart,omitempty" gorm:"-"`
 }
 type RetentionObject struct {
 	Key          string `json:"key"`
