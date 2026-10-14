@@ -390,6 +390,8 @@ func (s *SampleService) SampleToResponse(sample *model.Sample) model.SampleRespo
 
 // SampleToDetailResponse converts sample to detail response
 func (s *SampleService) SampleToDetailResponse(sample *model.Sample) model.SampleDetailResponse {
+	clinical := parseClinicalDiagnosis(sample.ClinicalDiagnosis)
+	clinical.HPOTerms = sample.GetHPOTerms()
 	return model.SampleDetailResponse{
 		ID:                sample.UUID,
 		InternalID:        sample.InternalID,
@@ -402,7 +404,7 @@ func (s *SampleService) SampleToDetailResponse(sample *model.Sample) model.Sampl
 		MatchMode:         sample.MatchMode,
 		AutoMatchEnabled:  sample.AutoMatchEnabled,
 		Remark:            sample.Remark,
-		ClinicalDiagnosis: parseClinicalDiagnosis(sample.ClinicalDiagnosis),
+		ClinicalDiagnosis: clinical,
 		SubmissionInfo:    sample.GetSubmissionInfo(),
 		ProjectInfo:       sample.GetProjectInfo(),
 		FamilyHistory:     sample.GetFamilyHistory(),
