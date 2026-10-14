@@ -40,7 +40,7 @@ type reportSnapshot struct {
 	Members         []model.ResultMember    `json:"members"`
 	QC              []model.QCMemberSummary `json:"qc"`
 	Datasets        []reportDatasetVersion  `json:"datasets"`
-	Reported        []reportSnapshotRow     `json:"reported_variants"`
+	Focused         []reportSnapshotRow     `json:"focused_variants"`
 }
 type reportDatasetVersion struct {
 	ID                 string `json:"id"`
@@ -72,10 +72,10 @@ func (s *ReportService) PreviewReport(ctx context.Context, t *model.Task) (map[s
 		return nil, e
 	}
 	counts := map[string]int{}
-	for _, r := range snap.Reported {
+	for _, r := range snap.Focused {
 		counts[r.Table]++
 	}
-	return map[string]interface{}{"taskUuid": snap.TaskUUID, "attemptId": snap.AttemptID, "snapshotSha256": hash, "datasets": snap.Datasets, "reportedCounts": counts, "reportedTotal": len(snap.Reported), "memberCount": len(snap.Members), "qcMemberCount": len(snap.QC)}, nil
+	return map[string]interface{}{"taskUuid": snap.TaskUUID, "attemptId": snap.AttemptID, "snapshotSha256": hash, "datasets": snap.Datasets, "focusedCounts": counts, "focusedTotal": len(snap.Focused), "memberCount": len(snap.Members), "qcMemberCount": len(snap.QC)}, nil
 }
 
 func (s *ReportService) prepareReportSnapshot(ctx context.Context, task *model.Task) (string, string, error) {
@@ -87,7 +87,7 @@ func (s *ReportService) prepareReportSnapshot(ctx context.Context, task *model.T
 	if resultContext.State != "ready" {
 		return "", "", ErrResultPackageNotReady
 	}
-	snapshot := reportSnapshot{Contract: "report-snapshot-v2", TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Pipeline: task.Pipeline, PipelineVersion: task.PipelineVersion, Reference: resultContext.Reference, Members: resultContext.Members, QC: resultContext.QC, Datasets: []reportDatasetVersion{}, Reported: []reportSnapshotRow{}}
+	snapshot := reportSnapshot{Contract: "report-snapshot-v2", TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, Pipeline: task.Pipeline, PipelineVersion: task.PipelineVersion, Reference: resultContext.Reference, Members: resultContext.Members, QC: resultContext.QC, Datasets: []reportDatasetVersion{}, Focused: []reportSnapshotRow{}}
 	e = database.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current model.Task
 		if e := tx.Where("uuid=? AND execution_attempt_id=?", task.UUID, task.ExecutionAttemptID).First(&current).Error; e != nil {
@@ -124,10 +124,10 @@ func (s *ReportService) prepareReportSnapshot(ctx context.Context, task *model.T
 		for _, d := range datasets {
 			snapshot.Datasets = append(snapshot.Datasets, reportDatasetVersion{d.ID, d.Table, d.DataVersion, d.AdjustmentRevision})
 			var adjustments []model.ResultRowAdjustment
-			if e := tx.Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND dataset_version=? AND payload_json->>'reported'='true'", d.TenantID, task.UUID, task.ExecutionAttemptID, d.Table, d.DataVersion).Order("row_id").Limit(10001).Find(&adjustments).Error; e != nil {
+			if e := tx.Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND dataset_version=? AND payload_json->>'focused'='true'", d.TenantID, task.UUID, task.ExecutionAttemptID, d.Table, d.DataVersion).Order("row_id").Limit(10001).Find(&adjustments).Error; e != nil {
 				return e
 			}
-			if len(snapshot.Reported)+len(adjustments) > 10000 {
+			if len(snapshot.Focused)+len(adjustments) > 10000 {
 				return errors.New("report snapshot exceeds 10000 selected variants")
 			}
 			if len(adjustments) == 0 {
@@ -138,9 +138,9 @@ func (s *ReportService) prepareReportSnapshot(ctx context.Context, task *model.T
 				return e
 			}
 			for _, a := range adjustments {
-				var source model.HistoryReport
-				if e := tx.Where("tenant_id=? AND task_uuid=? AND attempt_id=? AND dataset_id=? AND dataset_version=? AND row_id=? AND reported=true AND deleted=false", d.TenantID, task.UUID, task.ExecutionAttemptID, d.ID, d.DataVersion, a.RowID).First(&source).Error; e != nil {
-					return errors.New("reported source identity is unavailable; run controlled history backfill")
+				var source model.HistoryFocus
+				if e := tx.Where("tenant_id=? AND task_uuid=? AND attempt_id=? AND dataset_id=? AND dataset_version=? AND row_id=? AND focused=true AND deleted=false", d.TenantID, task.UUID, task.ExecutionAttemptID, d.ID, d.DataVersion, a.RowID).First(&source).Error; e != nil {
+					return errors.New("focused source identity is unavailable; run controlled history backfill")
 				}
 				if !browserOrdinalMatches(&d, a.RowID, source.RowOrdinal) {
 					return ErrAdjustmentConflict
@@ -170,7 +170,7 @@ func (s *ReportService) prepareReportSnapshot(ctx context.Context, task *model.T
 					row.AssessmentProfile = browserAssessmentProfile
 					// A legacy server baseline belongs to a different assessment
 					// contract. Never attach it to the browser's fixed context.
-					snapshot.Reported = append(snapshot.Reported, row)
+					snapshot.Focused = append(snapshot.Focused, row)
 					continue
 				}
 				var auto model.ResultRowAutomaticAssessment
@@ -180,7 +180,7 @@ func (s *ReportService) prepareReportSnapshot(ctx context.Context, task *model.T
 				} else if !errors.Is(e, gorm.ErrRecordNotFound) {
 					return e
 				}
-				snapshot.Reported = append(snapshot.Reported, row)
+				snapshot.Focused = append(snapshot.Focused, row)
 			}
 		}
 		return nil

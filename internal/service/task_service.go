@@ -23,6 +23,7 @@ import (
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/pathsafe"
 	"github.com/SchemaBio/Octopus/internal/repository"
+	"github.com/SchemaBio/Octopus/internal/retention"
 	"github.com/SchemaBio/Octopus/internal/sepiida"
 	"github.com/SchemaBio/Octopus/internal/workflow"
 	"github.com/google/uuid"
@@ -1028,6 +1029,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		TenantID:           model.TenantIDForIdentity(actor.OrgID, actor.UserID),
 		EstimatedMinutes:   s.estimateTaskMinutes(sampleIDRef, uploadJob),
 		CreatedAt:          now,
+		ExpiresAt:          researchDeadline(s.cfg, now),
 		UpdatedAt:          now,
 	}
 
@@ -1582,6 +1584,14 @@ func (s *TaskService) runTaskArchiveImport(task *model.Task, archiveDir string) 
 }
 
 func (s *TaskService) runTaskArchiveImportForAttempt(task *model.Task, archiveDir, expectedAttemptID, source string) error {
+	if s.cfg.IsSaaS() {
+		ctx, done := retention.Track(context.Background(), task.UUID)
+		defer done()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+
 	fingerprint := archiveImportFingerprint(task, archiveDir)
 	now := time.Now()
 	attemptNumber, err := s.repo.BeginResultImportForAttempt(task, expectedAttemptID, s.cfg.Task.ArchiveDir, fingerprint, now, 15*time.Minute)
@@ -1830,6 +1840,7 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 		DispatchRetryDeadlineAt: task.CVMDispatchRetryDeadlineAt,
 		DispatchRetryCount:      task.CVMDispatchRetryCount,
 		CreatedAt:               task.CreatedAt,
+		ExpiresAt:               task.ExpiresAt,
 		ResultImportStatus:      task.ResultImportStatus,
 		ResultImportError:       task.ResultImportError,
 		ResultImportedAt:        task.ResultImportedAt,
@@ -2464,15 +2475,28 @@ func (s *TaskService) stageCOSArchive(task *model.Task, metadata model.SepiidaAr
 	if task == nil || s.cfg.Storage.Provider != "s3" {
 		return fmt.Errorf("COS/S3 storage is required for a CVM archive")
 	}
+	ctx := context.Background()
+	if s.cfg.IsSaaS() {
+		var done func()
+		ctx, done = retention.Track(ctx, task.UUID)
+		defer done()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var live model.Task
+		if err := database.DB.WithContext(ctx).Select("uuid").Where("uuid=? AND external_org_id=?", task.UUID, task.ExternalOrgID).First(&live).Error; err != nil {
+			return fmt.Errorf("task unavailable")
+		}
+	}
 	prefix, err := validatedCOSArchivePrefix(task, metadata, s.cfg.Storage)
 	if err != nil {
 		return err
 	}
-	storage, err := newS3Storage(context.Background(), s.cfg.Storage)
+	storage, err := newS3Storage(ctx, s.cfg.Storage)
 	if err != nil {
 		return err
 	}
-	objects, err := storage.list(context.Background(), prefix+"/")
+	objects, err := storage.list(ctx, prefix+"/")
 	if err != nil {
 		return err
 	}
@@ -2488,6 +2512,9 @@ func (s *TaskService) stageCOSArchive(task *model.Task, metadata model.SepiidaAr
 	}
 	selected := 0
 	for _, object := range objects {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		name := path.Base(object.Key)
 		if name != "outputs.resolved.json" && !isStructuredResultFile(name) {
 			continue
@@ -2500,7 +2527,7 @@ func (s *TaskService) stageCOSArchive(task *model.Task, metadata model.SepiidaAr
 			selected++
 			continue
 		}
-		source, err := storage.open(context.Background(), object.Key)
+		source, err := storage.open(ctx, object.Key)
 		if err != nil {
 			return err
 		}
@@ -3082,6 +3109,51 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 	if event.Version < 1 {
 		return fmt.Errorf("CVM event version is required")
 	}
+	if s.cfg.IsSaaS() {
+		var expired model.Task
+		if err := database.DB.Unscoped().Where("uuid=? AND expires_at<=?", event.TaskUUID, time.Now()).First(&expired).Error; err == nil {
+			if event.ExecutionPhase != "terminal" || !cvmAttemptStateTerminal(event.InstanceState) {
+				return fmt.Errorf("task expired")
+			}
+			if expired.Executor != model.ExecutorCVM {
+				return fmt.Errorf("task is not a CVM task")
+			}
+			if expired.CVMInstanceID != "" && event.InstanceID != "" && expired.CVMInstanceID != event.InstanceID {
+				return fmt.Errorf("CVM instance does not match task")
+			}
+			if expired.ExecutionAttemptID != event.AttemptID {
+				return nil
+			}
+			if expired.LastCVMEventVersion > event.Version {
+				return nil
+			}
+			previous := expired.Status
+			if expired.LastCVMEventVersion == event.Version {
+				return s.emitTaskEventWithError(terminalOverlayEventForCVMState(expired.Status, expired.Status), model.OverlayActor{}, &expired, previous, "research retention expired")
+			}
+			expired.Version++
+			if expired.StartedAt == nil && event.StartedAt != nil && cvmEventCarriesBusinessStart(event) {
+				expired.StartedAt = event.StartedAt
+			}
+			if event.FinishedAt != nil {
+				expired.FinishedAt = event.FinishedAt
+			}
+			if expired.Status != model.TaskStatusCompleted && expired.Status != model.TaskStatusFailed {
+				expired.Status = model.TaskStatusCancelled
+			}
+			expired.ExecutionPhase = "terminal"
+			expired.VMStatus = event.InstanceState
+			expired.LastCVMEventVersion = event.Version
+			if expired.FinishedAt == nil {
+				now := time.Now().UTC()
+				expired.FinishedAt = &now
+			}
+			if err := database.DB.Unscoped().Model(&model.Task{}).Where("id=?", expired.ID).Updates(map[string]interface{}{"status": expired.Status, "execution_phase": "terminal", "vm_status": event.InstanceState, "last_cvm_event_version": event.Version, "finished_at": expired.FinishedAt, "started_at": expired.StartedAt, "version": expired.Version}).Error; err != nil {
+				return err
+			}
+			return s.emitTaskEventWithError(terminalOverlayEventForCVMState(expired.Status, expired.Status), model.OverlayActor{}, &expired, previous, "research retention expired")
+		}
+	}
 	task, err := s.repo.FindByUUID(event.TaskUUID)
 	if err != nil {
 		// A terminal callback can be replayed after the first delivery already
@@ -3429,4 +3501,12 @@ func containsAny(s string, substrs ...string) bool {
 		}
 	}
 	return false
+}
+
+func researchDeadline(cfg *config.Config, created time.Time) *time.Time {
+	if !cfg.IsSaaS() {
+		return nil
+	}
+	deadline := created.UTC().Add(720 * time.Hour)
+	return &deadline
 }

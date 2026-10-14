@@ -18,7 +18,11 @@ func RegisterBAMRetention(tx *gorm.DB, task *model.Task, bucket string) error {
 			return nil
 		}
 	}
-	job := model.BAMRetentionJob{ID: uuid.NewString(), TaskUUID: task.UUID, OrgID: task.ExternalOrgID, AttemptID: task.ExecutionAttemptID, Bucket: bucket, CompletedAt: task.FinishedAt.UTC(), ExpiresAt: task.FinishedAt.UTC().Add(7 * 24 * time.Hour), Status: "pending", PlanJSON: "[]"}
+	deadline := task.FinishedAt.UTC().Add(7 * 24 * time.Hour)
+	if task.ExpiresAt != nil && task.ExpiresAt.Before(deadline) {
+		deadline = *task.ExpiresAt
+	}
+	job := model.BAMRetentionJob{ID: uuid.NewString(), TaskUUID: task.UUID, OrgID: task.ExternalOrgID, AttemptID: task.ExecutionAttemptID, Bucket: bucket, CompletedAt: task.FinishedAt.UTC(), ExpiresAt: deadline, Status: "pending", PlanJSON: "[]"}
 	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "task_uuid"}, {Name: "org_id"}, {Name: "attempt_id"}}, DoNothing: true}).Create(&job).Error
 }
 

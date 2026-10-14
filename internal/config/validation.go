@@ -11,6 +11,19 @@ import (
 
 // ValidateStartup checks the configuration for common mistakes at server startup.
 func ValidateStartup(cfg *Config) error {
+	if cfg.Edition != "" && cfg.Edition != "opensource" && cfg.Edition != "saas" {
+		return fmt.Errorf("DEPLOYMENT_EDITION must be opensource or saas")
+	}
+	if cfg.RetentionCleanupEnabled && !cfg.RetentionBackupPolicyVerified {
+		return fmt.Errorf("verify backup and object version policies before enabling retention cleanup")
+	}
+	if cfg.RetentionCleanupEnabled && !cfg.IsSaaS() {
+		return fmt.Errorf("retention cleanup requires SaaS edition")
+	}
+	if cfg.IsSaaS() && (!cfg.Overlay.Enabled || cfg.Storage.Provider != "s3") {
+		return fmt.Errorf("SaaS requires the overlay and object storage")
+	}
+
 	for _, name := range []string{"PARQUET_QUERY_URL", "RESULT_ENGINE_BACKEND", "SVC_ENGINE_BACKEND"} {
 		if strings.TrimSpace(os.Getenv(name)) != "" {
 			return fmt.Errorf("%s was removed: result and SVC engines now run inside Octopus; remove this legacy environment setting", name)

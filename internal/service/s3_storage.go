@@ -9,18 +9,23 @@ import (
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
+	"github.com/SchemaBio/Octopus/internal/database"
+	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type s3Storage struct {
-	bucket  string
-	client  *s3.Client
-	presign *s3.PresignClient
-	expiry  time.Duration
+	taskRetention bool
+	bucket        string
+	client        *s3.Client
+	presign       *s3.PresignClient
+	expiry        time.Duration
 }
 
 type s3ObjectInfo struct {
@@ -63,20 +68,24 @@ func newS3Storage(ctx context.Context, cfg config.StorageConfig) (*s3Storage, er
 	if expiry <= 0 {
 		expiry = 15 * time.Minute
 	}
-	return &s3Storage{bucket: cfg.S3Bucket, client: client, presign: s3.NewPresignClient(presignClient), expiry: expiry}, nil
+	return &s3Storage{taskRetention: cfg.TaskRetentionEnabled, bucket: cfg.S3Bucket, client: client, presign: s3.NewPresignClient(presignClient), expiry: expiry}, nil
 }
 
 func (s *s3Storage) presignUpload(ctx context.Context, key string) (string, error) {
+	expiry, err := s.retentionExpiry(ctx, key, s.expiry)
+	if err != nil {
+		return "", err
+	}
 	request, err := s.presign.PresignPutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(key), ContentType: aws.String("application/octet-stream"),
-	}, func(o *s3.PresignOptions) { o.Expires = s.expiry })
+	}, func(o *s3.PresignOptions) { o.Expires = expiry })
 	if err != nil {
 		return "", fmt.Errorf("presign S3 upload: %w", err)
 	}
 	return request.URL, nil
 }
 
-func (s *s3Storage) createMultipart(ctx context.Context, key, contentType string) (string, error) {
+func (s *s3Storage) createMultipartUnchecked(ctx context.Context, key, contentType string) (string, error) {
 	output, err := s.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(key), ContentType: aws.String(contentType),
 	})
@@ -90,16 +99,20 @@ func (s *s3Storage) createMultipart(ctx context.Context, key, contentType string
 }
 
 func (s *s3Storage) presignUploadPart(ctx context.Context, key, uploadID string, partNumber int) (string, error) {
+	expiry, err := s.retentionExpiry(ctx, key, s.expiry)
+	if err != nil {
+		return "", err
+	}
 	request, err := s.presign.PresignUploadPart(ctx, &s3.UploadPartInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(key), UploadId: aws.String(uploadID), PartNumber: aws.Int32(int32(partNumber)),
-	}, func(o *s3.PresignOptions) { o.Expires = s.expiry })
+	}, func(o *s3.PresignOptions) { o.Expires = expiry })
 	if err != nil {
 		return "", fmt.Errorf("presign S3 upload part: %w", err)
 	}
 	return request.URL, nil
 }
 
-func (s *s3Storage) completeMultipart(ctx context.Context, key, uploadID string, parts []multipartPart) error {
+func (s *s3Storage) completeMultipartUnchecked(ctx context.Context, key, uploadID string, parts []multipartPart) error {
 	completed := make([]s3types.CompletedPart, 0, len(parts))
 	for _, part := range parts {
 		etag := part.ETag
@@ -126,7 +139,7 @@ func (s *s3Storage) abortMultipart(ctx context.Context, key, uploadID string) er
 
 func numberPtr(value int32) *int32 { return &value }
 
-func (s *s3Storage) put(ctx context.Context, key, contentType string, body []byte) error {
+func (s *s3Storage) putUnchecked(ctx context.Context, key, contentType string, body []byte) error {
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
 		Key:         aws.String(key),
@@ -140,7 +153,7 @@ func (s *s3Storage) put(ctx context.Context, key, contentType string, body []byt
 }
 
 // putReader uploads a stream without materialising the object in memory.
-func (s *s3Storage) putReader(ctx context.Context, key, contentType string, body io.Reader, size int64) error {
+func (s *s3Storage) putReaderUnchecked(ctx context.Context, key, contentType string, body io.Reader, size int64) error {
 	input := &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(key), Body: body,
 		ContentType: aws.String(contentType),
@@ -162,6 +175,10 @@ func (s *s3Storage) presignDownloadWithExpiry(ctx context.Context, key, filename
 	if expiry <= 0 {
 		expiry = s.expiry
 	}
+	expiry, capErr := s.retentionExpiry(ctx, key, expiry)
+	if capErr != nil {
+		return "", capErr
+	}
 	disposition := fmt.Sprintf("attachment; filename=%q", filename)
 	request, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(key), ResponseContentDisposition: aws.String(disposition),
@@ -179,6 +196,10 @@ func (s *s3Storage) presignDownloadWithExpiry(ctx context.Context, key, filename
 func (s *s3Storage) presignRead(ctx context.Context, key string, expiry time.Duration) (string, error) {
 	if expiry <= 0 {
 		expiry = s.expiry
+	}
+	expiry, capErr := s.retentionExpiry(ctx, key, expiry)
+	if capErr != nil {
+		return "", capErr
 	}
 	request, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(key),
@@ -239,4 +260,72 @@ func (s *s3Storage) list(ctx context.Context, prefix string) ([]s3ObjectInfo, er
 		token = output.NextContinuationToken
 	}
 	return items, nil
+}
+
+// References and independent baseline resources have their own retention rules.
+func (s *s3Storage) retentionExpiry(ctx context.Context, key string, ttl time.Duration) (time.Duration, error) {
+	if !s.taskRetention {
+		return ttl, nil
+	}
+	parts := strings.Split(key, "/")
+	if len(parts) < 5 || parts[0] != "organizations" || parts[2] != "workflows" {
+		return ttl, nil
+	}
+	if database.DB == nil {
+		return 0, fmt.Errorf("retention identity unavailable")
+	}
+	var task model.Task
+	if err := database.DB.WithContext(ctx).Where("uuid=? AND external_org_id=?", parts[3], parts[1]).First(&task).Error; err != nil {
+		return 0, fmt.Errorf("task unavailable")
+	}
+	if task.ExpiresAt == nil {
+		return 0, fmt.Errorf("task deadline unavailable")
+	}
+	return capRetentionTTL(time.Now().UTC(), ttl, *task.ExpiresAt)
+}
+func capRetentionTTL(now time.Time, ttl time.Duration, deadline time.Time) (time.Duration, error) {
+	remaining := deadline.Sub(now)
+	// S3 signs in whole seconds: round down so a grant never crosses expiry.
+	if remaining < time.Second {
+		return 0, fmt.Errorf("task expired")
+	}
+	if ttl > remaining {
+		ttl = remaining
+	}
+	return ttl.Truncate(time.Second), nil
+}
+
+func (s *s3Storage) withTaskWrite(ctx context.Context, key string, write func() error) error {
+	parts := strings.Split(key, "/")
+	if !s.taskRetention || len(parts) < 5 || parts[0] != "organizations" || parts[2] != "workflows" {
+		return write()
+	}
+	if database.DB == nil {
+		return fmt.Errorf("retention identity unavailable")
+	}
+	return database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task model.Task
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("uuid=? AND external_org_id=? AND expires_at>?", parts[3], parts[1], time.Now().UTC()).First(&task).Error; err != nil {
+			return fmt.Errorf("task unavailable")
+		}
+		return write()
+	})
+}
+func (s *s3Storage) createMultipart(ctx context.Context, key, contentType string) (string, error) {
+	var uploadID string
+	err := s.withTaskWrite(ctx, key, func() error {
+		var err error
+		uploadID, err = s.createMultipartUnchecked(ctx, key, contentType)
+		return err
+	})
+	return uploadID, err
+}
+func (s *s3Storage) put(ctx context.Context, key, contentType string, body []byte) error {
+	return s.withTaskWrite(ctx, key, func() error { return s.putUnchecked(ctx, key, contentType, body) })
+}
+func (s *s3Storage) putReader(ctx context.Context, key, contentType string, body io.Reader, size int64) error {
+	return s.withTaskWrite(ctx, key, func() error { return s.putReaderUnchecked(ctx, key, contentType, body, size) })
+}
+func (s *s3Storage) completeMultipart(ctx context.Context, key, uploadID string, parts []multipartPart) error {
+	return s.withTaskWrite(ctx, key, func() error { return s.completeMultipartUnchecked(ctx, key, uploadID, parts) })
 }

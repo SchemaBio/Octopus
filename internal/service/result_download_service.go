@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/SchemaBio/Octopus/internal/retention"
 	"io"
 	"log"
 	"os"
@@ -383,8 +384,24 @@ func archivedMitochondrialVCFRefs(manifest map[string]interface{}, byBase map[st
 func (s *ResultDownloadService) buildRawZIP(storage *s3Storage, key, prefix string, keys []string, sources map[string]s3ObjectInfo, missing []string, qcJSON []byte) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
+	parts := strings.Split(prefix, "/")
+	taskID := ""
+	if len(parts) > 3 && parts[2] == "workflows" {
+		taskID = parts[3]
+	}
+	if s.cfg.IsSaaS() {
+		if taskID == "" {
+			return
+		}
+		var done func()
+		ctx, done = retention.Track(ctx, taskID)
+		defer done()
+		if ctx.Err() != nil {
+			return
+		}
+	}
 	err := func() error {
-		file, err := os.CreateTemp("", "octopus-raw-*.zip")
+		file, err := os.CreateTemp("", taskID+"-octopus-raw-*.zip")
 		if err != nil {
 			return err
 		}

@@ -85,6 +85,7 @@ type Task struct {
 	CreatedBy        uint           `json:"created_by" gorm:"index"`
 	StartedAt        *time.Time     `json:"started_at,omitempty" gorm:"type:timestamptz"`
 	FinishedAt       *time.Time     `json:"finished_at,omitempty" gorm:"type:timestamptz"`
+	ExpiresAt        *time.Time     `json:"expires_at,omitempty" gorm:"index;type:timestamptz"`
 	CreatedAt        time.Time      `json:"created_at" gorm:"autoCreateTime;type:timestamptz"`
 	UpdatedAt        time.Time      `json:"updated_at" gorm:"autoUpdateTime;type:timestamptz"`
 	DeletedAt        gorm.DeletedAt `json:"-" gorm:"index"`
@@ -249,6 +250,7 @@ type TaskResponse struct {
 	DispatchRetryDeadlineAt string     `json:"dispatch_retry_deadline_at,omitempty"`
 	DispatchRetryCount      int        `json:"dispatch_retry_count,omitempty"`
 	Progress                int        `json:"progress"`
+	ExpiresAt               *time.Time `json:"expires_at,omitempty"`
 	CreatedAt               string     `json:"created_at"`
 	CreatedBy               string     `json:"createdBy"`
 	CompletedAt             string     `json:"completedAt,omitempty"`
@@ -281,6 +283,7 @@ type TaskDetailResponse struct {
 	DispatchNextRetryAt     string     `json:"dispatch_next_retry_at,omitempty"`
 	DispatchRetryDeadlineAt string     `json:"dispatch_retry_deadline_at,omitempty"`
 	DispatchRetryCount      int        `json:"dispatch_retry_count,omitempty"`
+	ExpiresAt               *time.Time `json:"expires_at,omitempty"`
 	CreatedAt               string     `json:"created_at"`
 	CreatedBy               string     `json:"createdBy"`
 	CompletedAt             string     `json:"completedAt,omitempty"`
@@ -318,6 +321,7 @@ type TaskAuditResponse struct {
 	ResultImportStatus       ResultImportStatus `json:"result_import_status,omitempty"`
 	ResultImportAttempts     int                `json:"result_import_attempts,omitempty"`
 	Error                    string             `json:"error,omitempty"`
+	ExpiresAt                *time.Time         `json:"expires_at,omitempty"`
 	CreatedAt                string             `json:"created_at"`
 	UpdatedAt                string             `json:"updated_at,omitempty"`
 	StartedAt                string             `json:"started_at,omitempty"`
@@ -354,6 +358,7 @@ func (t *Task) ToAuditResponse() TaskAuditResponse {
 		ResultImportAttempts:     t.ResultImportAttempts,
 		Error:                    t.Error,
 		CreatedAt:                t.CreatedAt.Format(time.RFC3339),
+		ExpiresAt:                t.ExpiresAt,
 		UpdatedAt:                t.UpdatedAt.Format(time.RFC3339),
 		CreatedBy:                formatID(t.CreatedBy),
 		OrgID:                    t.ExternalOrgID,
@@ -410,6 +415,7 @@ type TaskProgressResponse struct {
 	DispatchNextRetryAt     *time.Time         `json:"dispatch_next_retry_at,omitempty"`
 	DispatchRetryDeadlineAt *time.Time         `json:"dispatch_retry_deadline_at,omitempty"`
 	DispatchRetryCount      int                `json:"dispatch_retry_count,omitempty"`
+	ExpiresAt               *time.Time         `json:"expires_at,omitempty"`
 	CreatedAt               time.Time          `json:"created_at"`
 	ResultImportStatus      ResultImportStatus `json:"result_import_status,omitempty"`
 	ResultImportError       string             `json:"result_import_error,omitempty"`
@@ -482,6 +488,7 @@ func (t *Task) ToResponse() TaskResponse {
 		DispatchRetryCount: t.CVMDispatchRetryCount,
 		Progress:           t.Progress,
 		CreatedAt:          t.CreatedAt.Format(time.RFC3339),
+		ExpiresAt:          t.ExpiresAt,
 		CreatedBy:          formatID(t.CreatedBy),
 		Remark:             t.Remark,
 	}
@@ -516,6 +523,7 @@ func (t *Task) ToDetailResponse() TaskDetailResponse {
 		VMStatus:           t.VMStatus,
 		DispatchRetryCount: t.CVMDispatchRetryCount,
 		CreatedAt:          t.CreatedAt.Format(time.RFC3339),
+		ExpiresAt:          t.ExpiresAt,
 		CreatedBy:          formatID(t.CreatedBy),
 	}
 	if t.CVMDispatchNextRetryAt != nil {

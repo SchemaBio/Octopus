@@ -35,7 +35,7 @@ func (s *ResultService) MigrateLegacyResultAdjustments(ctx context.Context, task
 	query := database.DB.WithContext(ctx).Where("task_id=? AND tenant_id=? AND (execution_attempt_id=? OR execution_attempt_id='')", task.UUID, model.TenantIDForTask(task), executionAttempt(task))
 	// CNV assessments may exist even when neither review marker is set.
 	if table != "cnv-segment" && table != "cnv-exon" {
-		query = query.Where("reviewed=true OR reported=true")
+		query = query.Where("reviewed=true OR focused=true")
 	}
 	if err := query.Find(slice.Interface()).Error; err != nil {
 		return nil, err
@@ -59,10 +59,10 @@ func (s *ResultService) MigrateLegacyResultAdjustments(ctx context.Context, task
 		_ = json.Unmarshal(raw, &old)
 		review, _ := old["reviewStatus"].(map[string]interface{})
 		reviewed, _ := review["reviewed"].(bool)
-		reported, _ := review["reported"].(bool)
+		focused, _ := review["focused"].(bool)
 		legacyID, _ := old["id"].(string)
 		assessment, hasAssessment := assessmentByID[legacyID]
-		if !reviewed && !reported && !hasAssessment {
+		if !reviewed && !focused && !hasAssessment {
 			continue
 		}
 		summary.Checked++
@@ -115,7 +115,7 @@ func (s *ResultService) MigrateLegacyResultAdjustments(ctx context.Context, task
 						mapping.Reason = "current adjustment already exists"
 						summary.Preserved++
 					} else {
-						payload := map[string]interface{}{"reviewed": reviewed, "reported": reported, "legacyReview": review}
+						payload := map[string]interface{}{"reviewed": reviewed, "focused": focused, "legacyReview": review}
 						// legacyReview is audit-only; retain the original actor/timestamps in migration reason/history.
 						delete(payload, "legacyReview")
 						if hasAssessment {

@@ -14,7 +14,7 @@ import (
 
 func runHistoryBackfill(args []string) error {
 	flags := flag.NewFlagSet("history-backfill", flag.ContinueOnError)
-	execute := flags.Bool("execute", false, "write compact reported-row projections; default only inspects candidates")
+	execute := flags.Bool("execute", false, "write compact focused-row projections; default only inspects candidates")
 	task := flags.String("task", "", "optional task UUID restriction")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -27,7 +27,7 @@ func runHistoryBackfill(args []string) error {
 		return err
 	}
 	defer database.CloseDB()
-	result, err := service.NewResultService(cfg).BackfillHistoryReports(context.Background(), *execute, *task)
+	result, err := service.NewResultService(cfg).BackfillHistoryFocuses(context.Background(), *execute, *task)
 	if err != nil {
 		return err
 	}

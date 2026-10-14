@@ -77,8 +77,12 @@ type sorter struct {
 	disk   diskBudget
 }
 
-func newSorter(ctx context.Context, root string, desc bool) (*sorter, error) {
-	dir, err := os.MkdirTemp(root, "octopus-sort-*")
+func newSorter(ctx context.Context, root string, desc bool, identity ...string) (*sorter, error) {
+	pattern := "octopus-sort-*"
+	if len(identity) > 0 && fingerprint.MatchString(identity[0]) {
+		pattern = "octopus-sort-" + identity[0] + "-*"
+	}
+	dir, err := os.MkdirTemp(root, pattern)
 	if err != nil {
 		return nil, err
 	}

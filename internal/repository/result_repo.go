@@ -90,7 +90,7 @@ func (r *ResultRepository) PaginateSNVIndels(query *model.SNVIndelListQuery) ([]
 	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
 		"classification": acmgClassificationOrder, "gene": "gene", "chromosome": naturalChromosomeOrder("chromosome"),
 		"position": "position", "depth": "depth", "vaf": "vaf", "alleleFrequency": "vaf", "zygosity": "zygosity",
-		"acmgClassification": acmgClassificationOrder, "reviewed": "reviewed", "reported": "reported",
+		"acmgClassification": acmgClassificationOrder, "reviewed": "reviewed", "focused": "focused",
 		"gnomadAF": "gnomad_af", "gnomadEasAF": "gnomad_eas_af", "clinvarSignificance": "clinvar_significance",
 	}, acmgClassificationOrder+" ASC", "gene ASC")
 	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
@@ -110,10 +110,10 @@ func (r *ResultRepository) UpdateSNVIndelReview(id string, reviewed bool, review
 	}).Error
 }
 
-func (r *ResultRepository) UpdateSNVIndelReport(id string, reported bool, reporter string) error {
+func (r *ResultRepository) UpdateSNVIndelFocus(id string, focused bool, focuser string) error {
 	return r.db.Model(&model.SNVIndel{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reported":    reported,
-		"reported_by": reporter,
+		"focused":    focused,
+		"focused_by": focuser,
 	}).Error
 }
 
@@ -150,7 +150,7 @@ func (r *ResultRepository) PaginateCNVSegments(query *model.CNVSegmentListQuery)
 	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
 		"chromosome": naturalChromosomeOrder("chromosome"), "start": "start_position", "startPosition": "start_position",
 		"end": "end_position", "endPosition": "end_position", "length": "(end_position - start_position)", "type": "type",
-		"classification": "classification", "confidence": "weight", "reviewed": "reviewed", "reported": "reported",
+		"classification": "classification", "confidence": "weight", "reviewed": "reviewed", "focused": "focused",
 	}, naturalChromosomeOrder("chromosome")+" ASC", "start_position ASC")
 	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
@@ -168,9 +168,9 @@ func (r *ResultRepository) UpdateCNVSegmentReview(id string, reviewed bool, revi
 	}).Error
 }
 
-func (r *ResultRepository) UpdateCNVSegmentReport(id string, reported bool, reporter string) error {
+func (r *ResultRepository) UpdateCNVSegmentFocus(id string, focused bool, focuser string) error {
 	return r.db.Model(&model.CNVSegment{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reported": reported, "reported_by": reporter,
+		"focused": focused, "focused_by": focuser,
 	}).Error
 }
 
@@ -204,7 +204,7 @@ func (r *ResultRepository) PaginateCNVExons(query *model.CNVExonListQuery) ([]mo
 	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
 		"gene": "gene", "chromosome": naturalChromosomeOrder("chromosome"), "start": "start_position", "startPosition": "start_position",
 		"end": "end_position", "endPosition": "end_position", "type": "type", "classification": "classification",
-		"ratio": "copy_ratio", "confidence": "weight", "reviewed": "reviewed", "reported": "reported",
+		"ratio": "copy_ratio", "confidence": "weight", "reviewed": "reviewed", "focused": "focused",
 	}, "gene ASC", "start_position ASC", "end_position ASC")
 	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
@@ -222,9 +222,9 @@ func (r *ResultRepository) UpdateCNVExonReview(id string, reviewed bool, reviewe
 	}).Error
 }
 
-func (r *ResultRepository) UpdateCNVExonReport(id string, reported bool, reporter string) error {
+func (r *ResultRepository) UpdateCNVExonFocus(id string, focused bool, focuser string) error {
 	return r.db.Model(&model.CNVExon{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reported": reported, "reported_by": reporter,
+		"focused": focused, "focused_by": focuser,
 	}).Error
 }
 
@@ -260,7 +260,7 @@ func (r *ResultRepository) PaginateSTRs(query *model.STRListQuery) ([]model.STR,
 	var results []model.STR
 	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
 		"gene": "gene", "chromosome": naturalChromosomeOrder("chromosome"), "position": "position", "status": "status",
-		"repeatCount": "ref_repeats", "reviewed": "reviewed", "reported": "reported",
+		"repeatCount": "ref_repeats", "reviewed": "reviewed", "focused": "focused",
 	}, "gene ASC", "position ASC")
 	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
@@ -278,9 +278,9 @@ func (r *ResultRepository) UpdateSTRReview(id string, reviewed bool, reviewer st
 	}).Error
 }
 
-func (r *ResultRepository) UpdateSTRReport(id string, reported bool, reporter string) error {
+func (r *ResultRepository) UpdateSTRFocus(id string, focused bool, focuser string) error {
 	return r.db.Model(&model.STR{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reported": reported, "reported_by": reporter,
+		"focused": focused, "focused_by": focuser,
 	}).Error
 }
 
@@ -314,7 +314,7 @@ func (r *ResultRepository) PaginateMEIs(query *model.MEIListQuery) ([]model.MEIV
 	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
 		"gene": "gene", "chromosome": naturalChromosomeOrder("chromosome"), "position": "position", "type": "te_type",
 		"meiType": "te_type", "length": "avg_soft_clip_length", "frequency": "gnomad_af",
-		"supportingReads": "supporting_reads", "reviewed": "reviewed", "reported": "reported",
+		"supportingReads": "supporting_reads", "reviewed": "reviewed", "focused": "focused",
 	}, naturalChromosomeOrder("chromosome")+" ASC", "position ASC")
 	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
@@ -332,9 +332,9 @@ func (r *ResultRepository) UpdateMEIReview(id string, reviewed bool, reviewer st
 	}).Error
 }
 
-func (r *ResultRepository) UpdateMEIReport(id string, reported bool, reporter string) error {
+func (r *ResultRepository) UpdateMEIFocus(id string, focused bool, focuser string) error {
 	return r.db.Model(&model.MEIVariant{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reported": reported, "reported_by": reporter,
+		"focused": focused, "focused_by": focuser,
 	}).Error
 }
 
@@ -371,7 +371,7 @@ func (r *ResultRepository) PaginateMTVariants(query *model.MTListQuery) ([]model
 	var results []model.MitochondrialVariant
 	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
 		"position": "position", "gene": "mt_gene", "heteroplasmy": "heteroplasmy", "pathogenicity": "clinvar_sig",
-		"reviewed": "reviewed", "reported": "reported",
+		"reviewed": "reviewed", "focused": "focused",
 	}, "position ASC")
 	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
@@ -389,9 +389,9 @@ func (r *ResultRepository) UpdateMTVariantReview(id string, reviewed bool, revie
 	}).Error
 }
 
-func (r *ResultRepository) UpdateMTVariantReport(id string, reported bool, reporter string) error {
+func (r *ResultRepository) UpdateMTVariantFocus(id string, focused bool, focuser string) error {
 	return r.db.Model(&model.MitochondrialVariant{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reported": reported, "reported_by": reporter,
+		"focused": focused, "focused_by": focuser,
 	}).Error
 }
 
@@ -422,7 +422,7 @@ func (r *ResultRepository) PaginateUPDRegions(query *model.UPDListQuery) ([]mode
 	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
 		"chromosome": naturalChromosomeOrder("chromosome"), "start": "start_position", "startPosition": "start_position",
 		"end": "end_position", "endPosition": "end_position", "length": "(end_position - start_position)", "type": "type",
-		"reviewed": "reviewed", "reported": "reported",
+		"reviewed": "reviewed", "focused": "focused",
 	}, naturalChromosomeOrder("chromosome")+" ASC", "start_position ASC")
 	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
@@ -440,9 +440,9 @@ func (r *ResultRepository) UpdateUPDRegionReview(id string, reviewed bool, revie
 	}).Error
 }
 
-func (r *ResultRepository) UpdateUPDRegionReport(id string, reported bool, reporter string) error {
+func (r *ResultRepository) UpdateUPDRegionFocus(id string, focused bool, focuser string) error {
 	return r.db.Model(&model.UPDRegion{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reported": reported, "reported_by": reporter,
+		"focused": focused, "focused_by": focuser,
 	}).Error
 }
 
@@ -583,7 +583,7 @@ func (r *ResultRepository) PaginateROHRegions(query *model.ROHListQuery) ([]mode
 	db = applyResultOrder(db, query.Sort, query.Direction, map[string]string{
 		"chromosome": naturalChromosomeOrder("chr"), "start": "begin", "startPosition": "begin", "end": "end", "endPosition": "end",
 		"size": "size_mb", "sizeMb": "size_mb", "variantCount": "nb_variants", "homozygosity": "percentage_homozygosity",
-		"reviewed": "reviewed", "reported": "reported",
+		"reviewed": "reviewed", "focused": "focused",
 	}, naturalChromosomeOrder("chr")+" ASC", "begin ASC")
 	err := db.Offset((page - 1) * pageSize).Limit(pageSize).Find(&results).Error
 	return results, total, err
@@ -657,9 +657,9 @@ func (r *ResultRepository) UpdateROHRegionReview(id string, reviewed bool, revie
 	}).Error
 }
 
-func (r *ResultRepository) UpdateROHRegionReport(id string, reported bool, reporter string) error {
+func (r *ResultRepository) UpdateROHRegionFocus(id string, focused bool, focuser string) error {
 	return r.db.Model(&model.ROHRegion{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"reported": reported, "reported_by": reporter,
+		"focused": focused, "focused_by": focuser,
 	}).Error
 }
 
@@ -705,16 +705,16 @@ func reviewTimestamp(reviewed bool) interface{} {
 	return time.Now().UTC()
 }
 
-// UpdateVariantReport generically updates the report status of any variant type,
+// UpdateVariantFocus generically updates the focus status of any variant type,
 // scoped to the current task to prevent cross-task variant ID tampering.
-func (r *ResultRepository) UpdateVariantReport(variantType, taskID, id string, reported bool, reporter string) error {
+func (r *ResultRepository) UpdateVariantFocus(variantType, taskID, id string, focused bool, focuser string) error {
 	m, ok := variantModel[variantType]
 	if !ok {
 		return fmt.Errorf("unknown variant type: %s", variantType)
 	}
 	tx := r.db.Model(m).Where("id = ? AND task_id = ?", id, taskID).Updates(map[string]interface{}{
-		"reported":    reported,
-		"reported_by": reporter,
+		"focused":    focused,
+		"focused_by": focuser,
 	})
 	if tx.Error != nil {
 		return tx.Error

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -28,6 +29,13 @@ const (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "research-retention-preflight" {
+		if err := runResearchRetentionPreflight(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "retention preflight failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "history-backfill" {
 		if err := runHistoryBackfill(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "history backfill failed: %v\n", err)
@@ -119,8 +127,16 @@ func main() {
 	aiService := assistance.New(database.GetDB(), cfg.ExternalAuth.Enabled, cfg.Overlay.BaseURL, cfg.Overlay.SharedSecret)
 	waitAI := aiService.Start(ctx)
 
+	if cfg.IsSaaS() {
+		if err := database.EnableSaaSRetention(); err != nil {
+			log.Fatalf("retention initialization: %v", err)
+		}
+	}
 	// Start Sepiida status sync for running tasks (every 30s)
 	taskSvc := service.NewTaskService(cfg)
+	retentionSvc := service.NewRetentionService(cfg, taskSvc)
+	retentionSvc.AI = aiService
+	retentionSvc.Start(ctx)
 	service.NewBAMRetentionService(cfg).Start(ctx)
 	taskSvc.StartSepiidaSync(ctx, 30*time.Second)
 	taskSvc.StartExecutionDelivery(ctx)

@@ -27,7 +27,7 @@ func TestDeclaredReferenceIDUsesInputSnapshot(t *testing.T) {
 	}
 }
 
-func TestQCMetricsKeepsReportedZeroDistinctFromUnavailable(t *testing.T) {
+func TestQCMetricsKeepsFocusedZeroDistinctFromUnavailable(t *testing.T) {
 	metrics := qcMetrics(model.QCResult{
 		TotalReads:         0,
 		AverageDepth:       0,
@@ -38,7 +38,7 @@ func TestQCMetricsKeepsReportedZeroDistinctFromUnavailable(t *testing.T) {
 		byKey[metric.Key] = metric
 	}
 	if byKey["totalReads"].Value == nil || *byKey["totalReads"].Value != 0 {
-		t.Fatalf("reported zero totalReads was not preserved: %#v", byKey["totalReads"].Value)
+		t.Fatalf("focused zero totalReads was not preserved: %#v", byKey["totalReads"].Value)
 	}
 	if byKey["averageDepth"].Value != nil {
 		t.Fatalf("unavailable averageDepth was rendered as a value: %#v", byKey["averageDepth"].Value)

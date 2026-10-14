@@ -10,14 +10,14 @@ type ResultProvenance struct {
 	ImportBatchID      uint   `json:"-" gorm:"index"`
 }
 
-// VariantReviewStatus is the base review/report status for all variant types
+// VariantReviewStatus is the base review/focus status for all variant types
 type VariantReviewStatus struct {
 	Reviewed   bool       `json:"reviewed" gorm:"default:false"`
-	Reported   bool       `json:"reported" gorm:"default:false"`
+	Focused    bool       `json:"focused" gorm:"default:false"`
 	ReviewedBy string     `json:"reviewedBy,omitempty" gorm:"size:100"`
 	ReviewedAt *time.Time `json:"reviewedAt,omitempty" gorm:"type:timestamptz"`
-	ReportedBy string     `json:"reportedBy,omitempty" gorm:"size:100"`
-	ReportedAt *time.Time `json:"reportedAt,omitempty" gorm:"type:timestamptz"`
+	FocusedBy  string     `json:"focusedBy,omitempty" gorm:"size:100"`
+	FocusedAt  *time.Time `json:"focusedAt,omitempty" gorm:"type:timestamptz"`
 }
 
 // ACMGClassification represents ACMG variant classification
@@ -39,10 +39,10 @@ func (v *VariantReviewStatus) MarkReviewed(reviewer string) {
 	v.ReviewedAt = &now
 }
 
-// MarkReported marks a variant as reported
-func (v *VariantReviewStatus) MarkReported(reporter string) {
-	v.Reported = true
-	v.ReportedBy = reporter
+// MarkFocused marks a variant as focused
+func (v *VariantReviewStatus) MarkFocused(focuser string) {
+	v.Focused = true
+	v.FocusedBy = focuser
 	now := time.Now()
-	v.ReportedAt = &now
+	v.FocusedAt = &now
 }

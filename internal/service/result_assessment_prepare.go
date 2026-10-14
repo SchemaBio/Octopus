@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/SchemaBio/Octopus/internal/retention"
 	"io"
 	"os"
 	"path/filepath"
@@ -140,6 +141,15 @@ func readAssessmentVCF(input io.Reader, members []model.ResultMember) (map[strin
 // coordinate conventions. No ACMG, filtering, priority, or pin calculation runs
 // here. Peddy/phase/LoF proofs are not fabricated from an absent source.
 func (s *ResultService) PrepareAssessmentEvidence(ctx context.Context, taskID, attempt string, execute bool) (map[string]interface{}, error) {
+	if s.cfg.IsSaaS() {
+		var done func()
+		ctx, done = retention.Track(ctx, taskID)
+		defer done()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+
 	if _, err := uuid.Parse(taskID); err != nil {
 		return nil, fmt.Errorf("invalid task")
 	}
@@ -277,27 +287,35 @@ func (s *ResultService) PrepareAssessmentEvidence(ctx context.Context, taskID, a
 	if executionAttempt(&current) != attempt {
 		return nil, ErrAdjustmentConflict
 	}
-	dir := filepath.Join(s.cfg.ResultQuery.ReferenceDir, "task-proofs", digestAssessment([]byte(model.TenantIDForTask(&task))), taskID)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, err
-	}
-	f, err := os.CreateTemp(dir, "proof-*.part")
-	if err != nil {
-		return nil, err
-	}
-	defer os.Remove(f.Name())
-	if err := f.Chmod(0600); err != nil {
-		f.Close()
-		return nil, err
-	}
-	if _, err := f.Write(raw); err != nil {
-		f.Close()
-		return nil, err
-	}
-	if err := f.Close(); err != nil {
-		return nil, err
-	}
-	if err := os.Rename(f.Name(), filepath.Join(dir, attempt+".json")); err != nil {
+
+	proofStore := &s3Storage{taskRetention: s.cfg.IsSaaS()}
+	proofKey := "organizations/" + task.ExternalOrgID + "/workflows/" + task.UUID + "/proof"
+	if err := proofStore.withTaskWrite(ctx, proofKey, func() error {
+		dir := filepath.Join(s.cfg.ResultQuery.ReferenceDir, "task-proofs", digestAssessment([]byte(model.TenantIDForTask(&task))), taskID)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return err
+		}
+		f, err := os.CreateTemp(dir, "proof-*.part")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(f.Name())
+		if err := f.Chmod(0600); err != nil {
+			f.Close()
+			return err
+		}
+		if _, err := f.Write(raw); err != nil {
+			f.Close()
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+		if err := os.Rename(f.Name(), filepath.Join(dir, attempt+".json")); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	output["mode"] = "prepared"

@@ -1,13 +1,16 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/SchemaBio/Octopus/internal/retention"
 	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
@@ -114,15 +117,52 @@ func validatedCNVBaselineArchiveOutput(raw, prefix string, cfgHost string, objec
 }
 
 func (s *TaskService) registerArchivedCNVBaseline(task *model.Task, reference string) error {
-	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if s.cfg.IsSaaS() {
+		var done func()
+		ctx, done = retention.Track(ctx, task.UUID)
+		defer done()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	return database.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current model.Task
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("uuid", "execution_attempt_id").Where("uuid = ? AND execution_attempt_id = ?", task.UUID, task.ExecutionAttemptID).
-			First(&current).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("uuid", "execution_attempt_id").Where("uuid=? AND execution_attempt_id=?", task.UUID, task.ExecutionAttemptID).First(&current).Error; err != nil {
 			return fmt.Errorf("CNV baseline execution attempt is no longer current: %w", err)
 		}
-		result := tx.Model(&model.CNVBaseline{}).Where("task_uuid = ?", task.UUID).
-			Updates(map[string]interface{}{"output_path": reference})
+		if s.cfg.IsSaaS() {
+			var baseline model.CNVBaseline
+			if err := tx.Where("task_uuid=? AND external_org_id=?", task.UUID, task.ExternalOrgID).First(&baseline).Error; err != nil {
+				return err
+			}
+			prefix, err := retentionPrefix(task.ExternalOrgID, task.UUID)
+			if err != nil {
+				return err
+			}
+			u, err := url.Parse(reference)
+			if err != nil {
+				return err
+			}
+			source := strings.TrimPrefix(u.Path, "/")
+			if !strings.HasPrefix(source, prefix) {
+				return fmt.Errorf("unverified baseline source")
+			}
+			storage, err := newS3Storage(ctx, s.cfg.Storage)
+			if err != nil {
+				return err
+			}
+			target := "organizations/" + task.ExternalOrgID + "/baselines/" + baseline.UUID + "/reference.cnn"
+			if err := storage.promoteBaseline(ctx, source, target); err != nil {
+				return err
+			}
+			u.Path = "/" + target
+			u.RawQuery = ""
+			u.Fragment = ""
+			reference = u.String()
+		}
+		result := tx.Model(&model.CNVBaseline{}).Where("task_uuid=?", task.UUID).Updates(map[string]interface{}{"output_path": reference, "status": model.TaskStatusCompleted})
 		if result.Error != nil {
 			return fmt.Errorf("register archived CNV baseline: %w", result.Error)
 		}

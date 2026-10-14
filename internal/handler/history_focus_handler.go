@@ -25,7 +25,7 @@ func historyTenant(c *gin.Context) (string, bool) {
 	return model.TenantIDForIdentity(org, user), true
 }
 
-func (h *HistoryHandler) SyncReports(c *gin.Context) {
+func (h *HistoryHandler) SyncFocuses(c *gin.Context) {
 	tenant, ok := historyTenant(c)
 	if !ok {
 		return
@@ -48,7 +48,7 @@ func (h *HistoryHandler) SyncReports(c *gin.Context) {
 		}
 		limit = n
 	}
-	result, err := service.SyncHistoryReports(c.Request.Context(), tenant, c.Query("table"), c.Query("cursor"), watermark, limit)
+	result, err := service.SyncHistoryFocuses(c.Request.Context(), tenant, c.Query("table"), c.Query("cursor"), watermark, limit)
 	if errors.Is(err, service.ErrAdjustmentConflict) {
 		Error(c, 410, "HISTORY_CURSOR_EXPIRED")
 		return
@@ -76,14 +76,14 @@ func (h *HistoryHandler) SyncReports(c *gin.Context) {
 	}
 }
 
-func (h *HistoryHandler) ReportDetail(c *gin.Context) {
+func (h *HistoryHandler) FocusDetail(c *gin.Context) {
 	tenant, ok := historyTenant(c)
 	if !ok {
 		return
 	}
-	row, events, err := service.HistoryReportDetail(c.Request.Context(), tenant, c.Param("id"))
+	row, events, err := service.HistoryFocusDetail(c.Request.Context(), tenant, c.Param("id"))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		ErrorNotFound(c, "reported source not found")
+		ErrorNotFound(c, "focused source not found")
 		return
 	}
 	if err != nil {

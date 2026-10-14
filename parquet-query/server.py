@@ -24,7 +24,7 @@ FIELD_PROFILE_VERSION = "parquet-fields-v2"
 ACMG_PROFILE = "acmg-snv-points-v2"
 OVERLAY_FIELDS = {
     "activeAcmgVersion", "svcv4Assessment", "acmgVusSubclass", "acmgTrial",
-    "reviewed", "reported", "interpretation", "acmgClassification", "acmgEvidence",
+    "reviewed", "focused", "interpretation", "acmgClassification", "acmgEvidence",
     "cnvAssessment", "cnvClassification", "cnvScore", "acmgScore", "acmgProfile", "acmgState", "acmgOverride", "acmgOverrideReason",
 }
 NUMERIC_FIELDS = {
@@ -79,7 +79,7 @@ def field_expr(column, columns, table):
         if column == "cnvAssessment": return overlay_expr(column)
         key = "classification" if column == "cnvClassification" else "totalScore"
         return "json_extract_string(o.payload, '$.cnvAssessment." + key + "')"
-    if column in {"reviewed", "reported"}:
+    if column in {"reviewed", "focused"}:
         return "COALESCE(" + overlay_expr(column) + ", 'false')"
     baseline_names = {"acmgClassification": "classification", "acmgScore": "score",
                       "acmgProfile": "profile", "acmgState": "state", "acmgEvidence": "criteria"}
@@ -162,7 +162,7 @@ def sort_expression(column, columns, table):
 
 
 def field_type(column):
-    if column in {"reviewed", "reported"}:
+    if column in {"reviewed", "focused"}:
         return "boolean"
     if column == "acmgClassification":
         return "enum"

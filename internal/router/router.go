@@ -33,6 +33,7 @@ func New(cfg *config.Config) *gin.Engine {
 	r.Use(middleware.Recovery())
 	r.Use(middleware.CORS(&cfg.Server))
 	r.Use(middleware.CSRF())
+	r.Use(middleware.ResearchPolicy(cfg))
 
 	// Health check (public)
 	r.GET("/health", handler.HealthCheck)
@@ -253,6 +254,7 @@ func New(cfg *config.Config) *gin.Engine {
 			results.GET("/rows/:table/:vid", resultHandler.GetParquetRowAdjustment)
 			results.GET("/rows/:table/:vid/history", resultHandler.ListParquetRowHistory)
 			results.PUT("/rows/:table/:vid", resultHandler.SaveParquetRowAdjustment)
+			results.PUT("/rows/:table/:vid/focus", resultHandler.SaveParquetRowAdjustment)
 			results.GET("/cnv-segment", resultHandler.ListCNVSegments)
 			results.GET("/cnv-exon", resultHandler.ListCNVExons)
 			results.GET("/str", resultHandler.ListSTRs)
@@ -265,7 +267,7 @@ func New(cfg *config.Config) *gin.Engine {
 			results.PUT("/cnv-assessments/:type/:vid", resultHandler.SaveCNVAssessment)
 			results.GET("/review-events", resultHandler.ListReviewEvents)
 			results.PUT("/:type/:vid/review", resultHandler.ReviewVariant)
-			results.PUT("/:type/:vid/report", resultHandler.ReportVariant)
+			results.PUT("/:type/:vid/focus", resultHandler.FocusVariant)
 		}
 
 		// ========== Archive management (protected) ==========
@@ -370,8 +372,8 @@ func New(cfg *config.Config) *gin.Engine {
 		history := v1.Group("/history")
 		history.Use(middleware.JWTAuth(cfg))
 		{
-			history.GET("/sync", historyHandler.SyncReports)
-			history.GET("/reports/:id", historyHandler.ReportDetail)
+			history.GET("/sync", historyHandler.SyncFocuses)
+			history.GET("/focuses/:id", historyHandler.FocusDetail)
 			history.GET("/snv-indel", historyHandler.ListGroupedSNVIndels)
 			history.GET("/cnv-segment", historyHandler.ListGroupedCNVSegments)
 			history.GET("/cnv-exon", historyHandler.ListGroupedCNVExons)

@@ -20,7 +20,7 @@ func (r *TaskRepository) DeleteByID(id string) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).First(&task).Error; err != nil {
 			return err
 		}
-		if err := model.DeleteHistoryReports(tx, &task); err != nil {
+		if err := model.DeleteHistoryFocuses(tx, &task); err != nil {
 			return err
 		}
 		return tx.Delete(&task).Error

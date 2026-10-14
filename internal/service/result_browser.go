@@ -82,6 +82,9 @@ func (s *ResultService) BrowserDataset(ctx context.Context, task *model.Task, ta
 		return nil, err
 	}
 	expires := time.Now().UTC().Add(10 * time.Minute)
+	if s.cfg.IsSaaS() && task.ExpiresAt != nil && task.ExpiresAt.Before(expires) {
+		expires = *task.ExpiresAt
+	}
 	url, err := storage.presignRead(ctx, d.ObjectKey, 10*time.Minute)
 	if err != nil {
 		return nil, fmt.Errorf("result read authorization failed")

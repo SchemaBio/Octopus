@@ -42,6 +42,9 @@ func AutoMigrate() error {
 		return fmt.Errorf("database not initialized")
 	}
 
+	if err := migrateFocusNames(); err != nil {
+		return err
+	}
 	// Initialize token_version for existing users (NULL or 0 → 1)
 	DB.Exec("UPDATE users SET token_version = 1 WHERE token_version IS NULL OR token_version = 0")
 
@@ -49,6 +52,7 @@ func AutoMigrate() error {
 		&assistance.Settings{}, &assistance.Request{}, &assistance.SettingsEvent{}, &assistance.ProfileRecord{},
 		&model.CVMSubmission{}, &model.CVMCancellation{}, &model.ExecutionOutbox{},
 		// Core models
+		&model.RetentionJob{},
 		&model.User{},
 		&model.Task{},
 		&model.Sample{},
@@ -104,10 +108,13 @@ func AutoMigrate() error {
 		&model.ResultRowAdjustment{},
 		&model.ResultRowAdjustmentEvent{},
 		&model.HistoryScopeRevision{},
-		&model.HistoryReport{},
+		&model.HistoryFocus{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)
+	}
+	if err := DB.Exec("ALTER TABLE cnv_baselines ALTER COLUMN task_uuid DROP NOT NULL").Error; err != nil {
+		return err
 	}
 	if err := migrateReportProtocol(); err != nil {
 		return err
@@ -345,7 +352,9 @@ func migrateAuditScope() error {
 			}
 		}
 	}
-	if err := DB.Exec(`CREATE OR REPLACE FUNCTION prevent_variant_review_event_mutation() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'variant review events are append-only'; END; $$ LANGUAGE plpgsql`).Error; err != nil {
+	if err := DB.Exec(`CREATE OR REPLACE FUNCTION prevent_variant_review_event_mutation() RETURNS trigger AS $$ BEGIN
+ IF TG_OP='DELETE' AND current_setting('research.expiry_task',true)=OLD.task_uuid AND EXISTS(SELECT 1 FROM tasks WHERE uuid=OLD.task_uuid AND expires_at<=clock_timestamp()) THEN RETURN OLD; END IF;
+ RAISE EXCEPTION 'variant review events are append-only'; END; $$ LANGUAGE plpgsql`).Error; err != nil {
 		return fmt.Errorf("failed to create review event guard: %w", err)
 	}
 	if err := DB.Exec(`DROP TRIGGER IF EXISTS variant_review_events_append_only ON variant_review_events`).Error; err != nil {

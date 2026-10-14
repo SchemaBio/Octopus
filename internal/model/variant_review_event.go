@@ -7,8 +7,10 @@ import "time"
 type VariantReviewAction string
 
 const (
-	VariantReviewActionReviewed VariantReviewAction = "REVIEWED"
-	VariantReviewActionRevoked  VariantReviewAction = "REVOKED"
+	VariantReviewActionFocused   VariantReviewAction = "FOCUSED"
+	VariantReviewActionUnfocused VariantReviewAction = "UNFOCUSED"
+	VariantReviewActionReviewed  VariantReviewAction = "REVIEWED"
+	VariantReviewActionRevoked   VariantReviewAction = "REVOKED"
 )
 
 // VariantReviewEvent records a review transition independently of the result

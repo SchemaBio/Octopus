@@ -45,12 +45,12 @@ type ResultMember struct {
 type ResultCount struct {
 	Total    int64 `json:"total"`
 	Reviewed int64 `json:"reviewed"`
-	Reported int64 `json:"reported"`
+	Focused  int64 `json:"focused"`
 }
 
 type ResultPermissions struct {
 	CanReview bool `json:"canReview"`
-	CanReport bool `json:"canReport"`
+	CanFocus  bool `json:"canFocus"`
 }
 
 type QCMemberSummary struct {

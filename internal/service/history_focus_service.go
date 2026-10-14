@@ -20,7 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func historyReportID(d *model.ResultDataset, rowID string) string {
+func historyFocusID(d *model.ResultDataset, rowID string) string {
 	h := sha256.Sum256([]byte(d.TenantID + "/" + d.ID + "/" + d.DataVersion + "/" + rowID))
 	return hex.EncodeToString(h[:])
 }
@@ -166,11 +166,11 @@ func historyReferenceIdentity(raw string) (string, string) {
 	return declared, hex.EncodeToString(hash[:])
 }
 
-// Read one source row once at initial reporting. No browser-provided annotation
+// Read one source row once at initial focus. No browser-provided annotation
 // can become an authoritative historical record.
-func (s *ResultService) historySource(ctx context.Context, d *model.ResultDataset, rowID string, ordinal *int64) (*model.HistoryReport, error) {
+func (s *ResultService) historySource(ctx context.Context, d *model.ResultDataset, rowID string, ordinal *int64) (*model.HistoryFocus, error) {
 	if ordinal == nil {
-		return nil, fmt.Errorf("reporting requires the immutable source row ordinal")
+		return nil, fmt.Errorf("focus requires the immutable source row ordinal")
 	}
 	if !browserOrdinalMatches(d, rowID, *ordinal) {
 		return nil, ErrAdjustmentConflict
@@ -188,7 +188,7 @@ func (s *ResultService) historySource(ctx context.Context, d *model.ResultDatase
 	}
 	fields := compactHistoryFields(page.Rows[0], d.Table)
 	encoded, _ := json.Marshal(fields)
-	return &model.HistoryReport{ID: historyReportID(d, rowID), TenantID: d.TenantID, Table: d.Table, TaskUUID: d.TaskUUID, AttemptID: d.ExecutionAttemptID, DatasetID: d.ID, DatasetVersion: d.DataVersion, RowID: rowID, RowOrdinal: *ordinal, FieldsJSON: string(encoded)}, nil
+	return &model.HistoryFocus{ID: historyFocusID(d, rowID), TenantID: d.TenantID, Table: d.Table, TaskUUID: d.TaskUUID, AttemptID: d.ExecutionAttemptID, DatasetID: d.ID, DatasetVersion: d.DataVersion, RowID: rowID, RowOrdinal: *ordinal, FieldsJSON: string(encoded)}, nil
 }
 
 func (s *ResultService) historyDatasetCache(ctx context.Context, d *model.ResultDataset) (string, error) {
@@ -261,17 +261,17 @@ func historyEffectiveClassification(tx *gorm.DB, d *model.ResultDataset, rowID s
 }
 
 // Invoked inside the adjustment's transaction, after its append-only event.
-func persistHistoryReport(tx *gorm.DB, task *model.Task, d *model.ResultDataset, saved *model.ResultRowAdjustment, event *model.ResultRowAdjustmentEvent, source *model.HistoryReport) error {
+func persistHistoryFocus(tx *gorm.DB, task *model.Task, d *model.ResultDataset, saved *model.ResultRowAdjustment, event *model.ResultRowAdjustmentEvent, source *model.HistoryFocus) error {
 	var payload map[string]interface{}
 	if err := json.Unmarshal([]byte(saved.PayloadJSON), &payload); err != nil {
 		return err
 	}
-	id := historyReportID(d, saved.RowID)
-	var row model.HistoryReport
+	id := historyFocusID(d, saved.RowID)
+	var row model.HistoryFocus
 	err := tx.Where("id=?", id).First(&row).Error
 	newReport := errors.Is(err, gorm.ErrRecordNotFound)
 	if newReport {
-		if payload["reported"] != true {
+		if payload["focused"] != true {
 			return nil
 		}
 		if source == nil {
@@ -309,20 +309,20 @@ func persistHistoryReport(tx *gorm.DB, task *model.Task, d *model.ResultDataset,
 	}
 	var before map[string]interface{}
 	_ = json.Unmarshal([]byte(event.BeforeJSON), &before)
-	wasReported := row.Reported
-	row.Reported = payload["reported"] == true
-	if row.Revision > 0 && row.Reported == wasReported && row.Classification == previousClassification && row.ACMGVersion == previousVersion && row.VusSubclass == previousSubclass {
+	wasFocused := row.Focused
+	row.Focused = payload["focused"] == true
+	if row.Revision > 0 && row.Focused == wasFocused && row.Classification == previousClassification && row.ACMGVersion == previousVersion && row.VusSubclass == previousSubclass {
 		return tx.Model(&row).Update("adjustment_version", saved.Version).Error
 	}
-	if row.Reported && !wasReported {
+	if row.Focused && !wasFocused {
 		now := event.CreatedAt
-		row.LastReportedAt = &now
-		if row.FirstReportedAt == nil {
-			row.FirstReportedAt = &now
+		row.LastFocusedAt = &now
+		if row.FirstFocusedAt == nil {
+			row.FirstFocusedAt = &now
 		}
-		row.ReportedClassification = row.Classification
-		row.ReportedACMGVersion, row.ReportedVusSubclass = row.ACMGVersion, row.VusSubclass
-		row.ReportedBy = event.Actor
+		row.FocusedClassification = row.Classification
+		row.FocusedACMGVersion, row.FocusedVusSubclass = row.ACMGVersion, row.VusSubclass
+		row.FocusedBy = event.Actor
 	}
 	row.AdjustmentVersion = saved.Version
 	row.UpdatedAt = event.CreatedAt
@@ -366,11 +366,11 @@ type HistorySyncResponse struct {
 	Watermark uint64                        `json:"watermark"`
 	Cursor    string                        `json:"cursor"`
 	Complete  bool                          `json:"complete"`
-	Rows      []model.HistoryReport         `json:"rows"`
+	Rows      []model.HistoryFocus          `json:"rows"`
 	Tasks     map[string]HistoryTaskSummary `json:"tasks"`
 }
 
-func SyncHistoryReports(ctx context.Context, tenant, table, cursor string, watermark *uint64, limit int) (*HistorySyncResponse, error) {
+func SyncHistoryFocuses(ctx context.Context, tenant, table, cursor string, watermark *uint64, limit int) (*HistorySyncResponse, error) {
 	if tenant == "" || !validParquetTable(table) {
 		return nil, fmt.Errorf("invalid history scope or type")
 	}
@@ -393,7 +393,7 @@ func SyncHistoryReports(ctx context.Context, tenant, table, cursor string, water
 	if after > high || high > clock.Revision {
 		return nil, ErrAdjustmentConflict
 	}
-	var rows []model.HistoryReport
+	var rows []model.HistoryFocus
 	query := database.DB.WithContext(ctx).Where("tenant_id=? AND \"table\"=? AND revision<=?", tenant, table, high)
 	if id == "~" {
 		query = query.Where("revision>?", after)
@@ -441,8 +441,8 @@ func SyncHistoryReports(ctx context.Context, tenant, table, cursor string, water
 	return &HistorySyncResponse{tenant, high, next, complete, rows, tasks}, nil
 }
 
-func HistoryReportDetail(ctx context.Context, tenant, id string) (*model.HistoryReport, []model.ResultRowAdjustmentEvent, error) {
-	var row model.HistoryReport
+func HistoryFocusDetail(ctx context.Context, tenant, id string) (*model.HistoryFocus, []model.ResultRowAdjustmentEvent, error) {
+	var row model.HistoryFocus
 	if !validResultRowID(id) {
 		return nil, nil, gorm.ErrRecordNotFound
 	}

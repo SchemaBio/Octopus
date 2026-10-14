@@ -26,12 +26,12 @@ func TestReportV2TransmitsImmutableSnapshotAndIdempotencyKey(t *testing.T) {
 			t.Fatal("V2 must not send legacy result package links")
 		}
 		snap := payload["report_snapshot"].(map[string]interface{})
-		if len(snap["reported_variants"].([]interface{})) != 0 {
+		if len(snap["focused_variants"].([]interface{})) != 0 {
 			t.Fatal("negative report should retain empty report set")
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/pdf"}}, Body: io.NopCloser(strings.NewReader("pdf")), ContentLength: 3}, nil
 	})}}
-	d, e := svc.generateReportDownload(context.Background(), &model.ReportTemplate{APIEndpoint: "https://example.com/report", APIKey: "test", ContractVersion: "report-snapshot-v2"}, &model.Task{UUID: "task"}, &model.ReportCreateRequest{Name: "report", GenerationID: "generation-1", SnapshotSHA256: "hash-1", SnapshotJSON: `{"reported_variants":[]}`}, "actor")
+	d, e := svc.generateReportDownload(context.Background(), &model.ReportTemplate{APIEndpoint: "https://example.com/report", APIKey: "test", ContractVersion: "report-snapshot-v2"}, &model.Task{UUID: "task"}, &model.ReportCreateRequest{Name: "report", GenerationID: "generation-1", SnapshotSHA256: "hash-1", SnapshotJSON: `{"focused_variants":[]}`}, "actor")
 	if e != nil {
 		t.Fatal(e)
 	}

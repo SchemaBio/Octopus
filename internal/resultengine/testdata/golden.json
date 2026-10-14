@@ -223,8 +223,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -251,8 +251,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -271,7 +271,7 @@
       "overlays": [],
       "filters": []
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -497,8 +497,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -525,8 +525,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -545,7 +545,7 @@
       "overlays": [],
       "filters": []
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",476394a351035bb241c1974bbc182f3f38f1e14cb3ae6c5bdf4cc941c242ba90,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,6064a89f4f02330d0a64ee4a7cbbc4cdf1aa7fb90fb0ff07118449011f35e852,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",9ebe89c96764f4f0974ea9d36038e507fa6dfcd757fd614e8397f30b1db0a312,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,ae72321d54270a79d13810d1d699b725087a48602e2c9e6b2518be756c5ac2c5,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,878bc115edc719b2555db260779b921d555e4db24fc8de160418cbea8224e051,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,bbb3659662a203e120cc0e8c28b4675fe6a6c5322534df327674c5b4e534d645,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",476394a351035bb241c1974bbc182f3f38f1e14cb3ae6c5bdf4cc941c242ba90,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,6064a89f4f02330d0a64ee4a7cbbc4cdf1aa7fb90fb0ff07118449011f35e852,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",9ebe89c96764f4f0974ea9d36038e507fa6dfcd757fd614e8397f30b1db0a312,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,ae72321d54270a79d13810d1d699b725087a48602e2c9e6b2518be756c5ac2c5,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,878bc115edc719b2555db260779b921d555e4db24fc8de160418cbea8224e051,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,bbb3659662a203e120cc0e8c28b4675fe6a6c5322534df327674c5b4e534d645,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -771,8 +771,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -799,8 +799,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -819,7 +819,7 @@
       "overlays": [],
       "filters": []
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",477a9ffd392e3c855f029aa79b3d94bb808775351188f3c347509ecc67bb2437,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,f82555bb1965d8f875cf41ff900d4f2a66780d7f47be5e80898938d4a8a166ec,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",7e10516fe6888dd6dad28257612fd0f1c8d65284a36c411bc34b19afdce70977,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,b533a0d99759826f00ef823b501280c61366b9f8c904be61c8df55aa97ae4903,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,252ce302132ee6fa192086bd89e80b4c484ec822a9e3aefef97658a443be8e6d,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,ace2b8bd4be590cba11d8f15bf1e293d9c8c911c03c2b012647ef26529e2292b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",477a9ffd392e3c855f029aa79b3d94bb808775351188f3c347509ecc67bb2437,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,f82555bb1965d8f875cf41ff900d4f2a66780d7f47be5e80898938d4a8a166ec,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",7e10516fe6888dd6dad28257612fd0f1c8d65284a36c411bc34b19afdce70977,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,b533a0d99759826f00ef823b501280c61366b9f8c904be61c8df55aa97ae4903,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,252ce302132ee6fa192086bd89e80b4c484ec822a9e3aefef97658a443be8e6d,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,ace2b8bd4be590cba11d8f15bf1e293d9c8c911c03c2b012647ef26529e2292b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -1045,8 +1045,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -1073,8 +1073,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -1093,7 +1093,7 @@
       "overlays": [],
       "filters": []
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",068301eac3b4acb7b5d335e6e73c75d8ae3cc33580d8bca381465cda15906b53,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,f66ca2844564568246ddb4970d6239a3a19b43590245c3eb5b817818419a0955,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",71aee87f90cf93a0fd26b9e179856369d13066242b52a2ab34a45494a981a691,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,42b39ab2c9be93b96273f114a0c7aafeb509be4419c7f2cc6ac2f1cb31c55b23,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,82f48c862779425e1c9e80d0e32f91ac726a08c17fc75a0aedf14422782ff8a8,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,4d5b8ac843cbcefd53ff1428af61bfa3b6667ee0090e765bfc037e12820d0b41,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",068301eac3b4acb7b5d335e6e73c75d8ae3cc33580d8bca381465cda15906b53,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,f66ca2844564568246ddb4970d6239a3a19b43590245c3eb5b817818419a0955,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",71aee87f90cf93a0fd26b9e179856369d13066242b52a2ab34a45494a981a691,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,42b39ab2c9be93b96273f114a0c7aafeb509be4419c7f2cc6ac2f1cb31c55b23,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,82f48c862779425e1c9e80d0e32f91ac726a08c17fc75a0aedf14422782ff8a8,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,4d5b8ac843cbcefd53ff1428af61bfa3b6667ee0090e765bfc037e12820d0b41,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -1136,8 +1136,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -1164,8 +1164,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -1184,7 +1184,7 @@
       "overlays": [],
       "filters": []
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\n"
   },
   {
     "operation": "query",
@@ -1266,8 +1266,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -1290,8 +1290,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -1310,7 +1310,7 @@
       "overlays": [],
       "filters": []
     },
-    "output": "Chromosome,Position,VAF,Depth,Missing,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\n1,9007199254740993,0.125,100,,6f8ae5f24b3fbec88312f52b75913e8352dc4c9c94d504220a7035bb1c2d2e1f,,[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nX,,,,.,2802528ab9b360407276d645bef329772a1d9c50dba2cbfc6c1451f8eddbc7e0,,[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,VAF,Depth,Missing,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\n1,9007199254740993,0.125,100,,6f8ae5f24b3fbec88312f52b75913e8352dc4c9c94d504220a7035bb1c2d2e1f,,[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nX,,,,.,2802528ab9b360407276d645bef329772a1d9c50dba2cbfc6c1451f8eddbc7e0,,[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "prepare",
@@ -1567,8 +1567,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -1595,8 +1595,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -1615,7 +1615,7 @@
       "overlays": [],
       "filters": []
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\n1,1,GENE1,SNP,missense_variant,ENST000001,1.0,0,,479f6fcdf96bd9c5ba04a16e83050923ffd896640c77ffd465ccb06291e8052c,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":1.0}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\n2,2,GENE2,SNP,missense_variant,ENST000001,0.0,0,,b6f9161eb08a939de21d7bbca86c36e8233de6ee37c6e13cf78d8d7cc3ebe610,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"moderate\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.0}]\",,,acmg-snv-points-v2,-2,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\n1,1,GENE1,SNP,missense_variant,ENST000001,1.0,0,,479f6fcdf96bd9c5ba04a16e83050923ffd896640c77ffd465ccb06291e8052c,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":1.0}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\n2,2,GENE2,SNP,missense_variant,ENST000001,0.0,0,,b6f9161eb08a939de21d7bbca86c36e8233de6ee37c6e13cf78d8d7cc3ebe610,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"moderate\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.0}]\",,,acmg-snv-points-v2,-2,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "prepare",
@@ -1822,8 +1822,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -1850,8 +1850,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -2002,8 +2002,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -2030,8 +2030,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -2182,8 +2182,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -2210,8 +2210,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -2362,8 +2362,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -2390,8 +2390,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -2542,8 +2542,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -2570,8 +2570,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -2802,8 +2802,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -2830,8 +2830,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -2982,8 +2982,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -3010,8 +3010,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -3162,8 +3162,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -3190,8 +3190,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -3333,8 +3333,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -3361,8 +3361,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -3383,7 +3383,7 @@
       "sort": "Chromosome",
       "direction": "asc"
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -3520,8 +3520,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -3548,8 +3548,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -3570,7 +3570,7 @@
       "sort": "Chromosome",
       "direction": "desc"
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -3699,8 +3699,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -3727,8 +3727,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -3749,7 +3749,7 @@
       "sort": "Position",
       "direction": "asc"
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -3886,8 +3886,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -3914,8 +3914,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -3936,7 +3936,7 @@
       "sort": "Position",
       "direction": "desc"
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -4073,8 +4073,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -4101,8 +4101,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -4123,7 +4123,7 @@
       "sort": "GnomAD_AF",
       "direction": "asc"
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -4268,8 +4268,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -4296,8 +4296,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -4318,7 +4318,7 @@
       "sort": "GnomAD_AF",
       "direction": "desc"
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -4447,8 +4447,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -4475,8 +4475,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -4497,7 +4497,7 @@
       "sort": "Gene",
       "direction": "asc"
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -4626,8 +4626,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -4654,8 +4654,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -4676,7 +4676,7 @@
       "sort": "Gene",
       "direction": "desc"
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -4908,8 +4908,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -4936,8 +4936,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -5025,8 +5025,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -5053,8 +5053,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -5170,8 +5170,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -5198,8 +5198,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -5337,8 +5337,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -5365,8 +5365,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -5520,8 +5520,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -5548,8 +5548,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -5670,8 +5670,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -5698,8 +5698,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -5845,8 +5845,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -5873,8 +5873,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -6020,8 +6020,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -6048,8 +6048,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -6170,8 +6170,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -6198,8 +6198,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -6323,8 +6323,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -6351,8 +6351,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -6595,8 +6595,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -6623,8 +6623,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -6652,7 +6652,7 @@
       ],
       "filters": []
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,Pathogenic,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",Pathogenic,,acmg-snv-points-v2,4,classified,false,,legacy,,,,,false,true,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,Pathogenic,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",Pathogenic,,acmg-snv-points-v2,4,classified,false,,legacy,,,,false,,true,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -6744,8 +6744,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -6772,8 +6772,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -7018,8 +7018,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -7046,8 +7046,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -7076,7 +7076,7 @@
       ],
       "filters": []
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,,[],,,,0,,false,,legacy,,,,,false,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,,[],,,,0,,false,,legacy,,,,false,,false,\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -7169,8 +7169,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -7197,8 +7197,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -7459,8 +7459,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -7487,8 +7487,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -7525,7 +7525,7 @@
       ],
       "filters": []
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",Pathogenic,,svcv4-draft-reference,4,classified,true,VUS-high,svcv4,,,,,false,false,\"{\"\"confirmed\"\":true,\"\"result\"\":{\"\"classification\"\":\"\"VUS\"\",\"\"vusSubclass\"\":\"\"VUS-high\"\",\"\"score\"\":4,\"\"state\"\":\"\"classified\"\"}}\"\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"strong\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.995}]\",Pathogenic,,svcv4-draft-reference,4,classified,true,VUS-high,svcv4,,,,false,,false,\"{\"\"confirmed\"\":true,\"\"result\"\":{\"\"classification\"\":\"\"VUS\"\",\"\"vusSubclass\"\":\"\"VUS-high\"\",\"\"score\"\":4,\"\"state\"\":\"\"classified\"\"}}\"\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -7671,8 +7671,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -7699,8 +7699,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -7783,8 +7783,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -7811,8 +7811,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -7860,8 +7860,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -7888,8 +7888,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -8120,8 +8120,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -8148,8 +8148,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -8381,8 +8381,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -8409,8 +8409,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -8526,8 +8526,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -8554,8 +8554,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -8597,7 +8597,7 @@
       ],
       "filters": []
     },
-    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,interpretation,reported,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,,\"[{\"\"code\"\":\"\"PP3\"\",\"\"note\"\":\"\"中文😀\"\",\"\"value\"\":1.0}]\",,,,,,false,,legacy,,,,,false,false,\"{\"\"warnings\"\":[\"\"中文<>&😀\"\"],\"\"inputs\"\":{\"\"tiny\"\":0.000001,\"\"integerFloat\"\":1.0}}\"\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,,false,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,,false,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,,false,false,\n"
+    "output": "Chromosome,Position,Gene,Type,Consequence,Transcript,AlphaMissense_AM,GnomAD_AF,Note,row_id,acmgClassification,acmgEvidence,acmgOverride,acmgOverrideReason,acmgProfile,acmgScore,acmgState,acmgTrial,acmgVusSubclass,activeAcmgVersion,cnvAssessment,cnvClassification,cnvScore,focused,interpretation,reviewed,svcv4Assessment\nchr2,10,GENE1,SNP,missense_variant,ENST000001,0.995,0.1&0.01,\"comma, quote\"\" and\nnewline\",85756599fc3e000c2d2167a85df341253860826b49a6bdee89cdba3e25eaf41b,,\"[{\"\"code\"\":\"\"PP3\"\",\"\"note\"\":\"\"中文😀\"\",\"\"value\"\":1.0}]\",,,,,,false,,legacy,,,,false,,false,\"{\"\"warnings\"\":[\"\"中文<>&😀\"\"],\"\"inputs\"\":{\"\"tiny\"\":0.000001,\"\"integerFloat\"\":1.0}}\"\nchr10,2,GENE2,SNP,missense_variant,ENST000001,0.15,0.2,,3512048466eadcd89bdb1479ea27cc88ab0c93cc653c5a17bf6319642a54d78b,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.15}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\nchrX,6,GENE3,INDEL,missense_variant,ENST000001,0.999,0.3,\"\",3c021ecbe756a746cbe486084097e01a526a93f8fda9ed6959e18d7a208696f7,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchr1,7,GENE4,SNP,synonymous_variant,ENST000001,0.99,.,.,850424dc20b058e5665ce83f624e77c1e8c7604dfbe9d4da7df06dd16db326aa,\"\",[],,,acmg-snv-points-v2,0,insufficient_evidence,false,,legacy,,,,false,,false,\nchrMT,7,GENE5,SNP,missense_variant,ENST000001,0.792,bad&0.0,Ω测试,8d043395739e1361bf54b43f92931bbc8e8f9765f4228cf82d67d349503fbaef,VUS,\"[{\"\"code\"\":\"\"PP3\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.792}]\",,,acmg-snv-points-v2,1,classified,false,,legacy,,,,false,,false,\ncontig,7,GENE6,SNP,missense_variant,ENST000001,0.1,,null,f775f4b1a54e7161fb35b8e6c4bba344a4ff409ef799a2301b053ba52f662ba6,Likely_Benign,\"[{\"\"code\"\":\"\"BP4\"\",\"\"strength\"\":\"\"supporting\"\",\"\"source\"\":\"\"AlphaMissense\"\",\"\"value\"\":0.1}]\",,,acmg-snv-points-v2,-1,classified,false,,legacy,,,,false,,false,\n"
   },
   {
     "operation": "query",
@@ -8698,8 +8698,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -8726,8 +8726,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -8833,8 +8833,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -8861,8 +8861,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -9032,8 +9032,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -9060,8 +9060,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -9273,8 +9273,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -9301,8 +9301,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -9364,8 +9364,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -9392,8 +9392,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -9455,8 +9455,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -9483,8 +9483,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -9546,8 +9546,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -9574,8 +9574,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -9639,8 +9639,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -9667,8 +9667,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -9732,8 +9732,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -9760,8 +9760,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -9825,8 +9825,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -9853,8 +9853,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -9918,8 +9918,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -9946,8 +9946,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -10011,8 +10011,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -10039,8 +10039,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -10138,8 +10138,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -10166,8 +10166,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -10379,8 +10379,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -10407,8 +10407,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -10470,8 +10470,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -10498,8 +10498,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -10561,8 +10561,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -10589,8 +10589,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -10652,8 +10652,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -10680,8 +10680,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -10833,8 +10833,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -10854,8 +10854,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -11007,8 +11007,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -11028,8 +11028,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -11113,8 +11113,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -11134,8 +11134,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -11201,8 +11201,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -11222,8 +11222,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -11289,8 +11289,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -11310,8 +11310,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -11416,8 +11416,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -11437,8 +11437,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },
@@ -11507,8 +11507,8 @@
         "cnvAssessment",
         "cnvClassification",
         "cnvScore",
+        "focused",
         "interpretation",
-        "reported",
         "reviewed",
         "svcv4Assessment"
       ],
@@ -11528,8 +11528,8 @@
         "cnvAssessment": "text",
         "cnvClassification": "text",
         "cnvScore": "number",
+        "focused": "boolean",
         "interpretation": "text",
-        "reported": "boolean",
         "reviewed": "boolean",
         "svcv4Assessment": "text"
       },

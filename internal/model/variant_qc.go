@@ -18,7 +18,7 @@ type QCResult struct {
 	MemberRole string `json:"memberRole" gorm:"size:30;index"`
 	// MetricAvailability records which source fields were present at import.
 	// Numeric database columns remain compatible with older imports, while API
-	// consumers can distinguish a reported zero from an unavailable metric.
+	// consumers can distinguish a focused zero from an unavailable metric.
 	MetricAvailability string `json:"metricAvailability,omitempty" gorm:"type:jsonb"`
 
 	// fastp - before and after filtering

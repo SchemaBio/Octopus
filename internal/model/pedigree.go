@@ -58,24 +58,25 @@ type Pedigree struct {
 
 // PedigreeMember represents a member in a pedigree
 type PedigreeMember struct {
-	ID             string                 `json:"id" gorm:"primaryKey;size:36"`
-	PedigreeID     string                 `json:"pedigree_id" gorm:"size:36;index;not null"`
-	SampleID       string                 `json:"sample_id,omitempty" gorm:"size:36;index"`
-	Name           string                 `json:"name" gorm:"size:100;not null"`
-	Gender         Gender                 `json:"gender" gorm:"size:20;default:unknown"`
-	BirthYear      *int                   `json:"birth_year,omitempty"`
-	IsDeceased     bool                   `json:"is_deceased" gorm:"default:false"`
-	DeceasedYear   *int                   `json:"deceased_year,omitempty"`
-	Relation       RelationType           `json:"relation" gorm:"size:30;not null"`
-	AffectedStatus AffectedStatus         `json:"affected_status" gorm:"size:20;default:unknown"`
-	Phenotypes     map[string]interface{} `json:"phenotypes,omitempty" gorm:"type:jsonb"`
-	FatherID       string                 `json:"father_id,omitempty" gorm:"size:36;index"`
-	MotherID       string                 `json:"mother_id,omitempty" gorm:"size:36;index"`
-	Generation     int                    `json:"generation" gorm:"type:smallint;default:0"`
-	Position       int                    `json:"position" gorm:"type:smallint;default:0"`
-	HasSample      bool                   `json:"has_sample" gorm:"default:false"`
-	CreatedAt      time.Time              `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt      time.Time              `json:"updated_at" gorm:"type:timestamptz"`
+	ID                 string                 `json:"id" gorm:"primaryKey;size:36"`
+	PedigreeID         string                 `json:"pedigree_id" gorm:"size:36;index;not null"`
+	SampleID           string                 `json:"sample_id,omitempty" gorm:"size:36;index"`
+	SourceSampleFields string                 `json:"-" gorm:"type:jsonb;default:'[]'"`
+	Name               string                 `json:"name" gorm:"size:100;not null"`
+	Gender             Gender                 `json:"gender" gorm:"size:20;default:unknown"`
+	BirthYear          *int                   `json:"birth_year,omitempty"`
+	IsDeceased         bool                   `json:"is_deceased" gorm:"default:false"`
+	DeceasedYear       *int                   `json:"deceased_year,omitempty"`
+	Relation           RelationType           `json:"relation" gorm:"size:30;not null"`
+	AffectedStatus     AffectedStatus         `json:"affected_status" gorm:"size:20;default:unknown"`
+	Phenotypes         map[string]interface{} `json:"phenotypes,omitempty" gorm:"type:jsonb"`
+	FatherID           string                 `json:"father_id,omitempty" gorm:"size:36;index"`
+	MotherID           string                 `json:"mother_id,omitempty" gorm:"size:36;index"`
+	Generation         int                    `json:"generation" gorm:"type:smallint;default:0"`
+	Position           int                    `json:"position" gorm:"type:smallint;default:0"`
+	HasSample          bool                   `json:"has_sample" gorm:"default:false"`
+	CreatedAt          time.Time              `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt          time.Time              `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 // PedigreeResponse is the API response for a pedigree list item
@@ -102,24 +103,25 @@ type PedigreeDetailResponse struct {
 
 // PedigreeMemberResp is the API response for a pedigree member
 type PedigreeMemberResp struct {
-	ID             string                 `json:"id"`
-	PedigreeID     string                 `json:"pedigree_id"`
-	SampleID       string                 `json:"sample_id,omitempty"`
-	Name           string                 `json:"name"`
-	Gender         Gender                 `json:"gender"`
-	BirthYear      *int                   `json:"birth_year,omitempty"`
-	IsDeceased     bool                   `json:"is_deceased"`
-	DeceasedYear   *int                   `json:"deceased_year,omitempty"`
-	Relation       RelationType           `json:"relation"`
-	AffectedStatus AffectedStatus         `json:"affected_status"`
-	Phenotypes     map[string]interface{} `json:"phenotypes,omitempty"`
-	FatherID       string                 `json:"father_id,omitempty"`
-	MotherID       string                 `json:"mother_id,omitempty"`
-	Generation     int                    `json:"generation"`
-	Position       int                    `json:"position"`
-	HasSample      bool                   `json:"has_sample"`
-	CreatedAt      string                 `json:"created_at"`
-	UpdatedAt      string                 `json:"updated_at"`
+	SampleExpiresAt *time.Time             `json:"sample_expires_at,omitempty"`
+	ID              string                 `json:"id"`
+	PedigreeID      string                 `json:"pedigree_id"`
+	SampleID        string                 `json:"sample_id,omitempty"`
+	Name            string                 `json:"name"`
+	Gender          Gender                 `json:"gender"`
+	BirthYear       *int                   `json:"birth_year,omitempty"`
+	IsDeceased      bool                   `json:"is_deceased"`
+	DeceasedYear    *int                   `json:"deceased_year,omitempty"`
+	Relation        RelationType           `json:"relation"`
+	AffectedStatus  AffectedStatus         `json:"affected_status"`
+	Phenotypes      map[string]interface{} `json:"phenotypes,omitempty"`
+	FatherID        string                 `json:"father_id,omitempty"`
+	MotherID        string                 `json:"mother_id,omitempty"`
+	Generation      int                    `json:"generation"`
+	Position        int                    `json:"position"`
+	HasSample       bool                   `json:"has_sample"`
+	CreatedAt       string                 `json:"created_at"`
+	UpdatedAt       string                 `json:"updated_at"`
 }
 
 // PedigreeCreateRequest is the request body for creating a pedigree
@@ -138,19 +140,20 @@ type PedigreeUpdateRequest struct {
 
 // PedigreeMemberCreateRequest is the request body for creating a pedigree member
 type PedigreeMemberCreateRequest struct {
-	Name           string                 `json:"name" binding:"required"`
-	Gender         Gender                 `json:"gender"`
-	BirthYear      *int                   `json:"birth_year"`
-	IsDeceased     bool                   `json:"is_deceased"`
-	DeceasedYear   *int                   `json:"deceased_year"`
-	Relation       RelationType           `json:"relation" binding:"required"`
-	AffectedStatus AffectedStatus         `json:"affected_status"`
-	Phenotypes     map[string]interface{} `json:"phenotypes"`
-	FatherID       string                 `json:"father_id"`
-	MotherID       string                 `json:"mother_id"`
-	Generation     int                    `json:"generation"`
-	Position       int                    `json:"position"`
-	SampleID       string                 `json:"sample_id"`
+	SourceSampleFields []string               `json:"source_sample_fields"`
+	Name               string                 `json:"name" binding:"required"`
+	Gender             Gender                 `json:"gender"`
+	BirthYear          *int                   `json:"birth_year"`
+	IsDeceased         bool                   `json:"is_deceased"`
+	DeceasedYear       *int                   `json:"deceased_year"`
+	Relation           RelationType           `json:"relation" binding:"required"`
+	AffectedStatus     AffectedStatus         `json:"affected_status"`
+	Phenotypes         map[string]interface{} `json:"phenotypes"`
+	FatherID           string                 `json:"father_id"`
+	MotherID           string                 `json:"mother_id"`
+	Generation         int                    `json:"generation"`
+	Position           int                    `json:"position"`
+	SampleID           string                 `json:"sample_id"`
 }
 
 // PedigreeMemberUpdateRequest is the request body for updating a pedigree member

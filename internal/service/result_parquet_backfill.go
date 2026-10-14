@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/SchemaBio/Octopus/internal/retention"
+	"github.com/google/uuid"
 	"io"
 	"os"
 	"path"
@@ -21,6 +23,15 @@ const parquetCatalogName = "results.parquet.catalog.json"
 
 // A separate catalogue records controlled conversions without rewriting original outputs.
 func (s *ResultService) BackfillArchivedParquet(ctx context.Context, task *model.Task, repairTable string) (map[string]interface{}, error) {
+	if s.cfg.IsSaaS() {
+		var done func()
+		ctx, done = retention.Track(ctx, task.UUID)
+		defer done()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+
 	storage, err := newS3Storage(ctx, s.cfg.Storage)
 	if err != nil {
 		return nil, err
@@ -140,7 +151,7 @@ func (s *ResultService) BackfillArchivedParquet(ctx context.Context, task *model
 		if err != nil {
 			return nil, err
 		}
-		tmp, err := os.CreateTemp(s.cfg.ResultQuery.CacheDir, ".backfill-input-*")
+		tmp, err := os.CreateTemp(s.cfg.ResultQuery.CacheDir, task.UUID+"-backfill-input-*.tmp")
 		if err != nil {
 			input.Close()
 			return nil, err
@@ -154,7 +165,7 @@ func (s *ResultService) BackfillArchivedParquet(ctx context.Context, task *model
 			return nil, fmt.Errorf("archived text size verification failed")
 		}
 		fingerprint := hex.EncodeToString(hash.Sum(nil))
-		output, rows, headers, err := convertArchivedTextParquet(tmp.Name())
+		output, rows, headers, err := convertArchivedTextParquet(tmp.Name(), task.UUID)
 		os.Remove(tmp.Name())
 		if err != nil {
 			return nil, err
@@ -219,7 +230,14 @@ func manifestTextRefs(manifest map[string]interface{}) []string {
 	return result
 }
 
-func convertArchivedTextParquet(input string) (string, int64, []string, error) {
+func convertArchivedTextParquet(input string, taskIDs ...string) (string, int64, []string, error) {
+	pattern := "octopus-backfill-*.parquet"
+	if len(taskIDs) > 0 {
+		if _, err := uuid.Parse(taskIDs[0]); err != nil {
+			return "", 0, nil, err
+		}
+		pattern = taskIDs[0] + "-octopus-backfill-*.parquet"
+	}
 	file, err := os.Open(input)
 	if err != nil {
 		return "", 0, nil, err
@@ -255,7 +273,7 @@ func convertArchivedTextParquet(input string) (string, int64, []string, error) {
 		names[i] = candidate
 		metadata[i] = "name=" + candidate + ", type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"
 	}
-	output, err := os.CreateTemp("", "octopus-backfill-*.parquet")
+	output, err := os.CreateTemp("", pattern)
 	if err != nil {
 		return "", 0, nil, err
 	}

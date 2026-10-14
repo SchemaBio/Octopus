@@ -66,17 +66,17 @@ func TestHistoryReferenceIdentityIgnoresSignedURLAndWorkflowAlias(t *testing.T) 
 func TestHistoryFailureRollsBackAdjustmentAndAudit(t *testing.T) {
 	db, mock := newUploadTransactionTestDB(t)
 	d := model.ResultDataset{ID: strings.Repeat("d", 64), TenantID: "org:a", TaskUUID: "task", ExecutionAttemptID: "attempt", Table: "snv-indel", DataVersion: "hash"}
-	saved := model.ResultRowAdjustment{TenantID: d.TenantID, TaskUUID: d.TaskUUID, ExecutionAttemptID: d.ExecutionAttemptID, Table: d.Table, RowID: strings.Repeat("a", 64), DatasetVersion: d.DataVersion, Version: 1, PayloadJSON: `{"reported":true,"acmgOverride":"Pathogenic"}`}
+	saved := model.ResultRowAdjustment{TenantID: d.TenantID, TaskUUID: d.TaskUUID, ExecutionAttemptID: d.ExecutionAttemptID, Table: d.Table, RowID: strings.Repeat("a", 64), DatasetVersion: d.DataVersion, Version: 1, PayloadJSON: `{"focused":true,"acmgOverride":"Pathogenic"}`}
 	event := model.ResultRowAdjustmentEvent{ID: "event", AfterJSON: saved.PayloadJSON, BeforeJSON: "{}", CreatedAt: time.Now().UTC()}
-	source := model.HistoryReport{ID: historyReportID(&d, saved.RowID), TenantID: d.TenantID, TaskUUID: d.TaskUUID, AttemptID: d.ExecutionAttemptID, DatasetID: d.ID, RowID: saved.RowID, FieldsJSON: "{}"}
+	source := model.HistoryFocus{ID: historyFocusID(&d, saved.RowID), TenantID: d.TenantID, TaskUUID: d.TaskUUID, AttemptID: d.ExecutionAttemptID, DatasetID: d.ID, RowID: saved.RowID, FieldsJSON: "{}"}
 	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO "result_row_adjustments"`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`INSERT INTO "result_row_adjustment_events"`).WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery(`SELECT \* FROM "history_reports"`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`SELECT \* FROM "history_focuses"`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectExec(`INSERT INTO "history_scope_revisions"`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(`SELECT \* FROM "history_scope_revisions".*FOR UPDATE`).WillReturnRows(sqlmock.NewRows([]string{"tenant_id", "revision"}).AddRow(d.TenantID, 1))
 	mock.ExpectExec(`UPDATE "history_scope_revisions"`).WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(`INSERT INTO "history_reports"`).WillReturnError(errors.New("index write failed"))
+	mock.ExpectExec(`INSERT INTO "history_focuses"`).WillReturnError(errors.New("index write failed"))
 	mock.ExpectRollback()
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := persistParquetAdjustment(tx, &saved, 0); err != nil {
@@ -85,7 +85,7 @@ func TestHistoryFailureRollsBackAdjustmentAndAudit(t *testing.T) {
 		if err := tx.Create(&event).Error; err != nil {
 			return err
 		}
-		return persistHistoryReport(tx, &model.Task{UUID: "task", ExecutionAttemptID: "attempt"}, &d, &saved, &event, &source)
+		return persistHistoryFocus(tx, &model.Task{UUID: "task", ExecutionAttemptID: "attempt"}, &d, &saved, &event, &source)
 	})
 	if err == nil {
 		t.Fatal("projection failure silently committed")
@@ -95,14 +95,14 @@ func TestHistoryFailureRollsBackAdjustmentAndAudit(t *testing.T) {
 	}
 }
 
-func TestHistoryVersionSwitchPreservesReportedSnapshot(t *testing.T) {
+func TestHistoryVersionSwitchPreservesFocusedSnapshot(t *testing.T) {
 	db, mock := newUploadTransactionTestDB(t)
 	d := model.ResultDataset{ID: "dataset", TenantID: "org:a", TaskUUID: "task", ExecutionAttemptID: "attempt", Table: "snv-indel"}
-	saved := model.ResultRowAdjustment{RowID: strings.Repeat("a", 64), Version: 2, PayloadJSON: `{"reported":true,"activeAcmgVersion":"svcv4","svcv4Assessment":{"result":{"classification":"VUS","vusSubclass":"VUS-high"}}}`}
-	event := model.ResultRowAdjustmentEvent{CreatedAt: time.Now().UTC(), BeforeJSON: `{"reported":true}`}
-	var projected *model.HistoryReport
+	saved := model.ResultRowAdjustment{RowID: strings.Repeat("a", 64), Version: 2, PayloadJSON: `{"focused":true,"activeAcmgVersion":"svcv4","svcv4Assessment":{"result":{"classification":"VUS","vusSubclass":"VUS-high"}}}`}
+	event := model.ResultRowAdjustmentEvent{CreatedAt: time.Now().UTC(), BeforeJSON: `{"focused":true}`}
+	var projected *model.HistoryFocus
 	if err := db.Callback().Update().Before("gorm:update").Register("test:history_snapshot", func(tx *gorm.DB) {
-		if row, ok := tx.Statement.Dest.(*model.HistoryReport); ok {
+		if row, ok := tx.Statement.Dest.(*model.HistoryFocus); ok {
 			copy := *row
 			projected = &copy
 		}
@@ -110,18 +110,18 @@ func TestHistoryVersionSwitchPreservesReportedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT \* FROM "history_reports"`).WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "revision", "reported", "classification", "acmg_version", "reported_classification", "reported_acmg_version"}).AddRow(historyReportID(&d, saved.RowID), d.TenantID, 1, true, "Benign", "legacy", "Benign", "legacy"))
+	mock.ExpectQuery(`SELECT \* FROM "history_focuses"`).WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "revision", "focused", "classification", "acmg_version", "focused_classification", "focused_acmg_version"}).AddRow(historyFocusID(&d, saved.RowID), d.TenantID, 1, true, "Benign", "legacy", "Benign", "legacy"))
 	mock.ExpectExec(`INSERT INTO "history_scope_revisions"`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(`SELECT \* FROM "history_scope_revisions".*FOR UPDATE`).WillReturnRows(sqlmock.NewRows([]string{"tenant_id", "revision"}).AddRow(d.TenantID, 1))
 	mock.ExpectExec(`UPDATE "history_scope_revisions"`).WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(`UPDATE "history_reports"`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`UPDATE "history_focuses"`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
-	err := db.Transaction(func(tx *gorm.DB) error { return persistHistoryReport(tx, &model.Task{}, &d, &saved, &event, nil) })
+	err := db.Transaction(func(tx *gorm.DB) error { return persistHistoryFocus(tx, &model.Task{}, &d, &saved, &event, nil) })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if projected == nil || projected.ACMGVersion != "svcv4" || projected.Classification != "VUS" || projected.VusSubclass != "VUS-high" || projected.ReportedACMGVersion != "legacy" || projected.ReportedClassification != "Benign" || projected.ReportedVusSubclass != "" {
-		t.Fatalf("changed reported snapshot: %#v", projected)
+	if projected == nil || projected.ACMGVersion != "svcv4" || projected.Classification != "VUS" || projected.VusSubclass != "VUS-high" || projected.FocusedACMGVersion != "legacy" || projected.FocusedClassification != "Benign" || projected.FocusedVusSubclass != "" {
+		t.Fatalf("changed focused snapshot: %#v", projected)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
@@ -135,9 +135,9 @@ func TestHistorySyncUsesStableRevisionAndIDPagination(t *testing.T) {
 	t.Cleanup(func() { database.DB = previous })
 	mock.ExpectQuery(`SELECT \* FROM "history_scope_revisions" WHERE tenant_id=\$1`).WithArgs("org:a", 1).WillReturnRows(sqlmock.NewRows([]string{"tenant_id", "revision"}).AddRow("org:a", 8))
 	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
-	mock.ExpectQuery(`SELECT \* FROM "history_reports" WHERE \(tenant_id=\$1 AND "table"=\$2 AND revision<=\$3\).*ORDER BY revision ASC,id ASC LIMIT \$7`).WithArgs("org:a", "roh", uint64(8), uint64(0), uint64(0), "", 2).
+	mock.ExpectQuery(`SELECT \* FROM "history_focuses" WHERE \(tenant_id=\$1 AND "table"=\$2 AND revision<=\$3\).*ORDER BY revision ASC,id ASC LIMIT \$7`).WithArgs("org:a", "roh", uint64(8), uint64(0), uint64(0), "", 2).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "revision", "deleted"}).AddRow(a, 8, true).AddRow(b, 8, true))
-	result, err := SyncHistoryReports(context.Background(), "org:a", "roh", "", nil, 1)
+	result, err := SyncHistoryFocuses(context.Background(), "org:a", "roh", "", nil, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,8 +155,8 @@ func TestHistoryCompletedCursorDoesNotUseDatabaseSentinelCollation(t *testing.T)
 	database.DB = db
 	t.Cleanup(func() { database.DB = previous })
 	mock.ExpectQuery(`SELECT \* FROM "history_scope_revisions" WHERE tenant_id=\$1`).WithArgs("org:a", 1).WillReturnRows(sqlmock.NewRows([]string{"tenant_id", "revision"}).AddRow("org:a", 8))
-	mock.ExpectQuery(`SELECT \* FROM "history_reports" WHERE \(tenant_id=\$1 AND "table"=\$2 AND revision<=\$3\) AND revision>\$4.*LIMIT \$5`).WithArgs("org:a", "roh", uint64(8), uint64(8), 2).WillReturnRows(sqlmock.NewRows([]string{"id"}))
-	result, err := SyncHistoryReports(context.Background(), "org:a", "roh", "8:~", nil, 1)
+	mock.ExpectQuery(`SELECT \* FROM "history_focuses" WHERE \(tenant_id=\$1 AND "table"=\$2 AND revision<=\$3\) AND revision>\$4.*LIMIT \$5`).WithArgs("org:a", "roh", uint64(8), uint64(8), 2).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	result, err := SyncHistoryFocuses(context.Background(), "org:a", "roh", "8:~", nil, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,8 +174,8 @@ func TestHistoryDetailRejectsAnotherTenantBeforeReadingEvents(t *testing.T) {
 	database.DB = db
 	t.Cleanup(func() { database.DB = previous })
 	id := strings.Repeat("a", 64)
-	mock.ExpectQuery(`SELECT \* FROM "history_reports" WHERE id=\$1 AND tenant_id=\$2 AND deleted=false`).WithArgs(id, "org:other", 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
-	if _, _, err := HistoryReportDetail(context.Background(), "org:other", id); !errors.Is(err, gorm.ErrRecordNotFound) {
+	mock.ExpectQuery(`SELECT \* FROM "history_focuses" WHERE id=\$1 AND tenant_id=\$2 AND deleted=false`).WithArgs(id, "org:other", 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	if _, _, err := HistoryFocusDetail(context.Background(), "org:other", id); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatal("cross tenant history accepted")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -197,13 +197,13 @@ func TestHistoryDetailOnlyLinksCurrentAttemptAndDataset(t *testing.T) {
 			database.DB = db
 			t.Cleanup(func() { database.DB = previous })
 			id := strings.Repeat("a", 64)
-			mock.ExpectQuery(`SELECT \* FROM "history_reports"`).WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "task_uuid", "attempt_id", "dataset_id", "dataset_version"}).AddRow(id, "org:a", "task-a", "attempt-a", "dataset-a", "version-a"))
+			mock.ExpectQuery(`SELECT \* FROM "history_focuses"`).WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "task_uuid", "attempt_id", "dataset_id", "dataset_version"}).AddRow(id, "org:a", "task-a", "attempt-a", "dataset-a", "version-a"))
 			mock.ExpectQuery(`SELECT \* FROM "tasks"`).WillReturnRows(sqlmock.NewRows([]string{"uuid", "tenant_id", "execution_attempt_id"}).AddRow("task-a", "org:a", tc.attempt))
 			if tc.attempt == "attempt-a" {
 				mock.ExpectQuery(`SELECT count\(\*\) FROM "result_datasets"`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(tc.count))
 			}
 			mock.ExpectQuery(`SELECT \* FROM "result_row_adjustment_events"`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
-			row, _, err := HistoryReportDetail(context.Background(), "org:a", id)
+			row, _, err := HistoryFocusDetail(context.Background(), "org:a", id)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -241,7 +241,7 @@ func TestHistoryCompactSourcePreservesOriginalParquetFields(t *testing.T) {
 }
 
 func TestHistoryTombstonesExposeOnlyRemovalIdentity(t *testing.T) {
-	encoded, err := json.Marshal(model.HistoryReport{ID: strings.Repeat("a", 64), Revision: 2, Deleted: true, TaskUUID: "private-task", FieldsJSON: `{"gene":"private"}`})
+	encoded, err := json.Marshal(model.HistoryFocus{ID: strings.Repeat("a", 64), Revision: 2, Deleted: true, TaskUUID: "private-task", FieldsJSON: `{"gene":"private"}`})
 	if err != nil {
 		t.Fatal(err)
 	}

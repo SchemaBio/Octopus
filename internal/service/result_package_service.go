@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/SchemaBio/Octopus/internal/retention"
 	"io"
 	"os"
 	"path"
@@ -200,7 +201,15 @@ func safeResultPackageRelativePath(prefix, key string) (string, error) {
 }
 
 func (s *ResultPackageService) build(ctx context.Context, storage *s3Storage, taskUUID, attemptID, prefix string, item *model.ResultPackage, sources []resultPackageSource, fingerprint string) {
-	tmp, err := os.CreateTemp("", "octopus-result-package-*.zip")
+	if s.cfg.IsSaaS() {
+		var done func()
+		ctx, done = retention.Track(ctx, taskUUID)
+		defer done()
+		if ctx.Err() != nil {
+			return
+		}
+	}
+	tmp, err := os.CreateTemp("", taskUUID+"-octopus-result-package-*.zip")
 	if err != nil {
 		_ = s.repo.MarkFailedForFingerprint(item.ID, fingerprint, err.Error())
 		return

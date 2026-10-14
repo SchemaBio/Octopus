@@ -259,3 +259,142 @@ func resultImportBatchID(row interface{}) uint {
 	}
 	return 0
 }
+
+type FocusMutation struct {
+	Focused   bool
+	Changed   bool
+	FocusedBy string
+	FocusedAt *time.Time
+	Event     *model.VariantReviewEvent
+}
+
+func (r *ResultRepository) FocusVariantWithEvent(task *model.Task, variantType, id string, focused bool, actorID uint, actorEmail string) (*FocusMutation, error) {
+	if task == nil {
+		return nil, fmt.Errorf("task is required")
+	}
+	m, ok := variantModel[variantType]
+	if !ok {
+		return nil, fmt.Errorf("unknown variant type: %s", variantType)
+	}
+	tx := r.db.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	row := newVariant(variantType)
+	tenantID := model.TenantIDForTask(task)
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND task_id = ? AND tenant_id = ?", id, task.UUID, tenantID).First(row)
+	if query.Error != nil {
+		_ = tx.Rollback().Error
+		if query.Error == gorm.ErrRecordNotFound {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return nil, query.Error
+	}
+	current, currentBy, currentAt := focusFields(row)
+	mutation := &FocusMutation{Focused: current, FocusedBy: currentBy, FocusedAt: currentAt}
+	if current == focused {
+		_ = tx.Rollback().Error
+		return mutation, nil
+	}
+
+	now := time.Now().UTC()
+	updates := map[string]interface{}{"focused": focused}
+	if focused {
+		updates["focused_by"] = actorEmail
+		updates["focused_at"] = now
+	} else {
+		updates["focused_by"] = ""
+		updates["focused_at"] = nil
+	}
+	if err := tx.Model(m).Where("id = ? AND task_id = ? AND tenant_id = ?", id, task.UUID, tenantID).Updates(updates).Error; err != nil {
+		_ = tx.Rollback().Error
+		return nil, err
+	}
+	focusActor := actorEmail
+	if !focused {
+		focusActor = ""
+	}
+	setFocusFields(row, focused, focusActor, func() *time.Time {
+		if !focused {
+			return nil
+		}
+		return &now
+	}())
+
+	identity := reviewIdentity(variantType, row, task)
+	snapshot, err := json.Marshal(row)
+	if err != nil {
+		_ = tx.Rollback().Error
+		return nil, fmt.Errorf("marshal focus snapshot: %w", err)
+	}
+	event := &model.VariantReviewEvent{
+		ID: uuid.New().String(), TenantID: tenantID, TaskUUID: task.UUID,
+		ExecutionAttemptID: executionAttempt(task), ImportBatchID: resultImportBatchID(row),
+		VariantType: variantType, VariantID: id, VariantFingerprint: identity.Fingerprint,
+		HistoryGroupKey: identity.GroupKey, Action: model.VariantReviewActionUnfocused,
+		ActorUserID: actorID, ActorEmail: actorEmail, ReferenceGenome: identity.ReferenceGenome,
+		TaskName: task.Name, Pipeline: task.Pipeline, PipelineVersion: task.PipelineVersion,
+		SampleID: task.SampleID, InternalID: task.InternalID, OccurredAt: &now,
+		TimestampKnown: true, RecordedAt: now, VariantSnapshotJSON: string(snapshot),
+	}
+	if focused {
+		event.Action = model.VariantReviewActionFocused
+	}
+	if err := tx.Create(event).Error; err != nil {
+		_ = tx.Rollback().Error
+		return nil, err
+	}
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+	mutation.Focused, mutation.Changed, mutation.FocusedBy, mutation.FocusedAt, mutation.Event = focused, true, focusActor, func() *time.Time {
+		if !focused {
+			return nil
+		}
+		return &now
+	}(), event
+	return mutation, nil
+}
+
+func focusFields(row interface{}) (bool, string, *time.Time) {
+	switch v := row.(type) {
+	case *model.SNVIndel:
+		return v.Focused, v.FocusedBy, v.FocusedAt
+	case *model.CNVSegment:
+		return v.Focused, v.FocusedBy, v.FocusedAt
+	case *model.CNVExon:
+		return v.Focused, v.FocusedBy, v.FocusedAt
+	case *model.STR:
+		return v.Focused, v.FocusedBy, v.FocusedAt
+	case *model.MEIVariant:
+		return v.Focused, v.FocusedBy, v.FocusedAt
+	case *model.MitochondrialVariant:
+		return v.Focused, v.FocusedBy, v.FocusedAt
+	case *model.UPDRegion:
+		return v.Focused, v.FocusedBy, v.FocusedAt
+	case *model.ROHRegion:
+		return v.Focused, v.FocusedBy, v.FocusedAt
+	}
+	return false, "", nil
+}
+
+func setFocusFields(row interface{}, focused bool, by string, at *time.Time) {
+	switch v := row.(type) {
+	case *model.SNVIndel:
+		v.Focused, v.FocusedBy, v.FocusedAt = focused, by, at
+	case *model.CNVSegment:
+		v.Focused, v.FocusedBy, v.FocusedAt = focused, by, at
+	case *model.CNVExon:
+		v.Focused, v.FocusedBy, v.FocusedAt = focused, by, at
+	case *model.STR:
+		v.Focused, v.FocusedBy, v.FocusedAt = focused, by, at
+	case *model.MEIVariant:
+		v.Focused, v.FocusedBy, v.FocusedAt = focused, by, at
+	case *model.MitochondrialVariant:
+		v.Focused, v.FocusedBy, v.FocusedAt = focused, by, at
+	case *model.UPDRegion:
+		v.Focused, v.FocusedBy, v.FocusedAt = focused, by, at
+	case *model.ROHRegion:
+		v.Focused, v.FocusedBy, v.FocusedAt = focused, by, at
+	}
+}

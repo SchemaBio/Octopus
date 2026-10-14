@@ -56,7 +56,7 @@ func workspaceResultCount(db *gorm.DB, value interface{}, taskID, tenantID, atte
 	if err := scopedResultQuery(db.Model(value), taskID, tenantID, attemptID).Where("reviewed = ?", true).Count(&result.Reviewed).Error; err != nil {
 		return result, err
 	}
-	if err := scopedResultQuery(db.Model(value), taskID, tenantID, attemptID).Where("reported = ?", true).Count(&result.Reported).Error; err != nil {
+	if err := scopedResultQuery(db.Model(value), taskID, tenantID, attemptID).Where("focused = ?", true).Count(&result.Focused).Error; err != nil {
 		return result, err
 	}
 	return result, nil

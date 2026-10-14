@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/SchemaBio/Octopus/internal/retention"
 	"io"
 	"net/http"
 	"net/url"
@@ -127,6 +128,15 @@ func (s *ResultService) QueryParquetTable(ctx context.Context, task *model.Task,
 }
 
 func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Task, tenant, attempt, table string) (*model.ResultDataset, error) {
+	if s.cfg.IsSaaS() {
+		var done func()
+		ctx, done = retention.Track(ctx, task.UUID)
+		defer done()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+
 	if s.cfg == nil || !supportsParquetObjectStorage(s.cfg.Storage.Provider) {
 		return nil, fmt.Errorf("object storage result archive is unavailable")
 	}
@@ -204,7 +214,7 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 	if err != nil {
 		return nil, err
 	}
-	tmp, err := os.CreateTemp(cacheDir, ".parquet-stage-*.tmp")
+	tmp, err := os.CreateTemp(cacheDir, task.UUID+"-parquet-stage-*.tmp")
 	if err != nil {
 		source.Close()
 		return nil, err
@@ -240,7 +250,8 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 	fieldsJSON, _ := json.Marshal([]string{})
 	dataVersion := objectHash
 	item := model.ResultDataset{ID: datasetID, TenantID: tenant, TaskUUID: task.UUID, ExecutionAttemptID: attempt, Table: table, ObjectKey: candidates[0].Key, ObjectSHA256: objectHash, ManifestVersion: manifestVersion, SourceSize: candidates[0].Size, SourceLastModified: candidates[0].LastModified, FieldsJSON: string(fieldsJSON), ExpectedRows: expectedRows, Rows: 0, DataVersion: dataVersion, CreatedAt: time.Now().UTC()}
-	if err := database.DB.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "task_uuid"}, {Name: "execution_attempt_id"}, {Name: "table"}}, DoUpdates: clause.AssignmentColumns([]string{"object_key", "object_sha256", "manifest_version", "source_size", "source_last_modified", "fields_json", "expected_rows", "rows", "data_version", "automatic_assessment_profile", "automatic_assessment_ready", "created_at"})}).Create(&item).Error; err != nil {
+	if err := database.DB.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "task_uuid"}, {Name: "execution_attempt_id"}, {Name: "table"}}, DoUpdates: clause.AssignmentColumns([]string{"object_key", "object_sha256", "manifest_version", "source_size", "source_last_modified", "fields_json", "expected_rows", "rows", "data_version", "automatic_assessment_profile", "automatic_assessment_ready", "created_at"})}).Create(&item).Error; err != nil {
+		os.Remove(cachePath)
 		return nil, err
 	}
 	return &item, nil
@@ -477,7 +488,7 @@ func normalizeParquetAPIItem(table string, item map[string]interface{}) map[stri
 		row["adjustments"] = map[string]interface{}{}
 	}
 	row["reviewed"] = false
-	row["reported"] = false
+	row["focused"] = false
 	if adjustments, ok := row["adjustments"].(map[string]interface{}); ok {
 		for key, value := range adjustments {
 			row[key] = value
@@ -516,7 +527,7 @@ func normalizeParquetAPIItem(table string, item map[string]interface{}) map[stri
 			applyActiveACMG(row, adjustment)
 		}
 		row["alleleFrequency"] = item["VAF"]
-		row["reviewStatus"] = map[string]interface{}{"reviewed": row["reviewed"], "reported": row["reported"]}
+		row["reviewStatus"] = map[string]interface{}{"reviewed": row["reviewed"], "focused": row["focused"]}
 		if adjustment, ok := item["__adjustments"].(map[string]interface{}); ok {
 			if computed, exists := adjustment["acmgClassificationComputed"]; exists {
 				row["acmgClassificationComputed"] = computed
@@ -589,7 +600,7 @@ func normalizeParquetAPIItem(table string, item map[string]interface{}) map[stri
 	if row["pinned"] == true && row["pinSource"] == nil {
 		row["pinSource"] = "automatic"
 	}
-	row["reviewStatus"] = map[string]interface{}{"pinned": row["pinned"], "reviewed": row["reviewed"], "reported": row["reported"]}
+	row["reviewStatus"] = map[string]interface{}{"pinned": row["pinned"], "reviewed": row["reviewed"], "focused": row["focused"]}
 	return row
 }
 

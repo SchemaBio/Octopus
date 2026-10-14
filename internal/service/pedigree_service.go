@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -65,7 +66,7 @@ func (s *PedigreeService) Get(id string) (*model.PedigreeDetailResponse, error) 
 
 	memberResps := make([]model.PedigreeMemberResp, len(members))
 	for i, m := range members {
-		memberResps[i] = MemberToResponse(&m)
+		memberResps[i] = s.memberResponse(&m)
 	}
 
 	return &model.PedigreeDetailResponse{
@@ -192,7 +193,7 @@ func (s *PedigreeService) ListMembers(pedigreeID string) ([]model.PedigreeMember
 
 	result := make([]model.PedigreeMemberResp, len(members))
 	for i, m := range members {
-		result[i] = MemberToResponse(&m)
+		result[i] = s.memberResponse(&m)
 	}
 
 	return result, nil
@@ -208,7 +209,7 @@ func (s *PedigreeService) GetMember(pedigreeID, memberID string) (*model.Pedigre
 		return nil, errors.New("member does not belong to this pedigree")
 	}
 
-	resp := MemberToResponse(member)
+	resp := s.memberResponse(member)
 	return &resp, nil
 }
 
@@ -245,6 +246,16 @@ func (s *PedigreeService) CreateMember(pedigreeID string, req *model.PedigreeMem
 		Position:       req.Position,
 		HasSample:      hasSample,
 	}
+	for _, field := range req.SourceSampleFields {
+		if !hasSample || (field != "name" && field != "gender" && field != "phenotypes" && field != "birth_year") {
+			return nil, fmt.Errorf("invalid sample-derived field")
+		}
+	}
+	sourceFields, _ := json.Marshal(req.SourceSampleFields)
+	if len(req.SourceSampleFields) == 0 {
+		sourceFields = []byte("[]")
+	}
+	member.SourceSampleFields = string(sourceFields)
 
 	if member.Gender == "" {
 		member.Gender = model.GenderUnknown
@@ -257,7 +268,7 @@ func (s *PedigreeService) CreateMember(pedigreeID string, req *model.PedigreeMem
 		return nil, err
 	}
 
-	resp := MemberToResponse(member)
+	resp := s.memberResponse(member)
 	return &resp, nil
 }
 
@@ -270,6 +281,24 @@ func (s *PedigreeService) UpdateMember(pedigreeID, memberID string, req *model.P
 	if member.PedigreeID != pedigreeID {
 		return nil, errors.New("member does not belong to this pedigree")
 	}
+	// Explicit changes become independent member content; unchanged copies keep
+	// their provenance and remain subject to the source sample's deadline.
+	var copied []string
+	_ = json.Unmarshal([]byte(member.SourceSampleFields), &copied)
+	retained := []string{}
+	for _, field := range copied {
+		changed := field == "name" && req.Name != "" && req.Name != member.Name || field == "gender" && req.Gender != "" && req.Gender != member.Gender || field == "birth_year" && req.BirthYear != nil && (member.BirthYear == nil || *req.BirthYear != *member.BirthYear)
+		if field == "phenotypes" && req.Phenotypes != nil {
+			a, _ := json.Marshal(req.Phenotypes)
+			b, _ := json.Marshal(member.Phenotypes)
+			changed = string(a) != string(b)
+		}
+		if !changed {
+			retained = append(retained, field)
+		}
+	}
+	encoded, _ := json.Marshal(retained)
+	member.SourceSampleFields = string(encoded)
 	if err := s.validateLinkedSample(req.SampleID, actor); err != nil {
 		return nil, err
 	}
@@ -330,7 +359,7 @@ func (s *PedigreeService) UpdateMember(pedigreeID, memberID string, req *model.P
 		return nil, err
 	}
 
-	resp := MemberToResponse(member)
+	resp := s.memberResponse(member)
 	return &resp, nil
 }
 
@@ -400,4 +429,33 @@ func MemberToResponse(m *model.PedigreeMember) model.PedigreeMemberResp {
 		CreatedAt:      m.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:      m.UpdatedAt.Format(time.RFC3339),
 	}
+}
+
+func (s *PedigreeService) memberResponse(member *model.PedigreeMember) model.PedigreeMemberResp {
+	if s.cfg.IsSaaS() && member.SampleID != "" {
+		sample, err := s.sampleRepo.FindByUUID(member.SampleID)
+		if err != nil {
+			copy := *member
+			updates := expiredSampleMemberUpdates(member)
+			copy.SampleID = ""
+			copy.HasSample = false
+			if _, ok := updates["name"]; ok {
+				copy.Name = "—"
+			}
+			if _, ok := updates["gender"]; ok {
+				copy.Gender = model.GenderUnknown
+			}
+			if _, ok := updates["birth_year"]; ok {
+				copy.BirthYear = nil
+			}
+			if _, ok := updates["phenotypes"]; ok {
+				copy.Phenotypes = nil
+			}
+			return MemberToResponse(&copy)
+		}
+		response := MemberToResponse(member)
+		response.SampleExpiresAt = sample.ExpiresAt
+		return response
+	}
+	return MemberToResponse(member)
 }

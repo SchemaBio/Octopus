@@ -16,20 +16,21 @@ const (
 
 // CNVBaseline tracks one baseline-generation workflow and its final output.
 type CNVBaseline struct {
-	ID              uint      `json:"-" gorm:"primaryKey"`
-	UUID            string    `json:"id" gorm:"uniqueIndex;size:36;not null"`
-	Name            string    `json:"name" gorm:"size:200;not null"`
-	ReferenceGenome string    `json:"reference_genome" gorm:"size:20;index;not null"`
-	BEDAssetID      uint      `json:"-" gorm:"index;not null"`
-	TaskUUID        string    `json:"task_id" gorm:"uniqueIndex;size:36;not null"`
-	OutputPath      string    `json:"output_path,omitempty" gorm:"size:1000"`
-	InputBytes      int64     `json:"input_bytes" gorm:"not null;default:0"`
-	CreditsCharged  int       `json:"credits_charged" gorm:"not null;default:0"`
-	StartError      string    `json:"start_error,omitempty" gorm:"type:text"`
-	ExternalOrgID   string    `json:"-" gorm:"size:100;index"`
-	CreatedBy       uint      `json:"-" gorm:"index;not null"`
-	CreatedAt       time.Time `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt       time.Time `json:"updated_at" gorm:"type:timestamptz"`
+	ID              uint       `json:"-" gorm:"primaryKey"`
+	UUID            string     `json:"id" gorm:"uniqueIndex;size:36;not null"`
+	Name            string     `json:"name" gorm:"size:200;not null"`
+	ReferenceGenome string     `json:"reference_genome" gorm:"size:20;index;not null"`
+	BEDAssetID      uint       `json:"-" gorm:"index;not null"`
+	TaskUUID        string     `json:"task_id,omitempty" gorm:"uniqueIndex;size:36"`
+	Status          TaskStatus `json:"status" gorm:"size:30"`
+	OutputPath      string     `json:"output_path,omitempty" gorm:"size:1000"`
+	InputBytes      int64      `json:"input_bytes" gorm:"not null;default:0"`
+	CreditsCharged  int        `json:"credits_charged" gorm:"not null;default:0"`
+	StartError      string     `json:"start_error,omitempty" gorm:"type:text"`
+	ExternalOrgID   string     `json:"-" gorm:"size:100;index"`
+	CreatedBy       uint       `json:"-" gorm:"index;not null"`
+	CreatedAt       time.Time  `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt       time.Time  `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 type CNVBaselineReadPair struct {

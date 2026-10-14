@@ -44,9 +44,17 @@ func deleteCNVBaseline(db *gorm.DB, id string, actor model.OverlayActor) error {
 		// Archive registration locks the task first, then the baseline. Keep the
 		// same order and serialize against retries and status changes.
 		var task model.Task
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ?", baseline.TaskUUID).First(&task).Error; err != nil {
-			return err
+		if baseline.TaskUUID != "" {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ?", baseline.TaskUUID).First(&task).Error; err != nil {
+				if baseline.Status != model.TaskStatusCompleted || baseline.OutputPath == "" {
+					return err
+				}
+				task.Status = model.TaskStatusCompleted
+			}
+		} else if baseline.Status == model.TaskStatusCompleted && baseline.OutputPath != "" {
+			task.Status = model.TaskStatusCompleted
 		}
+
 		switch task.Status {
 		case model.TaskStatusCompleted, model.TaskStatusFailed, model.TaskStatusCancelled:
 		default:

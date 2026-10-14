@@ -191,7 +191,10 @@ func (s *CNVBaselineService) List(actor model.OverlayActor) ([]model.CNVBaseline
 	for i := range baselines {
 		task, err := s.tasks.FindByUUID(baselines[i].TaskUUID)
 		if err != nil {
-			continue
+			if baselines[i].Status != model.TaskStatusCompleted || baselines[i].OutputPath == "" {
+				continue
+			}
+			task = &model.Task{Status: model.TaskStatusCompleted, Progress: 100}
 		}
 		item, err := s.toResponse(&baselines[i], task)
 		if err == nil {
@@ -208,7 +211,10 @@ func (s *CNVBaselineService) Get(uuid string, actor model.OverlayActor) (*model.
 	}
 	task, err := s.tasks.FindByUUID(baseline.TaskUUID)
 	if err != nil {
-		return nil, err
+		if baseline.Status != model.TaskStatusCompleted || baseline.OutputPath == "" {
+			return nil, err
+		}
+		task = &model.Task{Status: model.TaskStatusCompleted, Progress: 100}
 	}
 	return s.toResponse(baseline, task)
 }
@@ -218,9 +224,12 @@ func (s *CNVBaselineService) toResponse(baseline *model.CNVBaseline, task *model
 	if err != nil {
 		return nil, err
 	}
-	pairs, err := s.repo.FindPairs(baseline.ID)
-	if err != nil {
-		return nil, err
+	var pairs []model.CNVBaselineReadPair
+	if task.UUID != "" {
+		pairs, err = s.repo.FindPairs(baseline.ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	readPairs := make([][2]model.CNVBaselineAssetResponse, 0, len(pairs))
 	for _, pair := range pairs {

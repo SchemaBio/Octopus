@@ -178,7 +178,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if _, hasOverride := request.Adjustments["acmgOverride"]; hasOverride && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("ACMG override changes require an adjustment reason")
 	}
-	allowed := map[string]bool{"svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "reported": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
+	allowed := map[string]bool{"svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "focused": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
 	if _, has := request.Adjustments["cnvAssessment"]; has && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("CNV evidence changes require an adjustment reason")
 	}
@@ -214,9 +214,9 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			if err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND version=?", model.TenantIDForTask(task), task.UUID, executionAttempt(task), version).First(&fixed).Error; err != nil {
 				return nil, nil, ErrAdjustmentConflict
 			}
-		case "resetAcmg", "pinned", "reviewed", "reported":
+		case "resetAcmg", "pinned", "reviewed", "focused":
 			if _, ok := value.(bool); !ok {
-				return nil, nil, fmt.Errorf("review and report values must be boolean")
+				return nil, nil, fmt.Errorf("review and focus values must be boolean")
 			}
 		case "interpretation", "acmgOverrideReason":
 			if text, ok := value.(string); !ok || len(text) > 4000 {
@@ -296,10 +296,10 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		}
 	}
 	tenant, attempt := model.TenantIDForTask(task), executionAttempt(task)
-	var historySource *model.HistoryReport
-	if request.Adjustments["reported"] == true {
-		var existing model.HistoryReport
-		lookup := database.DB.WithContext(ctx).Where("id=?", historyReportID(dataset, rowID)).First(&existing).Error
+	var historySource *model.HistoryFocus
+	if !s.cfg.IsSaaS() && request.Adjustments["focused"] == true {
+		var existing model.HistoryFocus
+		lookup := database.DB.WithContext(ctx).Where("id=?", historyFocusID(dataset, rowID)).First(&existing).Error
 		if errors.Is(lookup, gorm.ErrRecordNotFound) {
 			historySource, err = s.historySource(ctx, dataset, rowID, request.RowOrdinal)
 			if err != nil {
@@ -366,6 +366,15 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		for key, value := range request.Adjustments {
 			payload[key] = value
 		}
+		if focused, changed := request.Adjustments["focused"]; changed {
+			if focused == true {
+				payload["focusedBy"] = actor
+				payload["focusedAt"] = time.Now().UTC().Format(time.RFC3339Nano)
+			} else {
+				delete(payload, "focusedBy")
+				delete(payload, "focusedAt")
+			}
+		}
 		if request.Adjustments["resetAcmg"] == true {
 			for key := range payload {
 				if strings.HasPrefix(key, "acmg") || key == "resetAcmg" {
@@ -373,7 +382,9 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 				}
 			}
 		}
-		if raw, ok := payload["acmgEvidence"]; ok {
+		_, evidenceChanged := request.Adjustments["acmgEvidence"]
+		_, overrideChanged := request.Adjustments["acmgOverride"]
+		if raw, ok := payload["acmgEvidence"]; ok && (evidenceChanged || overrideChanged) {
 			data, _ := json.Marshal(raw)
 			var evidence []ACMGEvidenceEntry
 			if err := json.Unmarshal(data, &evidence); err != nil {
@@ -418,7 +429,10 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		if err := tx.Create(&event).Error; err != nil {
 			return err
 		}
-		return persistHistoryReport(tx, &lockedTask, &lockedDataset, &saved, &event, historySource)
+		if s.cfg.IsSaaS() {
+			return nil
+		}
+		return persistHistoryFocus(tx, &lockedTask, &lockedDataset, &saved, &event, historySource)
 	})
 	if err != nil {
 		return nil, nil, err

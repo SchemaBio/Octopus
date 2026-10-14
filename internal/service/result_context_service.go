@@ -60,7 +60,7 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 				return nil, err
 			}
 			if err := database.DB.WithContext(ctx).Model(&model.ResultRowAdjustment{}).
-				Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND \"table\" = ? AND dataset_version = ? AND payload_json->>'reported' = 'true'", tenantID, task.UUID, attemptID, dataset.Table, dataset.DataVersion).Count(&count.Reported).Error; err != nil {
+				Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND \"table\" = ? AND dataset_version = ? AND payload_json->>'focused' = 'true'", tenantID, task.UUID, attemptID, dataset.Table, dataset.DataVersion).Count(&count.Focused).Error; err != nil {
 				return nil, err
 			}
 			counts[dataset.Table] = count
@@ -116,7 +116,7 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 		Members:            members,
 		Types:              counts,
 		QC:                 qc,
-		Permissions:        model.ResultPermissions{CanReview: true, CanReport: true},
+		Permissions:        model.ResultPermissions{CanReview: true, CanFocus: true},
 		Parquet:            parquet,
 	}, nil
 }

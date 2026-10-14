@@ -1,9 +1,11 @@
 package service
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/SchemaBio/Octopus/internal/retention"
 	"io"
 	"os"
 	"path/filepath"
@@ -68,6 +70,16 @@ func (imp *Importer) provenance() model.ResultProvenance {
 
 // ImportFromArchive imports all result data from an archive directory into the database
 func (imp *Importer) ImportFromArchive(taskID string, archiveDir string) (*ImportResult, error) {
+	ctx := context.Background()
+	if imp.cfg.IsSaaS() {
+		var done func()
+		ctx, done = retention.Track(ctx, taskID)
+		defer done()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+
 	if database.GetDB() == nil {
 		return nil, fmt.Errorf("database is not initialized")
 	}
@@ -88,7 +100,7 @@ func (imp *Importer) ImportFromArchive(taskID string, archiveDir string) (*Impor
 	if imp.tenantID == "" || imp.attemptID == "" {
 		return nil, fmt.Errorf("result import requires a resolvable tenant and execution attempt")
 	}
-	tx := database.GetDB().Begin()
+	tx := database.GetDB().WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return nil, tx.Error
 	}

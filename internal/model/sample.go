@@ -58,31 +58,34 @@ const (
 
 // Sample represents a biological sample (germline)
 type Sample struct {
-	ID                uint               `json:"-" gorm:"primaryKey"`
-	UUID              string             `json:"id" gorm:"uniqueIndex;size:36;not null"`
-	InternalID        string             `json:"internal_id" gorm:"index;size:100;not null"`
-	ExternalOrgID     string             `json:"-" gorm:"size:100;index"`
-	Gender            SampleGender       `json:"gender" gorm:"size:20;default:unknown"`
-	Age               *int               `json:"age,omitempty"`
-	SampleType        SampleTypeFrontend `json:"sample_type" gorm:"size:20;default:其他"`
-	Batch             string             `json:"batch" gorm:"size:100"`
-	ClinicalDiagnosis string             `json:"clinical_diagnosis" gorm:"type:jsonb"`    // JSON
-	HPOTerms          string             `json:"-" gorm:"type:jsonb"`                     // JSON
-	MatchedPair       string             `json:"-" gorm:"column:matched_pair;type:jsonb"` // Legacy JSON, retained for migration compatibility
-	AutoMatchedPair   string             `json:"-" gorm:"type:jsonb"`                     // Automatically matched FASTQ pair
-	ManualMatchedPair string             `json:"-" gorm:"type:jsonb"`                     // Explicit user-selected FASTQ pair
-	SubmissionInfo    string             `json:"-" gorm:"type:jsonb"`                     // JSON
-	ProjectInfo       string             `json:"-" gorm:"type:jsonb"`                     // JSON
-	FamilyHistory     string             `json:"-" gorm:"type:jsonb"`                     // JSON
-	Remark            string             `json:"remark" gorm:"type:text"`
-	Status            SampleStatus       `json:"status" gorm:"size:20;default:pending"`
-	ProjectID         uint               `json:"project_id" gorm:"index"`
-	CreatedBy         uint               `json:"created_by" gorm:"index"`
-	MatchStatus       SampleMatchStatus  `json:"match_status" gorm:"size:20;index;not null;default:unmatched"`
-	MatchMode         SampleMatchMode    `json:"match_mode" gorm:"size:20;index"`
-	AutoMatchEnabled  bool               `json:"auto_match_enabled" gorm:"not null;default:true"`
-	CreatedAt         time.Time          `json:"created_at" gorm:"type:timestamptz"`
-	UpdatedAt         time.Time          `json:"updated_at" gorm:"type:timestamptz"`
+	ID                           uint               `json:"-" gorm:"primaryKey"`
+	UUID                         string             `json:"id" gorm:"uniqueIndex;size:36;not null"`
+	InternalID                   string             `json:"internal_id" gorm:"index;size:100;not null"`
+	ExternalOrgID                string             `json:"-" gorm:"size:100;index"`
+	Gender                       SampleGender       `json:"gender" gorm:"size:20;default:unknown"`
+	Age                          *int               `json:"age,omitempty"`
+	SampleType                   SampleTypeFrontend `json:"sample_type" gorm:"size:20;default:其他"`
+	Batch                        string             `json:"batch" gorm:"size:100"`
+	ClinicalDiagnosis            string             `json:"clinical_diagnosis" gorm:"type:jsonb"`    // JSON
+	HPOTerms                     string             `json:"-" gorm:"type:jsonb"`                     // JSON
+	MatchedPair                  string             `json:"-" gorm:"column:matched_pair;type:jsonb"` // Legacy JSON, retained for migration compatibility
+	AutoMatchedPair              string             `json:"-" gorm:"type:jsonb"`                     // Automatically matched FASTQ pair
+	ManualMatchedPair            string             `json:"-" gorm:"type:jsonb"`                     // Explicit user-selected FASTQ pair
+	SubmissionInfo               string             `json:"-" gorm:"type:jsonb"`                     // JSON
+	ProjectInfo                  string             `json:"-" gorm:"type:jsonb"`                     // JSON
+	FamilyHistory                string             `json:"-" gorm:"type:jsonb"`                     // JSON
+	Remark                       string             `json:"remark" gorm:"type:text"`
+	Status                       SampleStatus       `json:"status" gorm:"size:20;default:pending"`
+	ProjectID                    uint               `json:"project_id" gorm:"index"`
+	CreatedBy                    uint               `json:"created_by" gorm:"index"`
+	MatchStatus                  SampleMatchStatus  `json:"match_status" gorm:"size:20;index;not null;default:unmatched"`
+	MatchMode                    SampleMatchMode    `json:"match_mode" gorm:"size:20;index"`
+	AutoMatchEnabled             bool               `json:"auto_match_enabled" gorm:"not null;default:true"`
+	ExpiresAt                    *time.Time         `json:"expires_at,omitempty" gorm:"index;type:timestamptz"`
+	IdentityPolicyVersion        string             `json:"-" gorm:"size:64"`
+	IdentityPolicyAcknowledgedAt *time.Time         `json:"-" gorm:"type:timestamptz"`
+	CreatedAt                    time.Time          `json:"created_at" gorm:"type:timestamptz"`
+	UpdatedAt                    time.Time          `json:"updated_at" gorm:"type:timestamptz"`
 }
 
 func (s *Sample) BeforeSave(_ *gorm.DB) error {
@@ -153,6 +156,7 @@ type AffectedMember struct {
 
 // SampleResponse is the API response for a sample list item
 type SampleResponse struct {
+	ExpiresAt         *time.Time         `json:"expires_at,omitempty"`
 	ID                string             `json:"id"`
 	InternalID        string             `json:"internal_id"`
 	Gender            SampleGender       `json:"gender"`
@@ -173,6 +177,7 @@ type SampleResponse struct {
 
 // SampleDetailResponse is the API response for a sample detail
 type SampleDetailResponse struct {
+	ExpiresAt         *time.Time            `json:"expires_at,omitempty"`
 	ID                string                `json:"id"`
 	InternalID        string                `json:"internal_id"`
 	Gender            SampleGender          `json:"gender"`
@@ -203,16 +208,18 @@ type AnalysisTaskBrief struct {
 
 // SampleCreateRequest is the request body for creating a sample
 type SampleCreateRequest struct {
-	InternalID        string             `json:"internal_id" binding:"required"`
-	Gender            SampleGender       `json:"gender"`
-	Age               *int               `json:"age"`
-	SampleType        SampleTypeFrontend `json:"sample_type"`
-	Batch             string             `json:"batch"`
-	ClinicalDiagnosis string             `json:"clinical_diagnosis"`
-	HPOTerms          []HPOTerm          `json:"hpo_terms"`
-	R1Path            string             `json:"r1_path"`
-	R2Path            string             `json:"r2_path"`
-	Remark            string             `json:"remark"`
+	IdentityPolicyAcknowledged bool               `json:"identity_policy_acknowledged"`
+	IdentityPolicyVersion      string             `json:"identity_policy_version"`
+	InternalID                 string             `json:"internal_id" binding:"required"`
+	Gender                     SampleGender       `json:"gender"`
+	Age                        *int               `json:"age"`
+	SampleType                 SampleTypeFrontend `json:"sample_type"`
+	Batch                      string             `json:"batch"`
+	ClinicalDiagnosis          string             `json:"clinical_diagnosis"`
+	HPOTerms                   []HPOTerm          `json:"hpo_terms"`
+	R1Path                     string             `json:"r1_path"`
+	R2Path                     string             `json:"r2_path"`
+	Remark                     string             `json:"remark"`
 }
 
 // SampleUpdateRequest is the request body for updating a sample
@@ -415,7 +422,7 @@ func (s *Sample) SetFamilyHistory(info FamilyHistoryInfo) {
 
 // SampleToResponse converts Sample to SampleResponse
 func SampleToResponse(s *Sample) SampleResponse {
-	return SampleResponse{
+	return SampleResponse{ExpiresAt: s.ExpiresAt,
 		ID:                s.UUID,
 		InternalID:        s.InternalID,
 		Gender:            s.Gender,

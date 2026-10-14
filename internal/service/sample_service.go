@@ -38,6 +38,9 @@ func NewSampleService(cfg *config.Config) *SampleService {
 
 // CreateSample creates a new sample
 func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreateRequest, actor model.OverlayActor) (*model.Sample, error) {
+	if !req.IdentityPolicyAcknowledged || req.IdentityPolicyVersion != "research-identity-v1" {
+		return nil, fmt.Errorf("sample identity policy acknowledgement required")
+	}
 	if s.repo.ExistsByInternalIDInScope(req.InternalID, actor.OrgID, actor.UserID, 0) {
 		return nil, nil // Already exists
 	}
@@ -49,19 +52,22 @@ func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreat
 	}
 
 	sample := &model.Sample{
-		UUID:             uuid.New().String(),
-		InternalID:       req.InternalID,
-		ExternalOrgID:    actor.OrgID,
-		Gender:           req.Gender,
-		Age:              req.Age,
-		SampleType:       req.SampleType,
-		Batch:            req.Batch,
-		Remark:           req.Remark,
-		Status:           model.SampleStatusPending,
-		CreatedBy:        actor.UserID,
-		MatchStatus:      model.SampleMatchUnmatched,
-		AutoMatchEnabled: true,
+		UUID:                  uuid.New().String(),
+		InternalID:            req.InternalID,
+		ExternalOrgID:         actor.OrgID,
+		Gender:                req.Gender,
+		Age:                   req.Age,
+		SampleType:            req.SampleType,
+		Batch:                 req.Batch,
+		Remark:                req.Remark,
+		Status:                model.SampleStatusPending,
+		CreatedBy:             actor.UserID,
+		MatchStatus:           model.SampleMatchUnmatched,
+		AutoMatchEnabled:      true,
+		IdentityPolicyVersion: req.IdentityPolicyVersion,
 	}
+	acknowledgedAt := time.Now().UTC()
+	sample.IdentityPolicyAcknowledgedAt = &acknowledgedAt
 
 	if sample.Gender == "" {
 		sample.Gender = model.SampleGenderUnknown
@@ -89,6 +95,11 @@ func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreat
 		sample.MatchMode = model.SampleMatchModeManual
 	}
 
+	if s.cfg.IsSaaS() {
+		sample.CreatedAt = time.Now().UTC()
+		deadline := sample.CreatedAt.Add(720 * time.Hour)
+		sample.ExpiresAt = &deadline
+	}
 	if err := s.repo.Create(sample); err != nil {
 		return nil, err
 	}
@@ -392,7 +403,7 @@ func (s *SampleService) SampleToResponse(sample *model.Sample) model.SampleRespo
 func (s *SampleService) SampleToDetailResponse(sample *model.Sample) model.SampleDetailResponse {
 	clinical := parseClinicalDiagnosis(sample.ClinicalDiagnosis)
 	clinical.HPOTerms = sample.GetHPOTerms()
-	return model.SampleDetailResponse{
+	return model.SampleDetailResponse{ExpiresAt: sample.ExpiresAt,
 		ID:                sample.UUID,
 		InternalID:        sample.InternalID,
 		Gender:            sample.Gender,

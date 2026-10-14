@@ -42,6 +42,9 @@ func NewBAMRetentionService(cfg *config.Config) *BAMRetentionService {
 // Errors fail closed: storage/DB outages must not issue a grant beyond expiry.
 func bamRetentionDeadline(ctx context.Context, cfg *config.Config, task *model.Task) (*time.Time, error) {
 	if cfg == nil || cfg.Storage.BAMRetentionDays != 7 {
+		if cfg != nil && cfg.IsSaaS() && task != nil {
+			return task.ExpiresAt, nil
+		}
 		return nil, nil
 	}
 	if task == nil {
@@ -50,7 +53,7 @@ func bamRetentionDeadline(ctx context.Context, cfg *config.Config, task *model.T
 	var job model.BAMRetentionJob
 	err := database.DB.WithContext(ctx).Where("task_uuid = ? AND org_id = ? AND attempt_id = ?", task.UUID, task.ExternalOrgID, task.ExecutionAttemptID).First(&job).Error
 	if err == nil {
-		return &job.ExpiresAt, nil
+		return earlierDeadline(&job.ExpiresAt, task.ExpiresAt), nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("BAM retention state unavailable")
@@ -59,7 +62,7 @@ func bamRetentionDeadline(ctx context.Context, cfg *config.Config, task *model.T
 		return nil, fmt.Errorf("BAM completion timestamp unavailable")
 	}
 	deadline := task.FinishedAt.UTC().Add(7 * 24 * time.Hour)
-	return &deadline, nil
+	return earlierDeadline(&deadline, task.ExpiresAt), nil
 }
 
 func (s *BAMRetentionService) Start(ctx context.Context) {
@@ -98,6 +101,12 @@ func (s *BAMRetentionService) Start(ctx context.Context) {
 }
 
 func (s *BAMRetentionService) backfill(ctx context.Context) error {
+	if s.cfg.IsSaaS() {
+		if err := database.DB.WithContext(ctx).Exec("UPDATE bam_retention_jobs j SET expires_at=t.expires_at FROM tasks t WHERE j.task_uuid=t.uuid AND j.org_id=t.external_org_id AND t.expires_at<j.expires_at").Error; err != nil {
+			return err
+		}
+	}
+
 	// Capture only provable current completed attempts, including soft-deleted tasks.
 	// Historic overwritten attempts without a completion timestamp are not guessed.
 	cursor := ""
@@ -385,4 +394,14 @@ func (s *BAMRetentionService) Execute(ctx context.Context, id string) error {
 		return fmt.Errorf("cleanup final audit unavailable")
 	}
 	return runErr
+}
+
+func earlierDeadline(a, b *time.Time) *time.Time {
+	if a == nil {
+		return b
+	}
+	if b != nil && b.Before(*a) {
+		return b
+	}
+	return a
 }

@@ -213,7 +213,7 @@ func (e *Engine) run(ctx context.Context, q Request, export bool) (response *Res
 		}
 		return response, "", nil
 	}
-	sorter, err := newSorter(ctx, e.TempRoot, q.Direction == "desc")
+	sorter, err := newSorter(ctx, e.TempRoot, q.Direction == "desc", q.DatasetID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -229,7 +229,7 @@ func (e *Engine) run(ctx context.Context, q Request, export bool) (response *Res
 	extra := append([]string{}, overlayFields...)
 	sort.Strings(extra)
 	if export {
-		file, err = os.CreateTemp(e.TempRoot, "octopus-effective-*.csv")
+		file, err = os.CreateTemp(e.TempRoot, "octopus-effective-"+q.DatasetID+"-*.csv")
 		if err != nil {
 			return nil, "", err
 		}
@@ -483,7 +483,7 @@ func (e *Engine) Prepare(ctx context.Context, q Request) (*Prepared, error) {
 		}
 		return &Prepared{output, ACMGProfile, rows}, nil
 	}
-	file, err := os.CreateTemp(e.AssessmentRoot, ".acmg-*.tmp")
+	file, err := os.CreateTemp(e.AssessmentRoot, q.DatasetID+"-acmg-*.tmp")
 	if err != nil {
 		return nil, err
 	}

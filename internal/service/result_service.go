@@ -62,8 +62,8 @@ func (s *ResultService) ReviewSNVIndel(ctx context.Context, id string, reviewer 
 	return s.repo.UpdateSNVIndelReview(id, true, reviewer)
 }
 
-func (s *ResultService) ReportSNVIndel(ctx context.Context, id string, reporter string) error {
-	return s.repo.UpdateSNVIndelReport(id, true, reporter)
+func (s *ResultService) FocusSNVIndel(ctx context.Context, id string, focuser string) error {
+	return s.repo.UpdateSNVIndelFocus(id, true, focuser)
 }
 
 // ========== CNV Segment ==========
@@ -76,8 +76,8 @@ func (s *ResultService) ReviewCNVSegment(ctx context.Context, id string, reviewe
 	return s.repo.UpdateCNVSegmentReview(id, true, reviewer)
 }
 
-func (s *ResultService) ReportCNVSegment(ctx context.Context, id string, reporter string) error {
-	return s.repo.UpdateCNVSegmentReport(id, true, reporter)
+func (s *ResultService) FocusCNVSegment(ctx context.Context, id string, focuser string) error {
+	return s.repo.UpdateCNVSegmentFocus(id, true, focuser)
 }
 
 // ========== CNV Exon ==========
@@ -90,8 +90,8 @@ func (s *ResultService) ReviewCNVExon(ctx context.Context, id string, reviewer s
 	return s.repo.UpdateCNVExonReview(id, true, reviewer)
 }
 
-func (s *ResultService) ReportCNVExon(ctx context.Context, id string, reporter string) error {
-	return s.repo.UpdateCNVExonReport(id, true, reporter)
+func (s *ResultService) FocusCNVExon(ctx context.Context, id string, focuser string) error {
+	return s.repo.UpdateCNVExonFocus(id, true, focuser)
 }
 
 // ========== STR ==========
@@ -104,8 +104,8 @@ func (s *ResultService) ReviewSTR(ctx context.Context, id string, reviewer strin
 	return s.repo.UpdateSTRReview(id, true, reviewer)
 }
 
-func (s *ResultService) ReportSTR(ctx context.Context, id string, reporter string) error {
-	return s.repo.UpdateSTRReport(id, true, reporter)
+func (s *ResultService) FocusSTR(ctx context.Context, id string, focuser string) error {
+	return s.repo.UpdateSTRFocus(id, true, focuser)
 }
 
 // ========== MEI ==========
@@ -118,8 +118,8 @@ func (s *ResultService) ReviewMEI(ctx context.Context, id string, reviewer strin
 	return s.repo.UpdateMEIReview(id, true, reviewer)
 }
 
-func (s *ResultService) ReportMEI(ctx context.Context, id string, reporter string) error {
-	return s.repo.UpdateMEIReport(id, true, reporter)
+func (s *ResultService) FocusMEI(ctx context.Context, id string, focuser string) error {
+	return s.repo.UpdateMEIFocus(id, true, focuser)
 }
 
 // ========== Mitochondrial ==========
@@ -132,8 +132,8 @@ func (s *ResultService) ReviewMTVariant(ctx context.Context, id string, reviewer
 	return s.repo.UpdateMTVariantReview(id, true, reviewer)
 }
 
-func (s *ResultService) ReportMTVariant(ctx context.Context, id string, reporter string) error {
-	return s.repo.UpdateMTVariantReport(id, true, reporter)
+func (s *ResultService) FocusMTVariant(ctx context.Context, id string, focuser string) error {
+	return s.repo.UpdateMTVariantFocus(id, true, focuser)
 }
 
 // ========== UPD ==========
@@ -146,8 +146,8 @@ func (s *ResultService) ReviewUPDRegion(ctx context.Context, id string, reviewer
 	return s.repo.UpdateUPDRegionReview(id, true, reviewer)
 }
 
-func (s *ResultService) ReportUPDRegion(ctx context.Context, id string, reporter string) error {
-	return s.repo.UpdateUPDRegionReport(id, true, reporter)
+func (s *ResultService) FocusUPDRegion(ctx context.Context, id string, focuser string) error {
+	return s.repo.UpdateUPDRegionFocus(id, true, focuser)
 }
 
 // ========== ROH ==========
@@ -156,7 +156,7 @@ func (s *ResultService) ListROHRegions(ctx context.Context, query *model.ROHList
 	return s.repo.PaginateROHRegions(query)
 }
 
-// ========== Review/Report by type ==========
+// ========== Review/Focus by type ==========
 
 // ReviewVariant marks a variant as reviewed by type
 func (s *ResultService) ReviewVariant(ctx context.Context, variantType string, taskID string, id string, reviewer string) error {
@@ -170,9 +170,9 @@ func (s *ResultService) ReviewVariantWithEvent(ctx context.Context, task *model.
 	return s.repo.ReviewVariantWithEvent(task, variantType, id, reviewed, actorID, reviewer)
 }
 
-// ReportVariant marks a variant as reported by type
-func (s *ResultService) ReportVariant(ctx context.Context, variantType string, taskID string, id string, reporter string) error {
-	return s.repo.UpdateVariantReport(variantType, taskID, id, true, reporter)
+// FocusVariant marks a variant as focused by type
+func (s *ResultService) FocusVariant(ctx context.Context, variantType string, taskID string, id string, focuser string) error {
+	return s.repo.UpdateVariantFocus(variantType, taskID, id, true, focuser)
 }
 
 // ========== CNV assessment persistence ==========
@@ -312,4 +312,8 @@ func splitCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func (s *ResultService) FocusVariantWithEvent(ctx context.Context, task *model.Task, kind, id string, focused bool, actorID uint, email string) (*repository.FocusMutation, error) {
+	return s.repo.FocusVariantWithEvent(task, kind, id, focused, actorID, email)
 }

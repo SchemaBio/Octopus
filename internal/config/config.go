@@ -9,19 +9,22 @@ import (
 )
 
 type Config struct {
-	Server       ServerConfig
-	Database     DatabaseConfig
-	Task         TaskConfig
-	Sepiida      SepiidaConfig
-	Parquet      ParquetConfig
-	ResultQuery  ResultQueryConfig
-	JWT          JWTConfig
-	ExternalAuth ExternalAuthConfig
-	Overlay      OverlayConfig
-	LLM          LLMConfig
-	Storage      StorageConfig
-	Report       ReportConfig
-	IGV          IGVConfig
+	Edition                       string
+	RetentionCleanupEnabled       bool
+	RetentionBackupPolicyVerified bool
+	Server                        ServerConfig
+	Database                      DatabaseConfig
+	Task                          TaskConfig
+	Sepiida                       SepiidaConfig
+	Parquet                       ParquetConfig
+	ResultQuery                   ResultQueryConfig
+	JWT                           JWTConfig
+	ExternalAuth                  ExternalAuthConfig
+	Overlay                       OverlayConfig
+	LLM                           LLMConfig
+	Storage                       StorageConfig
+	Report                        ReportConfig
+	IGV                           IGVConfig
 }
 
 type ServerConfig struct {
@@ -115,6 +118,7 @@ type LLMConfig struct {
 }
 
 type StorageConfig struct {
+	TaskRetentionEnabled          bool
 	ResultDownloadLinkTTL         time.Duration
 	ResultDownloadRefreshInterval time.Duration
 	ResultDownloadMaxIssues       int
@@ -208,6 +212,9 @@ func Load() *Config {
 		}
 	}
 	return &Config{
+		Edition:                       getEnv("DEPLOYMENT_EDITION", "opensource"),
+		RetentionCleanupEnabled:       getEnv("RETENTION_CLEANUP_ENABLED", "false") == "true",
+		RetentionBackupPolicyVerified: getEnv("RETENTION_BACKUP_POLICY_VERIFIED", "false") == "true",
 		Server: ServerConfig{
 			Port:           getEnv("SERVER_PORT", "8080"),
 			Mode:           getEnv("GIN_MODE", "debug"),
@@ -288,6 +295,7 @@ func Load() *Config {
 			ProxyMaxBodyBytes: int64(parseIntEnv("LLM_PROXY_MAX_BODY_MB", 2)) << 20,
 		},
 		Storage: StorageConfig{
+			TaskRetentionEnabled:          getEnv("DEPLOYMENT_EDITION", "opensource") == "saas",
 			ResultDownloadLinkTTL:         parseDuration(getEnv("RESULT_DOWNLOAD_LINK_TTL", "30m")),
 			ResultDownloadRefreshInterval: parseDuration(getEnv("RESULT_DOWNLOAD_REFRESH_INTERVAL", "60s")),
 			ResultDownloadMaxIssues:       parseIntEnv("RESULT_DOWNLOAD_MAX_ISSUES", 12),
@@ -485,3 +493,5 @@ func getEnvOrFile(envKey, defaultValue string) string {
 	}
 	return defaultValue
 }
+
+func (c *Config) IsSaaS() bool { return c != nil && c.Edition == "saas" }

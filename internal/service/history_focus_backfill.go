@@ -27,7 +27,7 @@ type HistoryBackfillSummary struct {
 
 // Backfill does not start queues, migrations or billing. Existing indexed rows
 // win over a migration and a concurrent adjustment wins via version checking.
-func (s *ResultService) BackfillHistoryReports(ctx context.Context, execute bool, taskID string) (*HistoryBackfillSummary, error) {
+func (s *ResultService) BackfillHistoryFocuses(ctx context.Context, execute bool, taskID string) (*HistoryBackfillSummary, error) {
 	summary := &HistoryBackfillSummary{Execute: execute, Unresolved: []map[string]string{}}
 	query := database.DB.WithContext(ctx).Model(&model.ResultDataset{})
 	if taskID != "" {
@@ -53,19 +53,19 @@ func (s *ResultService) BackfillHistoryReports(ctx context.Context, execute bool
 			return nil, err
 		}
 		targets := map[string]model.ResultRowAdjustment{}
-		var previouslyReported []string
-		if err := database.DB.WithContext(ctx).Model(&model.ResultRowAdjustmentEvent{}).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND dataset_version=? AND after_json->>'reported'='true'", d.TenantID, d.TaskUUID, d.ExecutionAttemptID, d.Table, d.DataVersion).Distinct("row_id").Pluck("row_id", &previouslyReported).Error; err != nil {
+		var previouslyFocused []string
+		if err := database.DB.WithContext(ctx).Model(&model.ResultRowAdjustmentEvent{}).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND dataset_version=? AND after_json->>'focused'='true'", d.TenantID, d.TaskUUID, d.ExecutionAttemptID, d.Table, d.DataVersion).Distinct("row_id").Pluck("row_id", &previouslyFocused).Error; err != nil {
 			return nil, err
 		}
-		reportedIDs := map[string]bool{}
-		for _, id := range previouslyReported {
-			reportedIDs[id] = true
+		focusedIDs := map[string]bool{}
+		for _, id := range previouslyFocused {
+			focusedIDs[id] = true
 		}
-		var indexed []model.HistoryReport
+		var indexed []model.HistoryFocus
 		if err := database.DB.WithContext(ctx).Where("dataset_id=? AND dataset_version=?", d.ID, d.DataVersion).Find(&indexed).Error; err != nil {
 			return nil, err
 		}
-		indexedByRow := map[string]model.HistoryReport{}
+		indexedByRow := map[string]model.HistoryFocus{}
 		for _, row := range indexed {
 			indexedByRow[row.RowID] = row
 		}
@@ -75,7 +75,7 @@ func (s *ResultService) BackfillHistoryReports(ctx context.Context, execute bool
 				summary.Unresolved = append(summary.Unresolved, map[string]string{"dataset": d.ID, "row": a.RowID, "reason": "invalid_adjustment_payload"})
 				continue
 			}
-			if payload["reported"] != true && !reportedIDs[a.RowID] {
+			if payload["focused"] != true && !focusedIDs[a.RowID] {
 				continue
 			}
 			if existing, ok := indexedByRow[a.RowID]; ok && (existing.Deleted || existing.AdjustmentVersion >= a.Version) {
@@ -119,7 +119,7 @@ func (s *ResultService) BackfillHistoryReports(ctx context.Context, execute bool
 				delete(targets, rowID)
 				fields := compactHistoryFields(raw, d.Table)
 				encoded, _ := json.Marshal(fields)
-				source := model.HistoryReport{ID: historyReportID(&d, rowID), TenantID: d.TenantID, TaskUUID: d.TaskUUID, AttemptID: d.ExecutionAttemptID, Table: d.Table, DatasetID: d.ID, DatasetVersion: d.DataVersion, RowID: rowID, RowOrdinal: ordinal, FieldsJSON: string(encoded)}
+				source := model.HistoryFocus{ID: historyFocusID(&d, rowID), TenantID: d.TenantID, TaskUUID: d.TaskUUID, AttemptID: d.ExecutionAttemptID, Table: d.Table, DatasetID: d.ID, DatasetVersion: d.DataVersion, RowID: rowID, RowOrdinal: ordinal, FieldsJSON: string(encoded)}
 				if existing, ok := indexedByRow[rowID]; ok {
 					source = existing
 				}
@@ -131,31 +131,31 @@ func (s *ResultService) BackfillHistoryReports(ctx context.Context, execute bool
 					var before, after map[string]interface{}
 					_ = json.Unmarshal([]byte(event.BeforeJSON), &before)
 					_ = json.Unmarshal([]byte(event.AfterJSON), &after)
-					if after["reported"] == true && before["reported"] != true {
+					if after["focused"] == true && before["focused"] != true {
 						at := event.CreatedAt
 						if !at.IsZero() {
-							if source.FirstReportedAt == nil {
-								source.FirstReportedAt = &at
+							if source.FirstFocusedAt == nil {
+								source.FirstFocusedAt = &at
 							}
-							source.LastReportedAt = &at
+							source.LastFocusedAt = &at
 						}
-						source.ReportedBy = event.Actor
+						source.FocusedBy = event.Actor
 						if d.Table == "snv-indel" {
-							source.ReportedVusSubclass = ""
-							source.ReportedACMGVersion = stringAdjustment(after, "activeAcmgVersion")
-							if source.ReportedACMGVersion == "" {
-								source.ReportedACMGVersion = "legacy"
+							source.FocusedVusSubclass = ""
+							source.FocusedACMGVersion = stringAdjustment(after, "activeAcmgVersion")
+							if source.FocusedACMGVersion == "" {
+								source.FocusedACMGVersion = "legacy"
 							}
-							if source.ReportedACMGVersion == "svcv4" {
-								source.ReportedVusSubclass = stringAdjustment(svcResult(after), "vusSubclass")
+							if source.FocusedACMGVersion == "svcv4" {
+								source.FocusedVusSubclass = stringAdjustment(svcResult(after), "vusSubclass")
 							}
 						}
-						source.ReportedClassification = stringAdjustment(after, "acmgOverride")
-						if source.ReportedClassification == "" {
-							source.ReportedClassification = stringAdjustment(after, "acmgClassification")
+						source.FocusedClassification = stringAdjustment(after, "acmgOverride")
+						if source.FocusedClassification == "" {
+							source.FocusedClassification = stringAdjustment(after, "acmgClassification")
 						}
-						if source.ReportedACMGVersion == "svcv4" {
-							source.ReportedClassification = stringAdjustment(svcResult(after), "classification")
+						if source.FocusedACMGVersion == "svcv4" {
+							source.FocusedClassification = stringAdjustment(svcResult(after), "classification")
 						}
 					}
 				}
@@ -175,7 +175,7 @@ func (s *ResultService) BackfillHistoryReports(ctx context.Context, execute bool
 					if current.Version != a.Version || current.DatasetVersion != d.DataVersion {
 						return ErrAdjustmentConflict
 					}
-					var existing model.HistoryReport
+					var existing model.HistoryFocus
 					lookup := tx.Where("id=?", source.ID).First(&existing).Error
 					if lookup == nil {
 						if existing.Deleted || existing.AdjustmentVersion >= current.Version {
@@ -188,7 +188,7 @@ func (s *ResultService) BackfillHistoryReports(ctx context.Context, execute bool
 					if err := json.Unmarshal([]byte(current.PayloadJSON), &payload); err != nil {
 						return err
 					}
-					source.Reported = payload["reported"] == true
+					source.Focused = payload["focused"] == true
 					source.AdjustmentVersion = current.Version
 					source.UpdatedAt = time.Now().UTC()
 					var err error

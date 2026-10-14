@@ -58,14 +58,14 @@ func TestSVCv4GoChecksReferenceRevision(t *testing.T) {
 }
 
 func TestReportContractRequiresVersionProvenance(t *testing.T) {
-	raw := `{"reported_variants":[{"interpretation":{"activeAcmgVersion":"svcv4"}}]}`
+	raw := `{"focused_variants":[{"interpretation":{"activeAcmgVersion":"svcv4"}}]}`
 	if validateReportACMGContract(raw, "legacy-v1") == nil {
 		t.Fatal("legacy report silently loses selected version")
 	}
 	if err := validateReportACMGContract(raw, "report-snapshot-v2"); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateReportACMGContract(`{"reported_variants":[]}`, "legacy-v1"); err == nil {
+	if err := validateReportACMGContract(`{"focused_variants":[]}`, "legacy-v1"); err == nil {
 		t.Fatal("legacy protocol must be rejected even without SVC variants")
 	}
 }

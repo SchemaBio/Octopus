@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -243,6 +244,16 @@ func (h *ResultHandler) SaveParquetRowAdjustment(c *gin.Context) {
 	if err := c.ShouldBindJSON(&request); err != nil {
 		ErrorBadRequest(c, "invalid result adjustment")
 		return
+	}
+	if strings.HasSuffix(c.FullPath(), "/focus") {
+		if len(request.Adjustments) != 1 {
+			ErrorBadRequest(c, "focus only accepts its marker")
+			return
+		}
+		if _, ok := request.Adjustments["focused"].(bool); !ok {
+			ErrorBadRequest(c, "focused must be boolean")
+			return
+		}
 	}
 	if request.DatasetVersion == "" || request.AttemptID == "" {
 		ErrorBadRequest(c, "datasetVersion and attemptId are required")
@@ -647,33 +658,35 @@ func (h *ResultHandler) ReviewVariant(c *gin.Context) {
 	Success(c, response)
 }
 
-// ReportVariant marks a variant as reported
-func (h *ResultHandler) ReportVariant(c *gin.Context) {
-	taskID := c.Param("id")
-	variantType := c.Param("type")
-	vid := c.Param("vid")
+// FocusVariant marks a variant as focused
 
-	_, ok := requireTaskAccess(c, h.taskRepo, taskID)
+func (h *ResultHandler) FocusVariant(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
 	if !ok {
 		return
 	}
-
-	_, email, _, ok := middleware.GetCurrentUser(c)
+	actorID, email, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
-	if isStableResultRowID(vid) {
-		ErrorBadRequest(c, "use the versioned result row adjustment endpoint")
+	if isStableResultRowID(c.Param("vid")) {
+		ErrorBadRequest(c, "use the versioned row focus endpoint")
 		return
 	}
-
-	if err := h.svc.ReportVariant(c.Request.Context(), variantType, taskID, vid, email); err != nil {
+	var req struct {
+		Focused *bool `json:"focused"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Focused == nil {
+		ErrorBadRequest(c, "focused is required")
+		return
+	}
+	mutation, err := h.svc.FocusVariantWithEvent(c.Request.Context(), task, c.Param("type"), c.Param("vid"), *req.Focused, actorID, email)
+	if err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
-
-	Success(c, gin.H{"reported": true})
+	Success(c, gin.H{"focused": mutation.Focused, "focusedBy": mutation.FocusedBy, "focusedAt": mutation.FocusedAt, "changed": mutation.Changed})
 }
 
 // ListCNVAssessments returns saved ClinGen CNV assessments for a task/type.
