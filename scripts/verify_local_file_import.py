@@ -26,13 +26,18 @@ tag='local-import-check-'+secrets.token_hex(6);folder=host_root/tag;folder.mkdir
 identity='verify-'+tag;created=[];user=None
 payload=lambda first,second:{'internal_id':identity,'read1_path':container_root+'/'+tag+'/'+first,'read2_path':container_root+'/'+tag+'/'+second}
 raw1=gzip.compress(b'@fixture/1\nACGT\n+\nIIII\n');raw2=gzip.compress(b'@fixture/2\nACGT\n+\nIIII\n')
-fixtures={'R1.fastq.gz':raw1,'R2.fastq.gz':raw2,'bad_R1.fastq.gz':raw1,'bad_R2.fastq.gz':raw2[:-5]}
+names={name:tag+'_'+name for name in ['R1.fastq.gz','R2.fastq.gz','bad_R1.fastq.gz','bad_R2.fastq.gz']};fixtures={names['R1.fastq.gz']:raw1,names['R2.fastq.gz']:raw2,names['bad_R1.fastq.gz']:raw1,names['bad_R2.fastq.gz']:raw2[:-5]}
 try:
  for name,data in fixtures.items():(folder/name).write_bytes(data)
  password='A8!'+secrets.token_urlsafe(20);email=tag+'@example.invalid'
+ # Files exist on disk but have no registration. Filename searches must not
+ # expose them before the operator submits their information.
+ for name in fixtures:
+  listing=call('GET','/data/assets?search='+urllib.parse.quote(name),admin)
+  assert not any(asset['file_name']==name for asset in listing['items']),name
  user=call('POST','/users',admin,{'email':email,'name':'Temporary local import test','password':password,'system_role':'USER','permissions':['data.manage']},201)
  ordinary=login(email,password);uid=str(user['id'])
- body=payload('R1.fastq.gz','R2.fastq.gz')
+ body=payload(names['R1.fastq.gz'],names['R2.fastq.gz'])
  denied=call('POST','/data/local-import',ordinary,body,403);assert denied['required_permission']=='samples.write'
  call('PUT','/users/'+uid,admin,{'permissions':['data.manage','samples.write']})
  assets=call('POST','/data/local-import',ordinary,body,201);created.extend(asset['id'] for asset in assets)
@@ -45,14 +50,14 @@ try:
   request=urllib.request.Request(base+'/data/assets/'+asset['id']+'/download',headers={'Authorization':'Bearer '+admin})
   with urllib.request.urlopen(request) as response:assert response.read()==expected
  call('POST','/data/local-import',ordinary,body,409)
- bad=call('POST','/data/local-import',ordinary,payload('bad_R1.fastq.gz','bad_R2.fastq.gz'),400);assert bad['code']=='local_import_integrity'
- same=call('POST','/data/local-import',ordinary,payload('R1.fastq.gz','R1.fastq.gz'),400);assert same['code']=='local_import_same_file'
+ bad=call('POST','/data/local-import',ordinary,payload(names['bad_R1.fastq.gz'],names['bad_R2.fastq.gz']),400);assert bad['code']=='local_import_integrity'
+ same=call('POST','/data/local-import',ordinary,payload(names['R1.fastq.gz'],names['R1.fastq.gz']),400);assert same['code']=='local_import_same_file'
  call('POST','/data/local-import',ordinary,{**body,'read1_path':'/etc/passwd'},400)
  listing=call('GET','/data/assets?search='+urllib.parse.quote(identity),admin)
  assert listing['total']==2 and set(asset['id'] for asset in listing['items'])==set(created)
  call('PUT','/users/'+uid,admin,{'permissions':[]})
  call('POST','/data/local-import',ordinary,body,403)
- print('PASS:',checks,'local checks: mounted paths, complete FASTQ pair, sizes, UUIDs, downloads, corrupt files, duplicates, permissions and revocation')
+ print('PASS:',checks,'local checks: unregistered files hidden, mounted paths, complete FASTQ pair, sizes, UUIDs, downloads, corrupt files, duplicates, permissions and revocation')
 finally:
  try:
   for asset_id in created:call('DELETE','/data/assets/'+asset_id,admin,status=204)

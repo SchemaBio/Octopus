@@ -27,6 +27,11 @@ func NewDataScanner(cfg *config.Config) *DataScanner {
 }
 
 func (s *DataScanner) Enabled() bool {
+	// Self-hosted server files require explicit metadata registration and full
+	// FASTQ validation. A legacy scan setting must not publish copied files.
+	if s.cfg.Edition == "opensource" && s.cfg.Storage.Provider == "local" {
+		return false
+	}
 	return (s.cfg.Storage.Provider == "local" && s.cfg.Storage.ScanLocalDir != "") ||
 		(s.cfg.Storage.Provider == "s3" && s.cfg.Storage.S3ScanPrefix != "")
 }
@@ -55,6 +60,9 @@ func (s *DataScanner) Start(ctx context.Context) {
 }
 
 func (s *DataScanner) scan(ctx context.Context, stableFor time.Duration) {
+	if !s.Enabled() {
+		return
+	}
 	if s.cfg.Storage.Provider == "s3" {
 		s.scanS3(ctx, stableFor)
 		return
