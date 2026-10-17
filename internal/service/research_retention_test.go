@@ -67,7 +67,7 @@ func TestPromotedBaselineSurvivesRetryAfterSourceErasure(t *testing.T) {
 }
 
 func TestSampleIdentityAcknowledgmentCannotBeBypassed(t *testing.T) {
-	for _, edition := range []string{"opensource", "saas"} {
+	for _, edition := range []string{"saas", ""} {
 		s := &SampleService{cfg: &config.Config{Edition: edition}}
 		for _, req := range []model.SampleCreateRequest{{}, {IdentityPolicyAcknowledged: true}, {IdentityPolicyVersion: "research-identity-v1"}, {IdentityPolicyAcknowledged: true, IdentityPolicyVersion: "old"}} {
 			if _, err := s.CreateSample(context.Background(), &req, model.OverlayActor{}); err == nil {

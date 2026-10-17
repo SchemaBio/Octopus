@@ -5,8 +5,9 @@ import "time"
 type DataAssetSource string
 
 const (
-	DataAssetSourceUpload  DataAssetSource = "upload"
-	DataAssetSourceScanner DataAssetSource = "scanner"
+	DataAssetSourceUpload      DataAssetSource = "upload"
+	DataAssetSourceScanner     DataAssetSource = "scanner"
+	DataAssetSourceLocalImport DataAssetSource = "local_import"
 )
 
 // DataAsset is the organization-scoped identity for one stored data file.
@@ -72,11 +73,12 @@ type DataAssetListQuery struct {
 }
 
 type DataCenterConfigResponse struct {
-	Provider         UploadProvider `json:"provider"`
-	RetentionDays    int            `json:"retention_days"`
-	Temporary        bool           `json:"temporary"`
-	DownloadAllowed  bool           `json:"download_allowed"`
-	MaxFileSizeBytes int64          `json:"max_file_size_bytes"`
+	LocalImportDirectory string         `json:"local_import_directory,omitempty"`
+	Provider             UploadProvider `json:"provider"`
+	RetentionDays        int            `json:"retention_days"`
+	Temporary            bool           `json:"temporary"`
+	DownloadAllowed      bool           `json:"download_allowed"`
+	MaxFileSizeBytes     int64          `json:"max_file_size_bytes"`
 }
 
 func DataAssetToResponse(asset *DataAsset) DataAssetResponse {
@@ -96,3 +98,10 @@ func DataAssetToResponse(asset *DataAsset) DataAssetResponse {
 }
 
 func (DataAsset) TableName() string { return "data_assets" }
+
+// Each request registers one fully validated pair; the browser batches CSV rows.
+type LocalDataImportRequest struct {
+	InternalID string `json:"internal_id" binding:"required,max=100"`
+	Read1Path  string `json:"read1_path" binding:"required,max=1000"`
+	Read2Path  string `json:"read2_path" binding:"required,max=1000"`
+}

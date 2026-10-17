@@ -38,7 +38,7 @@ func NewSampleService(cfg *config.Config) *SampleService {
 
 // CreateSample creates a new sample
 func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreateRequest, actor model.OverlayActor) (*model.Sample, error) {
-	if !req.IdentityPolicyAcknowledged || req.IdentityPolicyVersion != "research-identity-v1" {
+	if (s.cfg == nil || s.cfg.Edition != "opensource") && (!req.IdentityPolicyAcknowledged || req.IdentityPolicyVersion != "research-identity-v1") {
 		return nil, fmt.Errorf("sample identity policy acknowledgement required")
 	}
 	if s.repo.ExistsByInternalIDInScope(req.InternalID, actor.OrgID, actor.UserID, 0, actor.SharedInstance) {
@@ -66,8 +66,10 @@ func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreat
 		AutoMatchEnabled:      true,
 		IdentityPolicyVersion: req.IdentityPolicyVersion,
 	}
-	acknowledgedAt := time.Now().UTC()
-	sample.IdentityPolicyAcknowledgedAt = &acknowledgedAt
+	if req.IdentityPolicyAcknowledged && req.IdentityPolicyVersion == "research-identity-v1" {
+		acknowledgedAt := time.Now().UTC()
+		sample.IdentityPolicyAcknowledgedAt = &acknowledgedAt
+	}
 
 	if sample.Gender == "" {
 		sample.Gender = model.SampleGenderUnknown

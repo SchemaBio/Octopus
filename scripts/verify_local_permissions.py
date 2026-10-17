@@ -74,7 +74,7 @@ try:
     assert grant(aid, ["samples.write", "samples.write"])["permissions"] == ["samples.write"]
     request("PUT", f"/users/{aid}", admin, {"name": "Preserve grants"})
     assert request("GET", "/auth/me", a)["permissions"] == ["samples.write"]
-    sample = request("POST", "/samples", a, {"internal_id": "perm-" + suffix, "identity_policy_acknowledged": True, "identity_policy_version": "research-identity-v1"}, 201)
+    sample = request("POST", "/samples", a, {"internal_id": "perm-" + suffix}, 201)
     sid = sample["id"]; sample_ids.append(sid)
     assert request("GET", f"/samples/{sid}", b)["internal_id"] == "perm-" + suffix
     listed = request("GET", "/samples?search=perm-" + suffix, b)

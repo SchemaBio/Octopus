@@ -152,7 +152,7 @@ func main() {
 	} else {
 		fmt.Println("Data retention cleanup disabled (data retained indefinitely)")
 	}
-	matcher := service.NewSampleMatcher()
+	matcher := service.NewSampleMatcher(cfg)
 	matcher.Start(ctx, time.Minute)
 	fmt.Println("Sample data matcher started (interval: 1m)")
 	scanner := service.NewDataScanner(cfg)

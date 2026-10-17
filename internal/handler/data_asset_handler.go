@@ -114,3 +114,34 @@ func (h *DataAssetHandler) ValidateBED(c *gin.Context) {
 	}
 	Success(c, model.DataAssetToResponse(a))
 }
+
+func (h *DataAssetHandler) ImportLocalPair(c *gin.Context) {
+	var req model.LocalDataImportRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, "invalid local import request")
+		return
+	}
+	assets, err := h.svc.ImportLocalPair(c.Request.Context(), &req, taskActorFromContext(c))
+	if err != nil {
+		status := http.StatusBadRequest
+		switch err.Error() {
+		case "local_import_disabled":
+			status = http.StatusNotFound
+		case "local_import_duplicate":
+			status = http.StatusConflict
+		case "local_import_busy":
+			status = http.StatusTooManyRequests
+		case "local_import_database":
+			status = http.StatusServiceUnavailable
+		case "local_import_permission_denied":
+			status = http.StatusForbidden
+		}
+		if status == http.StatusForbidden {
+			c.JSON(status, gin.H{"code": "permission_denied", "required_permission": "data.manage", "error": err.Error()})
+			return
+		}
+		c.JSON(status, gin.H{"code": err.Error(), "error": err.Error()})
+		return
+	}
+	SuccessCreated(c, assets)
+}

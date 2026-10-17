@@ -420,6 +420,9 @@ func New(cfg *config.Config) *gin.Engine {
 		data.Use(middleware.JWTAuth(cfg))
 		{
 			data.GET("/config", dataAssetHandler.Config)
+			if cfg.Edition == "opensource" {
+				data.POST("/local-import", dataAssetHandler.ImportLocalPair)
+			}
 			data.GET("/assets", dataAssetHandler.List)
 			data.GET("/assets/:uuid", dataAssetHandler.Get)
 			data.POST("/assets/:uuid/validate", dataAssetHandler.ValidateBED)

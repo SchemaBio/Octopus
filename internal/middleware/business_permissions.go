@@ -97,6 +97,9 @@ func requestPermission(c *gin.Context) (string, []string, error) {
 	if method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions {
 		return "", nil, nil
 	}
+	if path == "/data/local-import" {
+		return "data.manage", []string{"samples.write"}, nil
+	}
 	simple := map[string]string{"/samples": "samples.write", "/projects": "samples.write", "/pedigrees": "samples.write", "/pipelines": "pipelines.manage", "/gene-lists": "gene_lists.manage", "/cnv-baselines": "baselines.manage", "/report-templates": "report_services.manage", "/admin/workflow-configs": "pipelines.manage"}
 	for prefix, permission := range simple {
 		if path == prefix || strings.HasPrefix(path, prefix+"/") {

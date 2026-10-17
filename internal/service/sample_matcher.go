@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
@@ -22,12 +23,14 @@ var fastqPairPatterns = []*regexp.Regexp{
 var uploadUUIDPrefix = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_(.+)$`)
 
 type SampleMatcher struct {
+	shared  bool
 	samples *repository.SampleRepository
 	assets  *repository.DataAssetRepository
 }
 
-func NewSampleMatcher() *SampleMatcher {
-	return &SampleMatcher{samples: repository.NewSampleRepository(), assets: repository.NewDataAssetRepository()}
+func NewSampleMatcher(configs ...*config.Config) *SampleMatcher {
+	shared := len(configs) > 0 && configs[0] != nil && configs[0].Edition == "opensource"
+	return &SampleMatcher{shared: shared, samples: repository.NewSampleRepository(), assets: repository.NewDataAssetRepository()}
 }
 
 func (m *SampleMatcher) Start(ctx context.Context, interval time.Duration) {
@@ -65,7 +68,10 @@ func (m *SampleMatcher) run(ctx context.Context) {
 }
 
 func (m *SampleMatcher) matchSample(ctx context.Context, sample *model.Sample) {
-	assets, err := m.assets.FindCompletedByScope(sample.ExternalOrgID, sample.CreatedBy)
+	if m.shared && sample.ExternalOrgID != "" {
+		return
+	}
+	assets, err := m.assets.FindCompletedByScope(sample.ExternalOrgID, sample.CreatedBy, m.shared)
 	if err != nil {
 		return
 	}

@@ -418,7 +418,7 @@ func (s *UploadService) SaveLocalFile(ctx context.Context, actor model.OverlayAc
 		return nil, err
 	}
 	if allComplete {
-		NewSampleMatcher().run(context.Background())
+		NewSampleMatcher(s.cfg).run(context.Background())
 	}
 
 	scheduleUploadedBED(s.cfg, existingFile)
@@ -502,7 +502,7 @@ func (s *UploadService) CompleteS3File(ctx context.Context, actor model.OverlayA
 		return nil, err
 	}
 	if allComplete {
-		NewSampleMatcher().run(context.Background())
+		NewSampleMatcher(s.cfg).run(context.Background())
 	}
 	scheduleUploadedBED(s.cfg, file)
 	return file, nil

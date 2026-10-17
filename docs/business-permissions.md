@@ -25,3 +25,11 @@ Shared upload and task endpoints classify persisted resources, not user-supplied
 ## Rollout
 
 Back up the database, deploy Octopus first (AutoMigrate adds the non-null JSONB array defaulting to `[]`), then deploy YiJian. Existing ordinary users immediately become read-only until granted permissions. No data files are moved. Verify grants and revocation with temporary local accounts, then remove only their test records.
+
+## Registering server FASTQ files (self-hosted local storage)
+
+Data Center provides a three-column CSV template and bulk information upload: internal ID, Read1 absolute path and Read2 absolute path. Paths must be visible inside the Octopus container and resolve within `STORAGE_LOCAL_DIR`. The configured container directory is shown in the dialog. Mount host directories there before registering files; Windows drive paths are not container paths.
+
+`POST /api/v1/data/local-import` registers one pair per request. It requires both `data.manage` and `samples.write` because the internal ID participates in sample matching. The route exists only in the open-source edition. It reads both files in full, checks gzip integrity, four-line FASTQ records, sequence/quality lengths, paired read IDs and record counts, and verifies that files did not change during reading. It records actual sizes, SHA-256 digests and independent file UUIDs. No second copy is created. File paths already in the inventory are rejected; registration is transactional per pair and current grants are rechecked before insertion. Structural integrity cannot establish that a dataset contains every original read without an independently supplied reference checksum or count.
+
+Self-hosted automatic matching considers all local assets in the instance; SaaS retains its organization/user matching scope. A batch may partially succeed; the dialog retains per-row failures and retries only unsuccessful rows. Full scans of large files may take time. Closing the page cancels further requests. The CSV is limited to 1,000 rows and 2 MB.

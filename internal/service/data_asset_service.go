@@ -37,12 +37,17 @@ func (s *DataAssetService) Config() model.DataCenterConfigResponse {
 	if temporary {
 		maxFileSizeBytes = model.SaaSMaxUploadFileBytes
 	}
+	directory := ""
+	if s.cfg.Edition == "opensource" && s.cfg.Storage.Provider == "local" {
+		directory = s.cfg.Storage.LocalDir
+	}
 	return model.DataCenterConfigResponse{
-		Provider:         model.UploadProvider(s.cfg.Storage.Provider),
-		RetentionDays:    s.cfg.Storage.RetentionDays,
-		Temporary:        temporary,
-		DownloadAllowed:  !temporary,
-		MaxFileSizeBytes: maxFileSizeBytes,
+		LocalImportDirectory: directory,
+		Provider:             model.UploadProvider(s.cfg.Storage.Provider),
+		RetentionDays:        s.cfg.Storage.RetentionDays,
+		Temporary:            temporary,
+		DownloadAllowed:      !temporary,
+		MaxFileSizeBytes:     maxFileSizeBytes,
 	}
 }
 

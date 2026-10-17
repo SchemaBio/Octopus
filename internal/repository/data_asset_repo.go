@@ -110,9 +110,11 @@ func (r *DataAssetRepository) FindExpired(now time.Time, limit int) ([]model.Dat
 	return assets, err
 }
 
-func (r *DataAssetRepository) FindCompletedByScope(orgID string, createdBy uint) ([]model.DataAsset, error) {
+func (r *DataAssetRepository) FindCompletedByScope(orgID string, createdBy uint, shared ...bool) ([]model.DataAsset, error) {
 	db := r.db.Where("status = ?", model.FileStatusCompleted)
-	if orgID != "" {
+	if len(shared) > 0 && shared[0] {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	} else if orgID != "" {
 		db = db.Where("external_org_id = ?", orgID)
 	} else {
 		db = db.Where("external_org_id = '' AND created_by = ?", createdBy)
