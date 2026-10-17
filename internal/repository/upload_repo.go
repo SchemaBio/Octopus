@@ -27,7 +27,9 @@ func (r *UploadJobRepository) FindByUserID(userID uint) ([]model.UploadJob, erro
 
 func (r *UploadJobRepository) PaginateByQuery(query *model.UploadJobListQuery, actor model.OverlayActor) ([]model.UploadJob, int64, error) {
 	db := r.db.Model(&model.UploadJob{}).Where("status <> ?", model.UploadJobStatusDeleted)
-	if actor.Role != string(model.SystemRoleSuperAdmin) {
+	if actor.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	} else if actor.Role != string(model.SystemRoleSuperAdmin) {
 		if actor.OrgID != "" {
 			db = db.Where("external_org_id = ? AND user_id = ?", actor.OrgID, actor.UserID)
 		} else if actor.UserID != 0 {
@@ -122,6 +124,9 @@ func (r *UploadFileRepository) PaginateFilesByQuery(q *model.UploadFileListQuery
 		Joins("JOIN upload_jobs ON upload_jobs.id = upload_files.job_id").
 		Joins("LEFT JOIN data_assets ON data_assets.upload_file_id = upload_files.id")
 
+	if q.SharedInstance {
+		db = db.Where("COALESCE(upload_jobs.external_org_id, '') = ''")
+	}
 	if !q.IncludeAll {
 		switch {
 		case q.ExternalOrgID != "":
@@ -169,6 +174,9 @@ func (r *UploadFileRepository) PaginateFilesByQuery(q *model.UploadFileListQuery
 func (r *UploadFileRepository) completedStorageAssets(q *model.UploadFileListQuery) *gorm.DB {
 	db := r.db.Model(&model.DataAsset{})
 
+	if q.SharedInstance {
+		db = db.Where("COALESCE(data_assets.external_org_id, '') = ''")
+	}
 	if !q.IncludeAll {
 		switch {
 		case q.ExternalOrgID != "":
@@ -207,6 +215,9 @@ func (r *UploadFileRepository) CountStalePending(q *model.UploadFileListQuery) (
 	db := r.db.Model(&model.UploadFile{}).
 		Joins("JOIN upload_jobs ON upload_jobs.id = upload_files.job_id").
 		Where("upload_files.status = ? AND upload_files.created_at < ?", model.FileStatusPending, time.Now().Add(-time.Hour))
+	if q.SharedInstance {
+		db = db.Where("COALESCE(upload_jobs.external_org_id, '') = ''")
+	}
 	if !q.IncludeAll {
 		switch {
 		case q.ExternalOrgID != "":

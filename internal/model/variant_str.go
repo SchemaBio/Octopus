@@ -38,8 +38,8 @@ func (STR) TableName() string {
 // STRListQuery query parameters
 type STRListQuery struct {
 	TaskID             string `form:"taskId"`
-	TenantID           string `form:"-" json:"-"`
-	ExecutionAttemptID string `form:"-" json:"-"`
+	TenantID           string `form:"-" json:"-" form:"-"`
+	ExecutionAttemptID string `form:"-" json:"-" form:"-"`
 	Search             string `form:"search"`
 	Status             string `form:"status"`
 	Sort               string `form:"sort"`

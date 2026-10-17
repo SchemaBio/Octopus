@@ -34,7 +34,9 @@ func (r *SampleRepository) FindScopedByIdentifier(identifier string, actor model
 		return sample, nil
 	}
 	db := r.db.Where("internal_id = ?", identifier)
-	if actor.OrgID != "" {
+	if actor.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	} else if actor.OrgID != "" {
 		db = db.Where("external_org_id = ?", actor.OrgID)
 	} else if actor.Role != string(model.SystemRoleSuperAdmin) {
 		db = db.Where("external_org_id = '' AND created_by = ?", actor.UserID)
@@ -51,7 +53,9 @@ func (r *SampleRepository) FindScopedByIdentifier(identifier string, actor model
 
 func (r *SampleRepository) findScoped(condition string, actor model.OverlayActor, args ...interface{}) (*model.Sample, error) {
 	db := r.db.Where(condition, args...)
-	if actor.OrgID != "" {
+	if actor.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	} else if actor.OrgID != "" {
 		db = db.Where("external_org_id = ?", actor.OrgID)
 	} else if actor.Role != string(model.SystemRoleSuperAdmin) {
 		db = db.Where("external_org_id = '' AND created_by = ?", actor.UserID)
@@ -75,9 +79,11 @@ func (r *SampleRepository) ExistsByInternalID(internalID string) bool {
 	return count > 0
 }
 
-func (r *SampleRepository) ExistsByInternalIDInScope(internalID, orgID string, userID uint, excludeID uint) bool {
+func (r *SampleRepository) ExistsByInternalIDInScope(internalID, orgID string, userID uint, excludeID uint, shared ...bool) bool {
 	db := r.db.Model(&model.Sample{}).Where("internal_id = ?", internalID)
-	if orgID != "" {
+	if len(shared) > 0 && shared[0] {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	} else if orgID != "" {
 		db = db.Where("external_org_id = ?", orgID)
 	} else {
 		db = db.Where("external_org_id = '' AND created_by = ?", userID)
@@ -104,6 +110,9 @@ func (r *SampleRepository) UpdateStatus(id uint, status model.SampleStatus) erro
 func (r *SampleRepository) PaginateByQuery(query *model.SampleListQuery) ([]model.Sample, int64, error) {
 	db := r.db.Model(&model.Sample{})
 
+	if query.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	}
 	if !query.IncludeAll {
 		if query.OrgID != "" {
 			db = db.Where("external_org_id = ?", query.OrgID)

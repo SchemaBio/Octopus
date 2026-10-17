@@ -720,7 +720,7 @@ func actorCanUseOwnedResource(actor model.OverlayActor, ownerID uint) bool {
 	if actor.Role == string(model.SystemRoleSuperAdmin) {
 		return true
 	}
-	return ownerID != 0 && ownerID == actor.UserID
+	return actor.SharedInstance || (ownerID != 0 && ownerID == actor.UserID)
 }
 
 func (s *TaskService) resolveAnalysisPipeline(req *model.TaskCreateRequest, actor model.OverlayActor) (*model.Pipeline, error) {
@@ -2065,6 +2065,9 @@ func taskDataAssetUseAllowed(asset *model.DataAsset, actor model.OverlayActor) b
 	if actor.OrgID != "" {
 		return asset.ExternalOrgID == actor.OrgID
 	}
+	if actor.SharedInstance {
+		return asset.ExternalOrgID == ""
+	}
 	if actor.Role == string(model.SystemRoleSuperAdmin) {
 		return true
 	}
@@ -2825,7 +2828,7 @@ func buildCVMWDLInputs(template, genome string, taskInputs map[string]interface{
 
 func (s *TaskService) prepareTrioInputs(pedigreeID, workflowUUID string, actor model.OverlayActor, inputs map[string]interface{}) (*model.Sample, []model.TaskDataAsset, error) {
 	pedigree, members, err := s.pedigreeRepo.FindByIDWithMembers(pedigreeID)
-	if err != nil || (actor.Role != string(model.SystemRoleSuperAdmin) && pedigree.CreatedBy != actor.UserID) {
+	if err != nil || (actor.SharedInstance && pedigree.ExternalOrgID != "") || (!actor.SharedInstance && actor.Role != string(model.SystemRoleSuperAdmin) && pedigree.CreatedBy != actor.UserID) {
 		return nil, nil, fmt.Errorf("pedigree not found: %s", pedigreeID)
 	}
 	byID := make(map[string]model.PedigreeMember, len(members))

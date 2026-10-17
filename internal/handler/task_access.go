@@ -25,7 +25,7 @@ func requireTaskAccess(c *gin.Context, taskRepo *repository.TaskRepository, task
 	}
 
 	orgID, _ := middleware.GetCurrentOrg(c)
-	if taskAccessAllowed(task, userID, role, orgID) {
+	if taskAccessAllowed(task, userID, role, orgID, middleware.IsSharedInstance(c)) {
 		return task, true
 	}
 
@@ -39,9 +39,12 @@ func requireTaskAccess(c *gin.Context, taskRepo *repository.TaskRepository, task
 // taskAccessAllowed keeps SaaS tenant ownership and standalone ownership
 // mutually exclusive. Once a task belongs to an organization, CreatedBy must
 // never grant access from another (or missing) organization context.
-func taskAccessAllowed(task *model.Task, userID uint, role, orgID string) bool {
+func taskAccessAllowed(task *model.Task, userID uint, role, orgID string, shared ...bool) bool {
 	if task == nil {
 		return false
+	}
+	if len(shared) > 0 && shared[0] {
+		return task.ExternalOrgID == ""
 	}
 	if role == string(model.SystemRoleSuperAdmin) {
 		return true
@@ -58,7 +61,8 @@ func applyTaskListScope(c *gin.Context, query *model.TaskListQuery) bool {
 		ErrorUnauthorized(c, "Unauthorized")
 		return false
 	}
-	if role == string(model.SystemRoleSuperAdmin) {
+	if middleware.IsSharedInstance(c) || role == string(model.SystemRoleSuperAdmin) {
+		query.SharedInstance = middleware.IsSharedInstance(c)
 		query.IncludeAll = true
 		return true
 	}
@@ -78,7 +82,7 @@ func applyCreatedByListScope(c *gin.Context, createdBy *uint, includeAll *bool) 
 		ErrorUnauthorized(c, "Unauthorized")
 		return false
 	}
-	if role == string(model.SystemRoleSuperAdmin) {
+	if middleware.IsSharedInstance(c) || role == string(model.SystemRoleSuperAdmin) {
 		*includeAll = true
 		return true
 	}
@@ -86,13 +90,18 @@ func applyCreatedByListScope(c *gin.Context, createdBy *uint, includeAll *bool) 
 	return true
 }
 
-func requireOwnerAccess(c *gin.Context, ownerID uint, resourceName string) bool {
+func requireOwnerAccess(c *gin.Context, ownerID uint, resourceName string, orgs ...string) bool {
 	userID, _, role, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return false
 	}
-	if role == string(model.SystemRoleSuperAdmin) || (ownerID != 0 && ownerID == userID) {
+	if middleware.IsSharedInstance(c) && len(orgs) > 0 && orgs[0] != "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": resourceName + " not found"})
+		c.Abort()
+		return false
+	}
+	if middleware.IsSharedInstance(c) || role == string(model.SystemRoleSuperAdmin) || (ownerID != 0 && ownerID == userID) {
 		return true
 	}
 	c.JSON(http.StatusNotFound, gin.H{"error": resourceName + " not found"})

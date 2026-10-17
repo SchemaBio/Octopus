@@ -16,6 +16,9 @@ import (
 // can safely change during re-import.
 func (r *HistoryRepository) latestReviewEvents(query *model.HistoryListQuery, variantType string) ([]model.VariantReviewEvent, error) {
 	db := r.db.Model(&model.VariantReviewEvent{}).Where("variant_type = ?", variantType)
+	if query != nil && query.SharedInstance {
+		db = db.Where("tenant_id LIKE ?", "user:%")
+	}
 	if query != nil && !query.IncludeAll {
 		tenantID := model.TenantIDForIdentity(query.ExternalOrgID, query.CreatedBy)
 		db = db.Where("tenant_id = ?", tenantID)

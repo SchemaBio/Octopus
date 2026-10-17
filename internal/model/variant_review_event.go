@@ -80,6 +80,7 @@ type VariantReviewEventListQuery struct {
 	ExecutionAttemptID string
 	TenantID           string
 	IncludeAll         bool
+	SharedInstance     bool `json:"-" form:"-"`
 	Page               int
 	PageSize           int
 }

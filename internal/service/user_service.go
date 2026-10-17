@@ -270,6 +270,41 @@ func (s *UserService) ListUsers(query *model.UserListQuery) (*model.UserListResp
 	}, nil
 }
 
+// CreateManagedUser persists credentials, role and grants in one insert.
+func (s *UserService) CreateManagedUser(req *model.UserCreateRequest) (*model.User, error) {
+	if req.SystemRole != "" && req.SystemRole != model.SystemRoleUser && req.SystemRole != model.SystemRoleSuperAdmin {
+		return nil, errors.New("invalid system role")
+	}
+	permissions := []string{}
+	if req.Permissions != nil {
+		var err error
+		permissions, err = model.NormalizePermissions(*req.Permissions)
+		if err != nil {
+			return nil, err
+		}
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if s.repo.ExistsByEmail(email) {
+		return nil, errors.New("email already exists")
+	}
+	if err := ValidatePasswordStrength(req.Password); err != nil {
+		return nil, err
+	}
+	hashed, err := HashPassword(PreparePassword(req.Password, email, s.cfg.JWT.ClientPasswordHashEnabled))
+	if err != nil {
+		return nil, errors.New("failed to hash password")
+	}
+	role := req.SystemRole
+	if role == "" {
+		role = model.SystemRoleUser
+	}
+	user := &model.User{Username: email, Email: email, Name: strings.TrimSpace(req.Name), Password: hashed, SystemRole: role, Permissions: permissions, IsActive: true, ApprovalStatus: model.ApprovalStatusApproved, TokenVersion: 1}
+	if err := s.repo.Create(user); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
 // UpdateUser updates user information
 func (s *UserService) UpdateUser(id uint, req *model.UserUpdateRequest) (*model.User, error) {
 	user, err := s.repo.FindByID(id)
@@ -277,6 +312,16 @@ func (s *UserService) UpdateUser(id uint, req *model.UserUpdateRequest) (*model.
 		return nil, err
 	}
 
+	permissionsChanged := req.Permissions != nil || (user.SystemRole == model.SystemRoleSuperAdmin && req.SystemRole == model.SystemRoleUser)
+	if req.Permissions != nil {
+		values, err := model.NormalizePermissions(*req.Permissions)
+		if err != nil {
+			return nil, err
+		}
+		user.Permissions = values
+	} else if user.SystemRole == model.SystemRoleSuperAdmin && req.SystemRole == model.SystemRoleUser {
+		user.Permissions = []string{}
+	}
 	if req.Name != "" {
 		user.Name = req.Name
 	}
@@ -287,7 +332,7 @@ func (s *UserService) UpdateUser(id uint, req *model.UserUpdateRequest) (*model.
 		user.IsActive = *req.IsActive
 	}
 
-	if err := s.repo.Update(user); err != nil {
+	if err := s.repo.UpdateManagedFields(user, req, permissionsChanged); err != nil {
 		return nil, err
 	}
 
@@ -308,7 +353,7 @@ func (s *UserService) UpdateProfile(id uint, req *model.ProfileUpdateRequest) (*
 		return nil, errors.New("name is too long")
 	}
 	user.Name = name
-	if err := s.repo.Update(user); err != nil {
+	if err := s.repo.UpdateProfileName(user.ID, name); err != nil {
 		return nil, err
 	}
 	return user, nil

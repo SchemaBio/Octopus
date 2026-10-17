@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -441,19 +442,27 @@ func SyncHistoryFocuses(ctx context.Context, tenant, table, cursor string, water
 	return &HistorySyncResponse{tenant, high, next, complete, rows, tasks}, nil
 }
 
-func HistoryFocusDetail(ctx context.Context, tenant, id string) (*model.HistoryFocus, []model.ResultRowAdjustmentEvent, error) {
+func HistoryFocusDetail(ctx context.Context, tenant, id string, shared ...bool) (*model.HistoryFocus, []model.ResultRowAdjustmentEvent, error) {
 	var row model.HistoryFocus
 	if !validResultRowID(id) {
 		return nil, nil, gorm.ErrRecordNotFound
 	}
-	if err := database.DB.WithContext(ctx).Where("id=? AND tenant_id=? AND deleted=false", id, tenant).First(&row).Error; err != nil {
+	query := database.DB.WithContext(ctx).Where("id=? AND tenant_id=? AND deleted=false", id, tenant)
+	isShared := len(shared) > 0 && shared[0]
+	if isShared {
+		query = database.DB.WithContext(ctx).Where("id=? AND tenant_id LIKE 'user:%' AND deleted=false", id)
+	}
+	if err := query.First(&row).Error; err != nil {
 		return nil, nil, err
 	}
 	var task model.Task
 	if err := database.DB.WithContext(ctx).Where("uuid=?", row.TaskUUID).First(&task).Error; err != nil {
 		return nil, nil, err
 	}
-	if model.TenantIDForTask(&task) != tenant {
+	if isShared && task.ExternalOrgID == "" {
+		tenant = row.TenantID
+	}
+	if model.TenantIDForTask(&task) != tenant || (isShared && task.ExternalOrgID != "") {
 		return nil, nil, gorm.ErrRecordNotFound
 	}
 	current := false
@@ -468,4 +477,81 @@ func HistoryFocusDetail(ctx context.Context, tenant, id string) (*model.HistoryF
 	var events []model.ResultRowAdjustmentEvent
 	err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=? AND row_id=? AND dataset_version=?", tenant, row.TaskUUID, row.AttemptID, row.Table, row.RowID, row.DatasetVersion).Order("created_at DESC,id DESC").Limit(200).Find(&events).Error
 	return &row, events, err
+}
+
+// Each local creator retains its own durable history clock. A vector cursor
+// merges these streams without rewriting historical tenant IDs or revisions.
+type sharedHistoryCursor struct {
+	After   map[string]string `json:"after"`
+	High    map[string]uint64 `json:"high,omitempty"`
+	Pending []string          `json:"pending,omitempty"`
+}
+
+func SyncSharedHistoryFocuses(ctx context.Context, table, cursor string, limit int) (*HistorySyncResponse, error) {
+	if !validParquetTable(table) || len(cursor) > 1<<20 {
+		return nil, fmt.Errorf("invalid history scope or cursor")
+	}
+	state := sharedHistoryCursor{After: map[string]string{}}
+	if cursor != "" {
+		raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(cursor, "instance:"))
+		if err != nil || json.Unmarshal(raw, &state) != nil {
+			return nil, ErrAdjustmentConflict
+		}
+	}
+	if state.After == nil {
+		state.After = map[string]string{}
+	}
+	for tenant := range state.After {
+		if !strings.HasPrefix(tenant, "user:") {
+			return nil, ErrAdjustmentConflict
+		}
+	}
+	for _, tenant := range state.Pending {
+		if !strings.HasPrefix(tenant, "user:") {
+			return nil, ErrAdjustmentConflict
+		}
+	}
+	if len(state.Pending) == 0 {
+		var clocks []model.HistoryScopeRevision
+		if err := database.DB.WithContext(ctx).Where("tenant_id LIKE 'user:%'").Order("tenant_id").Find(&clocks).Error; err != nil {
+			return nil, err
+		}
+		state.High = map[string]uint64{}
+		for _, clock := range clocks {
+			state.Pending = append(state.Pending, clock.TenantID)
+			state.High[clock.TenantID] = clock.Revision
+		}
+	}
+	if limit < 1 || limit > 1000 {
+		limit = 1000
+	}
+	response := &HistorySyncResponse{Scope: "instance", Rows: []model.HistoryFocus{}, Tasks: map[string]HistoryTaskSummary{}}
+	for len(state.Pending) > 0 && len(response.Rows) < limit {
+		tenant := state.Pending[0]
+		high, ok := state.High[tenant]
+		if !ok {
+			return nil, ErrAdjustmentConflict
+		}
+		page, err := SyncHistoryFocuses(ctx, tenant, table, state.After[tenant], &high, limit-len(response.Rows))
+		if err != nil {
+			return nil, err
+		}
+		response.Rows = append(response.Rows, page.Rows...)
+		for id, task := range page.Tasks {
+			response.Tasks[id] = task
+		}
+		state.After[tenant] = page.Cursor
+		if page.Complete {
+			state.Pending = state.Pending[1:]
+		} else {
+			break
+		}
+	}
+	response.Complete = len(state.Pending) == 0
+	raw, err := json.Marshal(state)
+	if err != nil {
+		return nil, err
+	}
+	response.Cursor = "instance:" + base64.RawURLEncoding.EncodeToString(raw)
+	return response, nil
 }

@@ -25,6 +25,7 @@ const (
 
 // User represents a user account
 type User struct {
+	Permissions      []string       `json:"-" gorm:"serializer:json;type:jsonb;not null;default:'[]'"`
 	ID               uint           `json:"id" gorm:"primaryKey"`
 	Username         string         `json:"-" gorm:"uniqueIndex;size:50;not null"` // internal use only, not exposed in API
 	Password         string         `json:"-" gorm:"size:255;not null"`
@@ -55,6 +56,7 @@ type ChangePasswordRequest struct {
 
 // UserResponse is the user object returned in API responses
 type UserResponse struct {
+	Permissions    []string       `json:"permissions"`
 	ID             string         `json:"id"`
 	Email          string         `json:"email"`
 	Name           string         `json:"name"`
@@ -127,17 +129,19 @@ type AccountDeleteRequest struct {
 
 // UserCreateRequest is the request body for creating a user (admin)
 type UserCreateRequest struct {
-	Email      string     `json:"email" binding:"required,email"`
-	Name       string     `json:"name" binding:"required"`
-	Password   string     `json:"password" binding:"required,min=6"`
-	SystemRole SystemRole `json:"system_role"`
+	Permissions *[]string  `json:"permissions"`
+	Email       string     `json:"email" binding:"required,email"`
+	Name        string     `json:"name" binding:"required"`
+	Password    string     `json:"password" binding:"required,min=6"`
+	SystemRole  SystemRole `json:"system_role"`
 }
 
 // UserUpdateRequest is the request body for updating a user
 type UserUpdateRequest struct {
-	Name       string     `json:"name"`
-	SystemRole SystemRole `json:"system_role"`
-	IsActive   *bool      `json:"is_active"`
+	Permissions *[]string  `json:"permissions"`
+	Name        string     `json:"name"`
+	SystemRole  SystemRole `json:"system_role"`
+	IsActive    *bool      `json:"is_active"`
 }
 
 // UserListQuery is the query parameters for listing users
@@ -156,6 +160,7 @@ type UserListResponse struct {
 // UserToResponse converts a User model to UserResponse
 func UserToResponse(u *User) UserResponse {
 	return UserResponse{
+		Permissions:    u.EffectivePermissions(),
 		ID:             formatID(u.ID),
 		Email:          u.Email,
 		Name:           u.Name,

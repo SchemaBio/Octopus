@@ -151,3 +151,24 @@ func (r *UserRepository) CreateDefaultAdmin(email, hashedPassword, name string) 
 
 	return admin, nil
 }
+
+// UpdateManagedFields avoids overwriting concurrent profile/password/token changes.
+func (r *UserRepository) UpdateManagedFields(user *model.User, req *model.UserUpdateRequest, permissionsChanged bool) error {
+	fields := []string{"updated_at"}
+	if req.Name != "" {
+		fields = append(fields, "name")
+	}
+	if req.SystemRole != "" {
+		fields = append(fields, "system_role")
+	}
+	if req.IsActive != nil {
+		fields = append(fields, "is_active")
+	}
+	if permissionsChanged {
+		fields = append(fields, "permissions")
+	}
+	return r.db.Model(user).Select(fields).Updates(user).Error
+}
+func (r *UserRepository) UpdateProfileName(id uint, name string) error {
+	return r.db.Model(&model.User{}).Where("id = ?", id).Update("name", name).Error
+}

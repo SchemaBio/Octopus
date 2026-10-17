@@ -48,7 +48,13 @@ func (h *HistoryHandler) SyncFocuses(c *gin.Context) {
 		}
 		limit = n
 	}
-	result, err := service.SyncHistoryFocuses(c.Request.Context(), tenant, c.Query("table"), c.Query("cursor"), watermark, limit)
+	var result *service.HistorySyncResponse
+	var err error
+	if middleware.IsSharedInstance(c) {
+		result, err = service.SyncSharedHistoryFocuses(c.Request.Context(), c.Query("table"), c.Query("cursor"), limit)
+	} else {
+		result, err = service.SyncHistoryFocuses(c.Request.Context(), tenant, c.Query("table"), c.Query("cursor"), watermark, limit)
+	}
 	if errors.Is(err, service.ErrAdjustmentConflict) {
 		Error(c, 410, "HISTORY_CURSOR_EXPIRED")
 		return
@@ -81,7 +87,7 @@ func (h *HistoryHandler) FocusDetail(c *gin.Context) {
 	if !ok {
 		return
 	}
-	row, events, err := service.HistoryFocusDetail(c.Request.Context(), tenant, c.Param("id"))
+	row, events, err := service.HistoryFocusDetail(c.Request.Context(), tenant, c.Param("id"), middleware.IsSharedInstance(c))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		ErrorNotFound(c, "focused source not found")
 		return

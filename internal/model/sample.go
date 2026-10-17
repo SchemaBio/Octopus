@@ -249,15 +249,16 @@ type SampleDataLinkRequest struct {
 
 // SampleListQuery is the query parameters for listing samples
 type SampleListQuery struct {
-	Page       int                `form:"page" binding:"omitempty,min=1"`
-	PageSize   int                `form:"page_size" binding:"omitempty,min=1,max=100"`
-	Search     string             `form:"search"`
-	Status     SampleStatus       `form:"status"`
-	SampleType SampleTypeFrontend `form:"sample_type"`
-	ProjectID  uint               `form:"project_id"`
-	CreatedBy  uint               `json:"-"`
-	OrgID      string             `json:"-"`
-	IncludeAll bool               `json:"-"`
+	Page           int                `form:"page" binding:"omitempty,min=1"`
+	PageSize       int                `form:"page_size" binding:"omitempty,min=1,max=100"`
+	Search         string             `form:"search"`
+	Status         SampleStatus       `form:"status"`
+	SampleType     SampleTypeFrontend `form:"sample_type"`
+	ProjectID      uint               `form:"project_id"`
+	CreatedBy      uint               `json:"-" form:"-"`
+	OrgID          string             `json:"-" form:"-"`
+	IncludeAll     bool               `json:"-" form:"-"`
+	SharedInstance bool               `json:"-" form:"-"`
 }
 
 // SampleListResponse is the response for listing samples

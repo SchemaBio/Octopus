@@ -1165,6 +1165,9 @@ func uploadJobAccessAllowed(job *model.UploadJob, actor model.OverlayActor) bool
 	if job == nil {
 		return false
 	}
+	if actor.SharedInstance {
+		return job.ExternalOrgID == ""
+	}
 	if actor.Role == string(model.SystemRoleSuperAdmin) {
 		return true
 	}
@@ -1180,6 +1183,9 @@ func uploadJobAccessAllowed(job *model.UploadJob, actor model.OverlayActor) bool
 func uploadJobUseAllowed(job *model.UploadJob, actor model.OverlayActor) bool {
 	if job == nil {
 		return false
+	}
+	if actor.SharedInstance {
+		return job.ExternalOrgID == ""
 	}
 	if actor.Role == string(model.SystemRoleSuperAdmin) {
 		return true

@@ -101,12 +101,13 @@ type PipelineUpdateRequest struct {
 
 // PipelineListQuery is the query parameters for listing pipelines
 type PipelineListQuery struct {
-	Page          int    `form:"page" binding:"omitempty,min=1"`
-	PageSize      int    `form:"page_size" binding:"omitempty,min=1,max=100"`
-	Search        string `form:"search"`
-	CreatedBy     uint   `json:"-"`
-	ExternalOrgID string `json:"-"`
-	IncludeAll    bool   `json:"-"`
+	Page           int    `form:"page" binding:"omitempty,min=1"`
+	PageSize       int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+	Search         string `form:"search"`
+	CreatedBy      uint   `json:"-" form:"-"`
+	ExternalOrgID  string `json:"-" form:"-"`
+	IncludeAll     bool   `json:"-" form:"-"`
+	SharedInstance bool   `json:"-" form:"-"`
 }
 
 // PipelineListResponse is the response for listing pipelines

@@ -28,7 +28,7 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 	orgID, hasOrg := middleware.GetCurrentOrg(c)
 	isSuperAdmin := role == string(model.SystemRoleSuperAdmin)
 
-	stats, err := loadDashboardStats(db, userID, orgID, hasOrg, isSuperAdmin)
+	stats, err := loadDashboardStats(db, userID, orgID, hasOrg, isSuperAdmin, middleware.IsSharedInstance(c))
 	if err != nil {
 		ErrorInternal(c, "Failed to load dashboard statistics")
 		return
@@ -36,9 +36,9 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 	Success(c, stats)
 }
 
-func loadDashboardStats(db *gorm.DB, userID uint, orgID string, hasOrg, isSuperAdmin bool) (model.DashboardStats, error) {
+func loadDashboardStats(db *gorm.DB, userID uint, orgID string, hasOrg, isSuperAdmin bool, shared ...bool) (model.DashboardStats, error) {
 	var totalSamples int64
-	if err := sampleDashboardScope(db.Model(&model.Sample{}), userID, orgID, hasOrg, isSuperAdmin).
+	if err := sampleDashboardScope(db.Model(&model.Sample{}), userID, orgID, hasOrg, isSuperAdmin, shared...).
 		Count(&totalSamples).Error; err != nil {
 		return model.DashboardStats{}, err
 	}
@@ -50,7 +50,7 @@ func loadDashboardStats(db *gorm.DB, userID uint, orgID string, hasOrg, isSuperA
 		Completed   int64 `gorm:"column:completed_tasks"`
 		Failed      int64 `gorm:"column:failed_tasks"`
 	}
-	err := taskDashboardScope(db.Model(&model.Task{}), userID, orgID, hasOrg, isSuperAdmin).
+	err := taskDashboardScope(db.Model(&model.Task{}), userID, orgID, hasOrg, isSuperAdmin, shared...).
 		Select(`
 			COUNT(*) FILTER (WHERE status IN (?, ?)) AS pending_tasks,
 			COUNT(*) FILTER (WHERE status = ?) AS waiting_data_tasks,
@@ -75,15 +75,18 @@ func loadDashboardStats(db *gorm.DB, userID uint, orgID string, hasOrg, isSuperA
 	}, nil
 }
 
-func sampleDashboardScope(db *gorm.DB, userID uint, orgID string, hasOrg, isSuperAdmin bool) *gorm.DB {
-	return dashboardOwnershipScope(db, "samples", userID, orgID, hasOrg, isSuperAdmin)
+func sampleDashboardScope(db *gorm.DB, userID uint, orgID string, hasOrg, isSuperAdmin bool, shared ...bool) *gorm.DB {
+	return dashboardOwnershipScope(db, "samples", userID, orgID, hasOrg, isSuperAdmin, shared...)
 }
 
-func taskDashboardScope(db *gorm.DB, userID uint, orgID string, hasOrg, isSuperAdmin bool) *gorm.DB {
-	return dashboardOwnershipScope(db, "tasks", userID, orgID, hasOrg, isSuperAdmin)
+func taskDashboardScope(db *gorm.DB, userID uint, orgID string, hasOrg, isSuperAdmin bool, shared ...bool) *gorm.DB {
+	return dashboardOwnershipScope(db, "tasks", userID, orgID, hasOrg, isSuperAdmin, shared...)
 }
 
-func dashboardOwnershipScope(db *gorm.DB, table string, userID uint, orgID string, hasOrg, isSuperAdmin bool) *gorm.DB {
+func dashboardOwnershipScope(db *gorm.DB, table string, userID uint, orgID string, hasOrg, isSuperAdmin bool, shared ...bool) *gorm.DB {
+	if len(shared) > 0 && shared[0] {
+		return db.Where("COALESCE(" + table + ".external_org_id, '') = ''")
+	}
 	if isSuperAdmin {
 		return db
 	}

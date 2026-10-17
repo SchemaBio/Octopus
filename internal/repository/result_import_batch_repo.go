@@ -67,6 +67,9 @@ type ResultImportBatchAuditRow struct {
 // use TenantID directly; old callers retain the task-ownership fallback.
 func (r *ResultImportBatchRepository) PaginateByQuery(q *model.ResultImportBatchListQuery) ([]ResultImportBatchAuditRow, int64, error) {
 	db := r.db.Model(&model.ResultImportBatch{})
+	if q.SharedInstance {
+		db = db.Where("COALESCE(tasks.external_org_id, '') = ''")
+	}
 	if q.TenantID != "" && !q.IncludeAll {
 		db = db.Where("result_import_batches.tenant_id = ?", q.TenantID)
 	} else {
@@ -100,6 +103,9 @@ func (r *ResultImportBatchRepository) PaginateByQuery(q *model.ResultImportBatch
 		result_import_batches.status, result_import_batches.fingerprint, result_import_batches.error,
 		result_import_batches.started_at, result_import_batches.finished_at,
 		COALESCE(tasks.external_org_id, '') AS org_id`
+	if q.SharedInstance {
+		db = db.Where("COALESCE(tasks.external_org_id, '') = ''")
+	}
 	if q.TenantID != "" && !q.IncludeAll {
 		selectColumns = `result_import_batches.id, result_import_batches.task_uuid, result_import_batches.source,
 			result_import_batches.status, result_import_batches.fingerprint, result_import_batches.error,

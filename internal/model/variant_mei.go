@@ -36,8 +36,8 @@ func (MEIVariant) TableName() string {
 // MEIListQuery query parameters
 type MEIListQuery struct {
 	TaskID             string `form:"taskId"`
-	TenantID           string `form:"-" json:"-"`
-	ExecutionAttemptID string `form:"-" json:"-"`
+	TenantID           string `form:"-" json:"-" form:"-"`
+	ExecutionAttemptID string `form:"-" json:"-" form:"-"`
 	Search             string `form:"search"`
 	TEType             string `form:"teType"`
 	Sort               string `form:"sort"`

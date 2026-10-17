@@ -23,11 +23,14 @@ func NewHistoryRepository() *HistoryRepository {
 
 func (r *HistoryRepository) scopedHistory(modelValue interface{}, table string, query *model.HistoryListQuery) *gorm.DB {
 	db := r.db.Model(modelValue).Where(table+".reviewed = ?", true)
-	if query != nil && !query.IncludeAll {
+	if query != nil && (!query.IncludeAll || query.SharedInstance) {
 		db = db.Joins("JOIN tasks ON tasks.uuid = " + table + ".task_id")
 	}
 	if query != nil {
 		db = applyTaskActorScope(db, query.ExternalOrgID, query.CreatedBy, query.IncludeAll)
+		if query.SharedInstance {
+			db = db.Where("COALESCE(tasks.external_org_id, '') = ''")
+		}
 	}
 	return db
 }
@@ -54,6 +57,9 @@ func (r *HistoryRepository) scopedSNVDetectionRecords(gene, hgvsc, hgvsp string,
 			gene, hgvsc, hgvsp, true)
 	if query != nil {
 		db = applyTaskActorScope(db, query.ExternalOrgID, query.CreatedBy, query.IncludeAll)
+		if query.SharedInstance {
+			db = db.Where("COALESCE(tasks.external_org_id, '') = ''")
+		}
 	}
 
 	var rows []row

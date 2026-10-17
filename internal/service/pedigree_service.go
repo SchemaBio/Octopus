@@ -90,13 +90,18 @@ func (s *PedigreeService) GetModel(id string) (*model.Pedigree, error) {
 }
 
 // Create creates a new pedigree
-func (s *PedigreeService) Create(req *model.PedigreeCreateRequest, userID uint) (*model.Pedigree, error) {
+func (s *PedigreeService) Create(req *model.PedigreeCreateRequest, userID uint, orgs ...string) (*model.Pedigree, error) {
+	orgID := ""
+	if len(orgs) > 0 {
+		orgID = orgs[0]
+	}
 	pedigree := &model.Pedigree{
-		ID:        uuid.New().String(),
-		Name:      req.Name,
-		Disease:   req.Disease,
-		Note:      req.Note,
-		CreatedBy: userID,
+		ExternalOrgID: orgID,
+		ID:            uuid.New().String(),
+		Name:          req.Name,
+		Disease:       req.Disease,
+		Note:          req.Note,
+		CreatedBy:     userID,
 	}
 
 	if err := s.repo.Create(pedigree); err != nil {

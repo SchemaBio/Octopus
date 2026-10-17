@@ -63,8 +63,9 @@ func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg && orgID != "" {
 		query.ExternalOrgID = orgID
 		query.CreatedBy = userID
-	} else if role == string(model.SystemRoleSuperAdmin) {
+	} else if middleware.IsSharedInstance(c) || role == string(model.SystemRoleSuperAdmin) {
 		query.IncludeAll = true
+		query.SharedInstance = middleware.IsSharedInstance(c)
 	} else {
 		query.CreatedBy = userID
 	}

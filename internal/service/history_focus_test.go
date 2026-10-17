@@ -260,3 +260,26 @@ func TestHistoryCursorRejectsMalformedAndAcceptsCompletedWatermark(t *testing.T)
 		t.Fatal("completed cursor rejected")
 	}
 }
+
+func TestSharedHistoryUsesIndependentCreatorClocks(t *testing.T) {
+	db, mock := newUploadTransactionTestDB(t)
+	previous := database.DB
+	database.DB = db
+	t.Cleanup(func() { database.DB = previous })
+	mock.ExpectQuery(`SELECT .*history_scope_revisions.*tenant_id LIKE`).WillReturnRows(sqlmock.NewRows([]string{"tenant_id", "revision"}).AddRow("user:1", 8).AddRow("user:2", 1))
+	for _, scope := range []struct {
+		tenant   string
+		revision uint64
+		id       string
+	}{{"user:1", 8, strings.Repeat("a", 64)}, {"user:2", 1, strings.Repeat("b", 64)}} {
+		mock.ExpectQuery(`SELECT .*history_scope_revisions.*`).WillReturnRows(sqlmock.NewRows([]string{"tenant_id", "revision"}).AddRow(scope.tenant, scope.revision))
+		mock.ExpectQuery(`SELECT .*history_focuses.*`).WillReturnRows(sqlmock.NewRows([]string{"id", "revision", "deleted"}).AddRow(scope.id, scope.revision, true))
+	}
+	page, err := SyncSharedHistoryFocuses(context.Background(), "roh", "", 1000)
+	if err != nil || !page.Complete || len(page.Rows) != 2 {
+		t.Fatalf("shared history missing creator: %#v %v", page, err)
+	}
+	if err = mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

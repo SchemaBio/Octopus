@@ -35,7 +35,7 @@ func (s *GeneListService) List(query *model.GeneListListQuery) (*model.GeneListL
 
 	items := make([]model.GeneListResponse, len(lists))
 	for i, g := range lists {
-		items[i] = geneListResponse(&g, model.OverlayActor{UserID: query.CreatedBy, OrgID: query.OrgID, Role: query.ActorRole, OrgRole: query.ActorOrgRole})
+		items[i] = geneListResponse(&g, model.OverlayActor{UserID: query.CreatedBy, OrgID: query.OrgID, Role: query.ActorRole, SharedInstance: query.SharedInstance, OrgRole: query.ActorOrgRole})
 	}
 
 	return &model.GeneListListResponse{
@@ -182,6 +182,14 @@ func (s *GeneListService) Publish(id string, a model.OverlayActor, expected uint
 	g, err := s.repo.FindScopedByStringID(id, a)
 	if err != nil {
 		return nil, errors.New("gene list not found")
+	}
+	// Local lists are already published to the instance at creation.
+	if a.SharedInstance && g.ExternalOrgID == "" && a.ResourceMaintenance(g.CreatedBy) {
+		if expected != g.Revision {
+			return nil, ErrResourceConflict
+		}
+		r := geneListResponse(g, a)
+		return &r, nil
 	}
 	if a.OrgID == "" || g.ExternalOrgID != "" || !a.ResourceMaintenance(g.CreatedBy) {
 		return nil, ErrResourceForbidden

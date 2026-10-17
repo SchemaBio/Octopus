@@ -66,14 +66,15 @@ type GeneListUpdateRequest struct {
 
 // GeneListListQuery is the query parameters for listing gene lists
 type GeneListListQuery struct {
-	ActorRole    string `json:"-"`
-	ActorOrgRole string `json:"-"`
-	OrgID        string `json:"-"`
-	Page         int    `form:"page" binding:"omitempty,min=1"`
-	PageSize     int    `form:"page_size" binding:"omitempty,min=1,max=100"`
-	Search       string `form:"search"`
-	CreatedBy    uint   `json:"-"`
-	IncludeAll   bool   `json:"-"`
+	ActorRole      string `json:"-" form:"-"`
+	ActorOrgRole   string `json:"-" form:"-"`
+	OrgID          string `json:"-" form:"-"`
+	Page           int    `form:"page" binding:"omitempty,min=1"`
+	PageSize       int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+	Search         string `form:"search"`
+	CreatedBy      uint   `json:"-" form:"-"`
+	IncludeAll     bool   `json:"-" form:"-"`
+	SharedInstance bool   `json:"-" form:"-"`
 }
 
 // GeneListListResponse is the response for listing gene lists

@@ -36,7 +36,9 @@ func (r *CNVBaselineRepository) Create(baseline *model.CNVBaseline, pairs []mode
 
 func (r *CNVBaselineRepository) List(actor model.OverlayActor) ([]model.CNVBaseline, error) {
 	db := database.GetDB().Model(&model.CNVBaseline{})
-	if actor.Role != string(model.SystemRoleSuperAdmin) {
+	if actor.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	} else if actor.Role != string(model.SystemRoleSuperAdmin) {
 		if actor.OrgID != "" {
 			db = db.Where("external_org_id = ?", actor.OrgID)
 		} else {
@@ -50,7 +52,9 @@ func (r *CNVBaselineRepository) List(actor model.OverlayActor) ([]model.CNVBasel
 
 func (r *CNVBaselineRepository) FindScopedByUUID(uuid string, actor model.OverlayActor) (*model.CNVBaseline, error) {
 	db := database.GetDB().Where("uuid = ?", uuid)
-	if actor.Role != string(model.SystemRoleSuperAdmin) {
+	if actor.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	} else if actor.Role != string(model.SystemRoleSuperAdmin) {
 		if actor.OrgID != "" {
 			db = db.Where("external_org_id = ?", actor.OrgID)
 		} else {

@@ -146,7 +146,8 @@ func (h *UploadHandler) GetFileStats(c *gin.Context) {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
-	if role == string(model.SystemRoleSuperAdmin) {
+	if middleware.IsSharedInstance(c) || role == string(model.SystemRoleSuperAdmin) {
+		query.SharedInstance = middleware.IsSharedInstance(c)
 		query.IncludeAll = true
 	} else if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg && orgID != "" {
 		query.ExternalOrgID = orgID

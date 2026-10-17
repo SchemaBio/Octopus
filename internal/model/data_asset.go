@@ -65,9 +65,10 @@ type DataAssetListQuery struct {
 	Status          FileStatus `form:"status"`
 	ReadType        ReadType   `form:"read_type"`
 	ReferenceGenome string     `form:"reference_genome"`
-	CreatedBy       uint       `json:"-"`
-	OrgID           string     `json:"-"`
-	IncludeAll      bool       `json:"-"`
+	CreatedBy       uint       `json:"-" form:"-"`
+	OrgID           string     `json:"-" form:"-"`
+	IncludeAll      bool       `json:"-" form:"-"`
+	SharedInstance  bool       `json:"-" form:"-"`
 }
 
 type DataCenterConfigResponse struct {

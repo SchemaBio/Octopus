@@ -48,10 +48,11 @@ type ResultImportBatchListQuery struct {
 	Status   ResultImportBatchStatus `form:"status"` // filter; "failed" for risk signals
 	Since    *time.Time              `form:"since"`  // started_at >= since (RFC3339); nil = no filter
 	// internal scope (set by handler, not bound from query):
-	IncludeAll    bool   `json:"-"`
-	TenantID      string `json:"-"`
-	ExternalOrgID string `json:"-"`
-	UserID        uint   `json:"-"`
+	IncludeAll     bool   `json:"-" form:"-"`
+	SharedInstance bool   `json:"-" form:"-"`
+	TenantID       string `json:"-" form:"-"`
+	ExternalOrgID  string `json:"-" form:"-"`
+	UserID         uint   `json:"-" form:"-"`
 }
 
 // ResultImportBatchResponse is the audit shape for an import batch.

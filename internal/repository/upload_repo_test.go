@@ -95,3 +95,24 @@ func TestUploadFileListStandaloneScopeExcludesOrganizationFiles(t *testing.T) {
 		t.Fatalf("SQL expectations: %v", err)
 	}
 }
+
+func TestCompletedStorageStatsSharedInstanceUsesAssetScope(t *testing.T) {
+	db, mock := newUploadRepositoryTestDB(t)
+	repo := NewUploadFileRepository()
+	repo.Repository.db = db
+	// Completed storage is read directly from data_assets, including scanner
+	// assets with no upload job. Shared scope must use that table as well.
+	query := `SELECT COUNT(*) AS total, COALESCE(SUM(data_assets.file_size), 0) AS total_bytes FROM "data_assets" WHERE COALESCE(data_assets.external_org_id, '') = '' AND data_assets.status = $1`
+	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs(model.FileStatusCompleted).
+		WillReturnRows(sqlmock.NewRows([]string{"total", "total_bytes"}).AddRow(3, 4096))
+	total, size, err := repo.CompletedStorageStats(&model.UploadFileListQuery{SharedInstance: true, IncludeAll: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 3 || size != 4096 {
+		t.Fatalf("unexpected shared storage statistics: %d %d", total, size)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

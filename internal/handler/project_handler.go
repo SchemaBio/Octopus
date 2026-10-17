@@ -35,7 +35,7 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 		return
 	}
 
-	project, err := h.svc.CreateProject(c.Request.Context(), &req, userID)
+	project, err := h.svc.CreateProject(c.Request.Context(), &req, userID, c.GetString("org_id"))
 	if err != nil {
 		ErrorInternal(c, err.Error())
 		return
@@ -63,6 +63,7 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 	if query.PageSize == 0 {
 		query.PageSize = 10
 	}
+	query.SharedInstance = middleware.IsSharedInstance(c)
 	if !applyCreatedByListScope(c, &query.CreatedBy, &query.IncludeAll) {
 		return
 	}
@@ -90,7 +91,7 @@ func (h *ProjectHandler) GetProject(c *gin.Context) {
 		ErrorNotFound(c, err.Error())
 		return
 	}
-	if !requireOwnerAccess(c, project.CreatedBy, "Project") {
+	if !requireOwnerAccess(c, project.CreatedBy, "Project", project.ExternalOrgID) {
 		return
 	}
 
@@ -111,7 +112,7 @@ func (h *ProjectHandler) GetProjectSummary(c *gin.Context) {
 		ErrorNotFound(c, err.Error())
 		return
 	}
-	if !requireOwnerAccess(c, project.CreatedBy, "Project") {
+	if !requireOwnerAccess(c, project.CreatedBy, "Project", project.ExternalOrgID) {
 		return
 	}
 
@@ -144,7 +145,7 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 		ErrorNotFound(c, err.Error())
 		return
 	}
-	if !requireOwnerAccess(c, existing.CreatedBy, "Project") {
+	if !requireOwnerAccess(c, existing.CreatedBy, "Project", existing.ExternalOrgID) {
 		return
 	}
 
@@ -170,7 +171,7 @@ func (h *ProjectHandler) DeleteProject(c *gin.Context) {
 		ErrorNotFound(c, err.Error())
 		return
 	}
-	if !requireOwnerAccess(c, existing.CreatedBy, "Project") {
+	if !requireOwnerAccess(c, existing.CreatedBy, "Project", existing.ExternalOrgID) {
 		return
 	}
 

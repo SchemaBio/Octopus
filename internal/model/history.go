@@ -25,10 +25,11 @@ type HistoryListQuery struct {
 	PageSize       int    `form:"pageSize"`
 	SortColumn     string `form:"sortColumn"`
 	SortDir        string `form:"sortDirection"`
-	CreatedBy      uint   `json:"-"`
-	ExternalOrgID  string `json:"-"`
-	IncludeAll     bool   `json:"-"`
-	IncludeRevoked bool   `form:"includeRevoked" json:"-"`
+	CreatedBy      uint   `json:"-" form:"-"`
+	ExternalOrgID  string `json:"-" form:"-"`
+	IncludeAll     bool   `json:"-" form:"-"`
+	SharedInstance bool   `json:"-" form:"-"`
+	IncludeRevoked bool   `form:"includeRevoked" json:"-" form:"-"`
 }
 
 // GroupedSNVIndel represents a grouped SNV/Indel in history

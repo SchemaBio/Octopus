@@ -22,7 +22,9 @@ func NewGeneListRepository() *GeneListRepository {
 // merely from the actor's organization membership.
 func (r *GeneListRepository) FindScopedByStringID(id string, actor model.OverlayActor) (*model.GeneList, error) {
 	db := r.db.Where("id = ?", id)
-	if actor.OrgID != "" {
+	if actor.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	} else if actor.OrgID != "" {
 		db = db.Where("external_org_id = ? OR (external_org_id = '' AND created_by = ?)", actor.OrgID, actor.UserID)
 	} else if actor.Role != string(model.SystemRoleSuperAdmin) {
 		if actor.UserID == 0 {
@@ -42,6 +44,9 @@ func (r *GeneListRepository) FindScopedByStringID(id string, actor model.Overlay
 func (r *GeneListRepository) PaginateByQuery(query *model.GeneListListQuery) ([]model.GeneList, int64, error) {
 	db := r.db.Model(&model.GeneList{})
 
+	if query.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	}
 	if !query.IncludeAll {
 		if query.OrgID != "" {
 			db = db.Where("external_org_id = ? OR (external_org_id = '' AND created_by = ?)", query.OrgID, query.CreatedBy)

@@ -48,8 +48,9 @@ func (h *ResultImportHandler) ListBatches(c *gin.Context) {
 	// Scope via the query (mirrors applyTaskListScope): SUPER_ADMIN (reachable
 	// through applyExternalAuth mapping) sees all; org users see their org's
 	// tasks' batches via the tasks join; otherwise own tasks' batches.
-	if role == string(model.SystemRoleSuperAdmin) {
+	if middleware.IsSharedInstance(c) || role == string(model.SystemRoleSuperAdmin) {
 		q.IncludeAll = true
+		q.SharedInstance = middleware.IsSharedInstance(c)
 	} else if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg && orgID != "" {
 		q.ExternalOrgID = orgID
 		q.TenantID = model.TenantIDForIdentity(orgID, 0)

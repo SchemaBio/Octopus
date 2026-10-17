@@ -38,6 +38,10 @@ func (h *GeneListHandler) List(c *gin.Context) {
 	query.CreatedBy = a.UserID
 	query.OrgID = a.OrgID
 	query.ActorRole = a.Role
+	query.SharedInstance = a.SharedInstance
+	if a.SharedInstance {
+		query.IncludeAll = true
+	}
 	query.ActorOrgRole = a.OrgRole
 
 	resp, err := h.svc.List(&query)

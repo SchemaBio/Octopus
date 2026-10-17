@@ -303,6 +303,9 @@ func (r *TaskRepository) CountByStatusAndProject(projectID uint) (map[model.Task
 // PaginateByQuery paginates tasks with multiple filters
 func (r *TaskRepository) PaginateByQuery(query *model.TaskListQuery) ([]model.Task, int64, error) {
 	db := r.db.Model(&model.Task{})
+	if query.SharedInstance {
+		db = db.Where("COALESCE(tasks.external_org_id, '') = ''")
+	}
 	if query.TenantID != "" && !query.IncludeAll {
 		db = db.Where("tenant_id = ?", query.TenantID)
 	} else {

@@ -82,6 +82,9 @@ func (r *ReportTemplateRepository) findOne(query string, args ...interface{}) (*
 
 func (r *ReportTemplateRepository) Scoped(a model.OverlayActor) *gorm.DB {
 	db := r.db.Model(&model.ReportTemplate{})
+	if a.SharedInstance {
+		return db.Where("COALESCE(external_org_id, '') = ''")
+	}
 	if a.OrgID != "" {
 		return db.Where("(external_org_id=? OR (external_org_id='' AND owner_user_id=?))", a.OrgID, a.UserID)
 	}

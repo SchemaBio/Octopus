@@ -46,6 +46,7 @@ const (
 
 // Pedigree represents a family pedigree
 type Pedigree struct {
+	ExternalOrgID   string    `json:"-" gorm:"size:100;not null;default:'';index"`
 	ID              string    `json:"id" gorm:"primaryKey;size:36"`
 	Name            string    `json:"name" gorm:"size:200;not null"`
 	Disease         string    `json:"disease" gorm:"size:200"`
@@ -175,11 +176,12 @@ type PedigreeMemberUpdateRequest struct {
 
 // PedigreeListQuery is the query parameters for listing pedigrees
 type PedigreeListQuery struct {
-	Page       int    `form:"page" binding:"omitempty,min=1"`
-	PageSize   int    `form:"page_size" binding:"omitempty,min=1,max=100"`
-	Search     string `form:"search"`
-	CreatedBy  uint   `json:"-"`
-	IncludeAll bool   `json:"-"`
+	Page           int    `form:"page" binding:"omitempty,min=1"`
+	PageSize       int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+	Search         string `form:"search"`
+	CreatedBy      uint   `json:"-" form:"-"`
+	IncludeAll     bool   `json:"-" form:"-"`
+	SharedInstance bool   `json:"-" form:"-"`
 }
 
 // PedigreeListResponse is the response for listing pedigrees

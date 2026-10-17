@@ -68,8 +68,9 @@ func (h *SampleHandler) ListSamples(c *gin.Context) {
 	}
 	if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg && orgID != "" {
 		query.OrgID = orgID
-	} else if role == string(model.SystemRoleSuperAdmin) {
+	} else if middleware.IsSharedInstance(c) || role == string(model.SystemRoleSuperAdmin) {
 		query.IncludeAll = true
+		query.SharedInstance = middleware.IsSharedInstance(c)
 	} else {
 		query.CreatedBy = userID
 	}

@@ -42,8 +42,9 @@ func (h *HistoryHandler) applyScope(c *gin.Context, query *model.HistoryListQuer
 		ErrorUnauthorized(c, "Unauthorized")
 		return false
 	}
-	if role == string(model.SystemRoleSuperAdmin) {
+	if middleware.IsSharedInstance(c) || role == string(model.SystemRoleSuperAdmin) {
 		query.IncludeAll = true
+		query.SharedInstance = middleware.IsSharedInstance(c)
 		return true
 	}
 	if orgID, ok := middleware.GetCurrentOrg(c); ok && orgID != "" {

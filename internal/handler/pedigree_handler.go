@@ -26,7 +26,7 @@ func (h *PedigreeHandler) requirePedigreeAccess(c *gin.Context, id string) (*mod
 		ErrorNotFound(c, err.Error())
 		return nil, false
 	}
-	if !requireOwnerAccess(c, pedigree.CreatedBy, "Pedigree") {
+	if !requireOwnerAccess(c, pedigree.CreatedBy, "Pedigree", pedigree.ExternalOrgID) {
 		return nil, false
 	}
 	return pedigree, true
@@ -45,6 +45,7 @@ func (h *PedigreeHandler) List(c *gin.Context) {
 	if query.PageSize == 0 {
 		query.PageSize = 10
 	}
+	query.SharedInstance = middleware.IsSharedInstance(c)
 	if !applyCreatedByListScope(c, &query.CreatedBy, &query.IncludeAll) {
 		return
 	}
@@ -88,7 +89,7 @@ func (h *PedigreeHandler) Create(c *gin.Context) {
 		return
 	}
 
-	pedigree, err := h.svc.Create(&req, userID)
+	pedigree, err := h.svc.Create(&req, userID, c.GetString("org_id"))
 	if err != nil {
 		ErrorInternal(c, err.Error())
 		return

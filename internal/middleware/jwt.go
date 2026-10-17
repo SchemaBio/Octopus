@@ -140,6 +140,9 @@ func JWTAuth(cfg *config.Config) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		if applyExternalAuth(c, cfg) {
+			if !enforceBusinessPermissions(c, cfg) {
+				return
+			}
 			c.Next()
 			return
 		}
@@ -198,6 +201,9 @@ func JWTAuth(cfg *config.Config) gin.HandlerFunc {
 		c.Set("email", claims.Email)
 		c.Set("role", claims.Role)
 
+		if !enforceBusinessPermissions(c, cfg) {
+			return
+		}
 		c.Next()
 	}
 }

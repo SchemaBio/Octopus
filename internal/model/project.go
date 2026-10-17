@@ -14,15 +14,16 @@ const (
 
 // Project represents a batch/project containing multiple samples
 type Project struct {
-	ID          uint          `json:"id" gorm:"primaryKey"`
-	ProjectCode string        `json:"project_code" gorm:"uniqueIndex;size:50;not null"` // 项目编号
-	ProjectName string        `json:"project_name" gorm:"size:100;not null"`            // 项目名称
-	Description string        `json:"description" gorm:"type:text"`                     // 项目描述
-	Panel       string        `json:"panel" gorm:"size:50"`                             // 分析 Panel (e.g., germline-wes, somatic-panel)
-	Status      ProjectStatus `json:"status" gorm:"size:20;default:active"`             // 项目状态
-	CreatedBy   uint          `json:"created_by" gorm:"index"`                          // 创建人ID
-	CreatedAt   time.Time     `json:"created_at" gorm:"autoCreateTime;type:timestamptz"`
-	UpdatedAt   time.Time     `json:"updated_at" gorm:"autoUpdateTime;type:timestamptz"`
+	ExternalOrgID string        `json:"-" gorm:"size:100;not null;default:'';index"`
+	ID            uint          `json:"id" gorm:"primaryKey"`
+	ProjectCode   string        `json:"project_code" gorm:"uniqueIndex;size:50;not null"` // 项目编号
+	ProjectName   string        `json:"project_name" gorm:"size:100;not null"`            // 项目名称
+	Description   string        `json:"description" gorm:"type:text"`                     // 项目描述
+	Panel         string        `json:"panel" gorm:"size:50"`                             // 分析 Panel (e.g., germline-wes, somatic-panel)
+	Status        ProjectStatus `json:"status" gorm:"size:20;default:active"`             // 项目状态
+	CreatedBy     uint          `json:"created_by" gorm:"index"`                          // 创建人ID
+	CreatedAt     time.Time     `json:"created_at" gorm:"autoCreateTime;type:timestamptz"`
+	UpdatedAt     time.Time     `json:"updated_at" gorm:"autoUpdateTime;type:timestamptz"`
 }
 
 // ProjectCreateRequest is the request body for creating a project
@@ -43,12 +44,13 @@ type ProjectUpdateRequest struct {
 
 // ProjectListQuery is the query parameters for listing projects
 type ProjectListQuery struct {
-	Status     ProjectStatus `form:"status"`
-	Panel      string        `form:"panel"`
-	Page       int           `form:"page" binding:"omitempty,min=1"`
-	PageSize   int           `form:"page_size" binding:"omitempty,min=1,max=100"`
-	CreatedBy  uint          `json:"-"`
-	IncludeAll bool          `json:"-"`
+	Status         ProjectStatus `form:"status"`
+	Panel          string        `form:"panel"`
+	Page           int           `form:"page" binding:"omitempty,min=1"`
+	PageSize       int           `form:"page_size" binding:"omitempty,min=1,max=100"`
+	CreatedBy      uint          `json:"-" form:"-"`
+	IncludeAll     bool          `json:"-" form:"-"`
+	SharedInstance bool          `json:"-" form:"-"`
 }
 
 // ProjectResponse is the response for a single project

@@ -46,6 +46,9 @@ func (r *PipelineRepository) FindScopedByUUID(id string, actor model.OverlayActo
 }
 
 func scopePipeline(db *gorm.DB, actor model.OverlayActor) *gorm.DB {
+	if actor.SharedInstance {
+		return db.Where("COALESCE(" + "external_org_id" + ", '') = ''")
+	}
 	if actor.OrgID != "" {
 		return db.Where("external_org_id = ? OR (external_org_id = '' AND created_by = ?)", actor.OrgID, actor.UserID)
 	}
@@ -59,6 +62,9 @@ func scopePipeline(db *gorm.DB, actor model.OverlayActor) *gorm.DB {
 func (r *PipelineRepository) PaginateByQuery(query *model.PipelineListQuery) ([]model.Pipeline, int64, error) {
 	db := r.db.Model(&model.Pipeline{})
 
+	if query.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	}
 	if !query.IncludeAll {
 		if query.ExternalOrgID != "" {
 			db = db.Where("external_org_id = ? OR (external_org_id = '' AND created_by = ?)", query.ExternalOrgID, query.CreatedBy)

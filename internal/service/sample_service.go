@@ -41,7 +41,7 @@ func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreat
 	if !req.IdentityPolicyAcknowledged || req.IdentityPolicyVersion != "research-identity-v1" {
 		return nil, fmt.Errorf("sample identity policy acknowledgement required")
 	}
-	if s.repo.ExistsByInternalIDInScope(req.InternalID, actor.OrgID, actor.UserID, 0) {
+	if s.repo.ExistsByInternalIDInScope(req.InternalID, actor.OrgID, actor.UserID, 0, actor.SharedInstance) {
 		return nil, nil // Already exists
 	}
 	if err := validateActorFileReference(s.cfg, actor, "r1_path", req.R1Path); err != nil {
@@ -247,7 +247,7 @@ func (s *SampleService) UpdateSample(ctx context.Context, id string, req *model.
 	}
 
 	if req.InternalID != "" {
-		if s.repo.ExistsByInternalIDInScope(req.InternalID, sample.ExternalOrgID, sample.CreatedBy, sample.ID) {
+		if s.repo.ExistsByInternalIDInScope(req.InternalID, sample.ExternalOrgID, sample.CreatedBy, sample.ID, actor.SharedInstance) {
 			return nil, fmt.Errorf("internal_id already exists")
 		}
 		sample.InternalID = req.InternalID

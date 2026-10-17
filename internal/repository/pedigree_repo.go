@@ -21,6 +21,9 @@ func NewPedigreeRepository() *PedigreeRepository {
 func (r *PedigreeRepository) PaginateByQuery(query *model.PedigreeListQuery) ([]model.Pedigree, int64, error) {
 	db := r.db.Model(&model.Pedigree{})
 
+	if query.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	}
 	if !query.IncludeAll {
 		if query.CreatedBy != 0 {
 			db = db.Where("created_by = ?", query.CreatedBy)

@@ -67,8 +67,8 @@ func (CNVExon) TableName() string {
 // CNVExonListQuery query parameters
 type CNVExonListQuery struct {
 	TaskID             string `form:"taskId"`
-	TenantID           string `form:"-" json:"-"`
-	ExecutionAttemptID string `form:"-" json:"-"`
+	TenantID           string `form:"-" json:"-" form:"-"`
+	ExecutionAttemptID string `form:"-" json:"-" form:"-"`
 	Search             string `form:"search"`
 	Gene               string `form:"gene"`
 	Sort               string `form:"sort"`

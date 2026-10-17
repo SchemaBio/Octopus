@@ -23,8 +23,8 @@ func (ROHRegion) TableName() string {
 // ROHListQuery query parameters
 type ROHListQuery struct {
 	TaskID             string `form:"taskId"`
-	TenantID           string `form:"-" json:"-"`
-	ExecutionAttemptID string `form:"-" json:"-"`
+	TenantID           string `form:"-" json:"-" form:"-"`
+	ExecutionAttemptID string `form:"-" json:"-" form:"-"`
 	Search             string `form:"search"`
 	Sort               string `form:"sort"`
 	Direction          string `form:"direction"`

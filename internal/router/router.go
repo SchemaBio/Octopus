@@ -109,7 +109,7 @@ func New(cfg *config.Config) *gin.Engine {
 		workflowConfigHandler := handler.NewWorkflowConfigHandler()
 		workflowConfig := v1.Group("/admin/workflow-configs")
 		workflowConfig.Use(middleware.JWTAuth(cfg))
-		workflowConfig.Use(middleware.RequireAdmin())
+		workflowConfig.Use(middleware.RequireAdminInSaaS(cfg))
 		{
 			workflowConfig.GET("", workflowConfigHandler.List)
 			workflowConfig.PUT("/:template/:genome", workflowConfigHandler.Update)

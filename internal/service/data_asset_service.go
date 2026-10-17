@@ -119,6 +119,9 @@ func canMutateDataAsset(asset *model.DataAsset, actor model.OverlayActor) bool {
 	if asset == nil {
 		return false
 	}
+	if actor.SharedInstance {
+		return asset.ExternalOrgID == ""
+	}
 	if actor.Role == string(model.SystemRoleSuperAdmin) {
 		return true
 	}

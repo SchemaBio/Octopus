@@ -56,8 +56,8 @@ func (MitochondrialVariant) TableName() string {
 // MTListQuery query parameters
 type MTListQuery struct {
 	TaskID             string `form:"taskId"`
-	TenantID           string `form:"-" json:"-"`
-	ExecutionAttemptID string `form:"-" json:"-"`
+	TenantID           string `form:"-" json:"-" form:"-"`
+	ExecutionAttemptID string `form:"-" json:"-" form:"-"`
 	Search             string `form:"search"`
 	Pathogenicity      string `form:"pathogenicity"`
 	Sort               string `form:"sort"`

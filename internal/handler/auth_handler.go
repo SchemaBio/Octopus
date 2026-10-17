@@ -394,39 +394,29 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
+	if req.Permissions != nil {
+		normalized, err := model.NormalizePermissions(*req.Permissions)
+		if err != nil {
+			ErrorBadRequest(c, err.Error())
+			return
+		}
+		req.Permissions = &normalized
+	}
 	if err := validateSystemRole(req.SystemRole); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
 	}
 
-	// Register via service
-	regReq := &model.RegisterRequest{
-		Email:    req.Email,
-		Password: req.Password,
-		Name:     req.Name,
-	}
-	resp, err := h.svc.Register(regReq)
+	user, err := h.svc.CreateManagedUser(&req)
 	if err != nil {
 		if err.Error() == "email already exists" {
 			ErrorConflict(c, err.Error())
 		} else {
-			ErrorInternal(c, err.Error())
+			ErrorBadRequest(c, err.Error())
 		}
 		return
 	}
-
-	// Update system role if specified
-	if req.SystemRole != "" {
-		user, _ := h.svc.GetUserByEmail(req.Email)
-		if user != nil {
-			user.SystemRole = req.SystemRole
-			h.svc.UpdateUser(user.ID, &model.UserUpdateRequest{
-				SystemRole: req.SystemRole,
-			})
-		}
-	}
-
-	SuccessCreated(c, resp.User)
+	SuccessCreated(c, model.UserToResponse(user))
 }
 
 // UpdateUser updates user information
@@ -441,6 +431,14 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		ErrorBadRequest(c, err.Error())
 		return
+	}
+	if req.Permissions != nil {
+		normalized, err := model.NormalizePermissions(*req.Permissions)
+		if err != nil {
+			ErrorBadRequest(c, err.Error())
+			return
+		}
+		req.Permissions = &normalized
 	}
 	if err := validateSystemRole(req.SystemRole); err != nil {
 		ErrorBadRequest(c, err.Error())

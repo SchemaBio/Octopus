@@ -52,6 +52,9 @@ func (r *ProjectRepository) UpdateStatus(id uint, status model.ProjectStatus) er
 func (r *ProjectRepository) PaginateByQuery(query *model.ProjectListQuery) ([]model.Project, int64, error) {
 	db := r.db.Model(&model.Project{})
 
+	if query.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	}
 	if !query.IncludeAll {
 		if query.CreatedBy != 0 {
 			db = db.Where("created_by = ?", query.CreatedBy)

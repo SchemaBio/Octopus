@@ -27,19 +27,24 @@ func NewProjectService(cfg *config.Config) *ProjectService {
 }
 
 // CreateProject creates a new project
-func (s *ProjectService) CreateProject(ctx context.Context, req *model.ProjectCreateRequest, userID uint) (*model.Project, error) {
+func (s *ProjectService) CreateProject(ctx context.Context, req *model.ProjectCreateRequest, userID uint, orgs ...string) (*model.Project, error) {
 	// Check if project_code exists
 	if s.repo.ExistsByProjectCode(req.ProjectCode) {
 		return nil, nil // Already exists
 	}
 
+	orgID := ""
+	if len(orgs) > 0 {
+		orgID = orgs[0]
+	}
 	project := &model.Project{
-		ProjectCode: req.ProjectCode,
-		ProjectName: req.ProjectName,
-		Description: req.Description,
-		Panel:       req.Panel,
-		Status:      model.ProjectStatusActive,
-		CreatedBy:   userID,
+		ExternalOrgID: orgID,
+		ProjectCode:   req.ProjectCode,
+		ProjectName:   req.ProjectName,
+		Description:   req.Description,
+		Panel:         req.Panel,
+		Status:        model.ProjectStatusActive,
+		CreatedBy:     userID,
 	}
 
 	if err := s.repo.Create(project); err != nil {

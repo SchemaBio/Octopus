@@ -25,7 +25,9 @@ func deleteCNVBaseline(db *gorm.DB, id string, actor model.OverlayActor) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		scope := func() *gorm.DB {
 			query := tx.Where("uuid = ?", id)
-			if actor.Role != string(model.SystemRoleSuperAdmin) {
+			if actor.SharedInstance {
+				query = query.Where("COALESCE(external_org_id, '') = ''")
+			} else if actor.Role != string(model.SystemRoleSuperAdmin) {
 				if actor.OrgID != "" {
 					query = query.Where("external_org_id = ?", actor.OrgID)
 				} else {

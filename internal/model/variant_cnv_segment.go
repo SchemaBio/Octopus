@@ -56,8 +56,8 @@ func (CNVSegment) TableName() string {
 // CNVSegmentListQuery query parameters
 type CNVSegmentListQuery struct {
 	TaskID             string `form:"taskId"`
-	TenantID           string `form:"-" json:"-"`
-	ExecutionAttemptID string `form:"-" json:"-"`
+	TenantID           string `form:"-" json:"-" form:"-"`
+	ExecutionAttemptID string `form:"-" json:"-" form:"-"`
 	Search             string `form:"search"`
 	Type               string `form:"type"`
 	Sort               string `form:"sort"`

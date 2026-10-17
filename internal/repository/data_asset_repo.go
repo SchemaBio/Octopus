@@ -47,6 +47,9 @@ func (r *DataAssetRepository) FindCompletedByStorageKey(storageKey string, actor
 }
 
 func scopeDataAssetActor(db *gorm.DB, actor model.OverlayActor) *gorm.DB {
+	if actor.SharedInstance {
+		return db.Where("COALESCE(" + "external_org_id" + ", '') = ''")
+	}
 	if actor.Role != string(model.SystemRoleSuperAdmin) {
 		if actor.OrgID != "" {
 			db = db.Where("external_org_id = ?", actor.OrgID)
@@ -59,6 +62,9 @@ func scopeDataAssetActor(db *gorm.DB, actor model.OverlayActor) *gorm.DB {
 
 func (r *DataAssetRepository) Paginate(query *model.DataAssetListQuery) ([]model.DataAsset, int64, error) {
 	db := r.db.Model(&model.DataAsset{}).Where("status <> ?", model.FileStatusDeleted)
+	if query.SharedInstance {
+		db = db.Where("COALESCE(external_org_id, '') = ''")
+	}
 	if !query.IncludeAll {
 		if query.OrgID != "" {
 			db = db.Where("external_org_id = ?", query.OrgID)

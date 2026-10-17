@@ -63,8 +63,8 @@ func (SNVIndel) TableName() string {
 // SNVIndelListQuery query parameters
 type SNVIndelListQuery struct {
 	TaskID             string `form:"taskId"`
-	TenantID           string `form:"-" json:"-"`
-	ExecutionAttemptID string `form:"-" json:"-"`
+	TenantID           string `form:"-" json:"-" form:"-"`
+	ExecutionAttemptID string `form:"-" json:"-" form:"-"`
 	Search             string `form:"search"`
 	Gene               string `form:"gene"`
 	Classification     string `form:"classification"`
@@ -73,7 +73,7 @@ type SNVIndelListQuery struct {
 	Direction          string `form:"direction"`
 	// GeneListGenes is populated by ResultService only after GeneListID has
 	// been resolved within the authenticated actor's scope.
-	GeneListGenes []string `form:"-" json:"-"`
+	GeneListGenes []string `form:"-" json:"-" form:"-"`
 	Page          int      `form:"page" binding:"omitempty,min=1"`
 	PageSize      int      `form:"page_size" binding:"omitempty,min=1,max=100"`
 }

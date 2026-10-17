@@ -11,6 +11,9 @@ var ErrResourceConflict = errors.New("resource changed; reload before saving")
 var ErrResourceForbidden = errors.New("resource is not available for maintenance")
 
 func resourceQuery(db *gorm.DB, orgColumn, ownerColumn string, a model.OverlayActor) *gorm.DB {
+	if a.SharedInstance {
+		return db.Where("COALESCE(" + orgColumn + ", '') = ''")
+	}
 	if a.OrgID != "" {
 		return db.Where("("+orgColumn+" = ? OR ("+orgColumn+" = '' AND "+ownerColumn+" = ?))", a.OrgID, a.UserID)
 	}
@@ -36,5 +39,8 @@ func normalizedGenes(values []string) []string {
 func geneListResponse(g *model.GeneList, a model.OverlayActor) model.GeneListResponse {
 	r := g.ToResponse()
 	r.CanMaintain = a.ResourceMaintenance(g.CreatedBy)
+	if a.SharedInstance {
+		r.Scope = "instance"
+	}
 	return r
 }

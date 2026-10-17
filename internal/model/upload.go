@@ -259,9 +259,10 @@ type UploadFileListQuery struct {
 	Search   string     `form:"search"` // matches file_name ILIKE
 	OrgID    string     `form:"org_id"` // admin cross-org filter
 	// internal scope (set by handler, not bound from query):
-	UserID        uint   `json:"-"`
-	ExternalOrgID string `json:"-"`
-	IncludeAll    bool   `json:"-"`
+	UserID         uint   `json:"-" form:"-"`
+	ExternalOrgID  string `json:"-" form:"-"`
+	IncludeAll     bool   `json:"-" form:"-"`
+	SharedInstance bool   `json:"-" form:"-"`
 }
 
 // UploadFileAuditResponse mirrors UploadFileResponse but exposes audit fields

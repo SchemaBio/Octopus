@@ -37,8 +37,9 @@ func (h *DataAssetHandler) List(c *gin.Context) {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
 	}
-	if role == string(model.SystemRoleSuperAdmin) {
+	if middleware.IsSharedInstance(c) || role == string(model.SystemRoleSuperAdmin) {
 		query.IncludeAll = true
+		query.SharedInstance = middleware.IsSharedInstance(c)
 	} else if orgID, hasOrg := middleware.GetCurrentOrg(c); hasOrg {
 		query.OrgID = orgID
 	} else {

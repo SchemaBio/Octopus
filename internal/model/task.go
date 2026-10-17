@@ -213,15 +213,16 @@ type TaskListQuery struct {
 	// OrgID is an explicit cross-organization filter for platform-admin audit
 	// consumers. The handler still applies the caller scope before the
 	// repository uses this value, so tenant users cannot widen their access.
-	OrgID         string     `form:"org_id"`
-	CreatedSince  *time.Time `form:"created_since"` // tasks created >= since (RFC3339); nil = no filter
-	UpdatedSince  *time.Time `form:"updated_since"` // tasks updated >= since (RFC3339); nil = no filter
-	Page          int        `form:"page" binding:"omitempty,min=1"`
-	PageSize      int        `form:"page_size" binding:"omitempty,min=1,max=100"`
-	CreatedBy     uint       `json:"-"`
-	ExternalOrgID string     `json:"-"`
-	TenantID      string     `json:"-"`
-	IncludeAll    bool       `json:"-"`
+	OrgID          string     `form:"org_id"`
+	CreatedSince   *time.Time `form:"created_since"` // tasks created >= since (RFC3339); nil = no filter
+	UpdatedSince   *time.Time `form:"updated_since"` // tasks updated >= since (RFC3339); nil = no filter
+	Page           int        `form:"page" binding:"omitempty,min=1"`
+	PageSize       int        `form:"page_size" binding:"omitempty,min=1,max=100"`
+	CreatedBy      uint       `json:"-" form:"-"`
+	ExternalOrgID  string     `json:"-" form:"-"`
+	TenantID       string     `json:"-" form:"-"`
+	IncludeAll     bool       `json:"-" form:"-"`
+	SharedInstance bool       `json:"-" form:"-"`
 }
 
 // TaskResponse matches frontend AnalysisTask type
@@ -333,7 +334,7 @@ type TaskAuditResponse struct {
 }
 
 // ToAuditResponse converts a Task to the enriched audit response shape.
-// It reads the result-import fields directly off the struct (the `json:"-"`
+// It reads the result-import fields directly off the struct (the `json:"-" form:"-"`
 // tags on those fields only affect default marshalling, not field access).
 func (t *Task) ToAuditResponse() TaskAuditResponse {
 	resp := TaskAuditResponse{
