@@ -1,12 +1,35 @@
 package handler
 
 import (
+	"errors"
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/repository"
 	"github.com/SchemaBio/Octopus/internal/service"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )
+
+func (h *ResultDownloadHandler) SelfHostedFile(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.tasks, c.Param("id"))
+	if !ok {
+		return
+	}
+	filename, name, redirect, err := h.svc.SelfHostedDownloadFile(c.Request.Context(), task, c.Param("file"), c.Query("attempt"), c.Query("version"))
+	if err != nil {
+		if errors.Is(err, service.ErrIGVEvidenceChanged) {
+			ErrorConflict(c, "结果版本已变更，请刷新页面")
+		} else {
+			ErrorNotFound(c, "归档文件不可用")
+		}
+		return
+	}
+	c.Header("Cache-Control", "private, no-store")
+	if redirect != "" {
+		c.Redirect(http.StatusTemporaryRedirect, redirect)
+		return
+	}
+	c.FileAttachment(filename, name)
+}
 
 type ResultDownloadHandler struct {
 	svc   *service.ResultDownloadService

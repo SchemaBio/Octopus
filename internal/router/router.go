@@ -195,6 +195,7 @@ func New(cfg *config.Config) *gin.Engine {
 			// Charged raw downloads: quotes never deduct credits.
 			tasks.GET("/:id/downloads", resultDownloadHandler.Catalog)
 			tasks.GET("/:id/downloads/active", resultDownloadHandler.Active)
+			tasks.GET("/:id/downloads/files/:file", resultDownloadHandler.SelfHostedFile)
 			tasks.POST("/:id/downloads/prepare", resultDownloadHandler.Catalog)
 			tasks.POST("/:id/downloads/quote", resultDownloadHandler.Quote)
 			tasks.POST("/:id/downloads/issue", resultDownloadHandler.Issue)

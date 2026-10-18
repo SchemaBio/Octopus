@@ -40,6 +40,9 @@ type ResultDownloadFile struct {
 	key       string
 }
 type ResultDownloadCatalog struct {
+	Transport        string               `json:"transport,omitempty"`
+	Version          string               `json:"version,omitempty"`
+	Files            []ResultDownloadFile `json:"files,omitempty"`
 	AttemptID        string               `json:"attempt_id"`
 	BAMExpiresAt     *time.Time           `json:"bam_expires_at,omitempty"`
 	BAMRetentionDays int                  `json:"bam_retention_days"`
@@ -99,6 +102,9 @@ func (s *ResultDownloadService) reconcileAbandonedDownloads() {
 }
 
 func (s *ResultDownloadService) Active(ctx context.Context, task *model.Task, actor model.OverlayActor, ip string) ([]model.ResultDownload, error) {
+	if s.localDownloadStorage() {
+		return []model.ResultDownload{}, nil
+	}
 	rows := []model.ResultDownload{}
 	err := database.DB.WithContext(ctx).Where("task_uuid = ? AND attempt_id = ? AND user_id = ? AND org_id = ? AND link_expires_at > ? AND refunded_at IS NULL", task.UUID, task.ExecutionAttemptID, actor.UserID, actor.OrgID, time.Now()).Order("created_at DESC").Limit(10).Find(&rows).Error
 	if err != nil {
@@ -123,6 +129,9 @@ func (s *ResultDownloadService) Active(ctx context.Context, task *model.Task, ac
 // Catalog reads only this execution's final output manifest. It never accepts
 // object paths supplied by the browser, nor searches old attempts.
 func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, prepare bool) (*ResultDownloadCatalog, error) {
+	if s.localDownloadStorage() {
+		return s.localDownloadCatalog(task, prepare)
+	}
 	if err := validateResultPackageTask(s.cfg, task); err != nil {
 		return nil, err
 	}
@@ -475,6 +484,9 @@ func (s *ResultDownloadService) buildRawZIP(storage *s3Storage, key, prefix stri
 }
 
 func (s *ResultDownloadService) Quote(ctx context.Context, task *model.Task, actor model.OverlayActor, ip, kind, fileID string) (*model.ResultDownload, error) {
+	if s.localDownloadStorage() {
+		return nil, fmt.Errorf("自部署本地结果请使用直接下载入口")
+	}
 	if actor.UserID == 0 || actor.OrgID == "" || actor.OrgID != task.ExternalOrgID {
 		return nil, fmt.Errorf("下载身份无效")
 	}
@@ -526,6 +538,9 @@ func (s *ResultDownloadService) Quote(ctx context.Context, task *model.Task, act
 // Issue serializes one quote, prepares authorization before billing and uses
 // the quote UUID as the ledger key. A transport retry never creates a new fee.
 func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, actor model.OverlayActor, ip, id string) (map[string]interface{}, error) {
+	if s.localDownloadStorage() {
+		return nil, fmt.Errorf("自部署本地结果请使用直接下载入口")
+	}
 	if err := downloadSigningAvailable(s.cfg.Storage); err != nil {
 		return nil, err
 	}
