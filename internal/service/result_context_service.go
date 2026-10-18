@@ -122,6 +122,9 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 }
 
 func (s *ResultService) parquetArchiveState(ctx context.Context, task *model.Task) model.ParquetResultState {
+	if s.localBrowserStorage() {
+		return s.localParquetArchiveState(task)
+	}
 	state := model.ParquetResultState{Tables: []string{}, FieldProfileVersion: "parquet-fields-v2"}
 	if s.cfg == nil || !supportsParquetObjectStorage(s.cfg.Storage.Provider) {
 		state.Reason = "结果对象存储未配置"

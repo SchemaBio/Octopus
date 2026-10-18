@@ -71,7 +71,8 @@ func (s *ResultService) GetIGVSession(ctx context.Context, task *model.Task) (*m
 		}
 	}
 	return &model.IGVSessionResponse{
-		TaskUUID: task.UUID, ExecutionAttemptID: attemptID, Version: archive.version,
+		Transport: archiveTransport(archive),
+		TaskUUID:  task.UUID, ExecutionAttemptID: attemptID, Version: archive.version,
 		Available: available, Reason: reason, Reference: archive.reference, Tracks: tracks,
 	}, nil
 }
@@ -95,9 +96,12 @@ func (s *ResultService) SignIGVTracks(ctx context.Context, task *model.Task, req
 	if expiry <= 0 {
 		expiry = 10 * time.Minute
 	}
-	deadline, err := bamRetentionDeadline(ctx, s.cfg, task)
-	if err != nil {
-		return nil, err
+	var deadline *time.Time
+	if !s.localBrowserStorage() {
+		deadline, err = bamRetentionDeadline(ctx, s.cfg, task)
+		if err != nil {
+			return nil, err
+		}
 	}
 	now := time.Now().UTC()
 	for _, id := range request.TrackIDs {
@@ -130,6 +134,16 @@ func (s *ResultService) SignIGVTracks(ctx context.Context, task *model.Task, req
 		if remaining < time.Second {
 			return nil, fmt.Errorf("IGV authorization window expired")
 		}
+		if archive.storage == nil && s.localBrowserStorage() {
+			base := fmt.Sprintf("/v1/tasks/%s/results/igv/tracks/%s/", url.PathEscape(task.UUID), url.PathEscape(id))
+			query := "?" + url.Values{"attempt": {executionAttempt(task)}, "version": {archive.version}}.Encode()
+			item := model.IGVTrackURL{ID: id, URL: base + "data" + query}
+			if candidate.indexKey != "" {
+				item.IndexURL = base + "index" + query
+			}
+			selected = append(selected, item)
+			continue
+		}
 		trackURL, err := archive.storage.presignRead(ctx, candidate.objectKey, remaining)
 		if err != nil {
 			return nil, err
@@ -152,10 +166,13 @@ func (s *ResultService) SignIGVTracks(ctx context.Context, task *model.Task, req
 		return nil, fmt.Errorf("no IGV tracks selected")
 	}
 	expiresAt := validUntil.Format(time.RFC3339)
-	return &model.IGVURLResponse{Tracks: selected, ExpiresAt: expiresAt}, nil
+	return &model.IGVURLResponse{Transport: archiveTransport(archive), Tracks: selected, ExpiresAt: expiresAt}, nil
 }
 
 func (s *ResultService) loadIGVArchive(ctx context.Context, task *model.Task) (*igvArchive, error) {
+	if s.localBrowserStorage() {
+		return s.loadLocalIGVArchive(task)
+	}
 	if s.cfg == nil || s.cfg.Storage.Provider != "s3" {
 		return nil, fmt.Errorf("COS/S3 archive storage is not configured")
 	}

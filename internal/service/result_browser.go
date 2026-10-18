@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/SchemaBio/Octopus/internal/database"
@@ -44,6 +45,7 @@ func browserOrdinalMatches(d *model.ResultDataset, rowID string, ordinal int64) 
 // BrowserResultDataset authorizes only the current, validated immutable object.
 // URLs are short-lived and must never be persisted in saved views or logs.
 type BrowserResultDataset struct {
+	Transport         string              `json:"transport,omitempty"`
 	Dataset           model.ResultDataset `json:"dataset"`
 	URL               string              `json:"url"`
 	AutomaticURL      string              `json:"automaticUrl,omitempty"`
@@ -77,19 +79,25 @@ func (s *ResultService) BrowserDataset(ctx context.Context, task *model.Task, ta
 	if d.ExpectedRows != nil && d.Rows != *d.ExpectedRows {
 		return nil, ErrParquetIncomplete
 	}
-	storage, err := newS3Storage(ctx, s.cfg.Storage)
-	if err != nil {
-		return nil, err
-	}
 	expires := time.Now().UTC().Add(10 * time.Minute)
 	if s.cfg.IsSaaS() && task.ExpiresAt != nil && task.ExpiresAt.Before(expires) {
 		expires = *task.ExpiresAt
 	}
-	url, err := storage.presignRead(ctx, d.ObjectKey, 10*time.Minute)
-	if err != nil {
-		return nil, fmt.Errorf("result read authorization failed")
+	result := &BrowserResultDataset{Dataset: *d, ExpiresAt: expires, Columns: []string{}, Aliases: map[string][]string{}}
+	if s.localBrowserStorage() {
+		result.Transport = "api"
+		result.URL = fmt.Sprintf("/v1/tasks/%s/results/tables/%s/browser/file?%s", url.PathEscape(task.UUID), url.PathEscape(table),
+			url.Values{"attemptId": {d.ExecutionAttemptID}, "datasetVersion": {d.DataVersion}}.Encode())
+	} else {
+		storage, err := newS3Storage(ctx, s.cfg.Storage)
+		if err != nil {
+			return nil, err
+		}
+		result.URL, err = storage.presignRead(ctx, d.ObjectKey, 10*time.Minute)
+		if err != nil {
+			return nil, fmt.Errorf("result read authorization failed")
+		}
 	}
-	result := &BrowserResultDataset{Dataset: *d, URL: url, ExpiresAt: expires, Columns: []string{}, Aliases: map[string][]string{}}
 	if err := json.Unmarshal([]byte(d.FieldsJSON), &result.Columns); err != nil {
 		return nil, fmt.Errorf("invalid result schema")
 	}

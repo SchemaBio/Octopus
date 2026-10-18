@@ -26,6 +26,7 @@ const MaxIGVSnapshotBytes = 8 << 20
 var snapshotLocusPattern = regexp.MustCompile(`^(?:chr)?([1-9]|1[0-9]|2[0-2]|X|Y|M|MT):([0-9]+)-([0-9]+)$`)
 
 type IGVSnapshotResponse struct {
+	Transport string    `json:"transport,omitempty"`
 	Available bool      `json:"available"`
 	URL       string    `json:"url,omitempty"`
 	Locus     string    `json:"locus,omitempty"`
@@ -90,6 +91,9 @@ func (s *ResultService) findIGVSnapshot(ctx context.Context, task *model.Task, r
 }
 
 func (s *ResultService) GetIGVSnapshot(ctx context.Context, task *model.Task, locus string) (*IGVSnapshotResponse, error) {
+	if s.localBrowserStorage() {
+		return s.getLocalIGVSnapshot(task, locus)
+	}
 	locus, reference, err := s.snapshotScope(task, locus)
 	if err != nil {
 		return nil, err
@@ -113,6 +117,9 @@ func (s *ResultService) GetIGVSnapshot(ctx context.Context, task *model.Task, lo
 }
 
 func (s *ResultService) SaveIGVSnapshot(ctx context.Context, task *model.Task, locus, version string, data []byte) (*IGVSnapshotResponse, error) {
+	if s.localBrowserStorage() {
+		return s.saveLocalIGVSnapshot(task, locus, version, data)
+	}
 	locus, reference, err := s.snapshotScope(task, locus)
 	if err != nil {
 		return nil, err

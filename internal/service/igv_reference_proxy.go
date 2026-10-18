@@ -34,6 +34,20 @@ func (s *ResultService) OpenIGVReference(ctx context.Context, task *model.Task, 
 	if attempt != currentAttempt {
 		return nil, ErrIGVEvidenceChanged
 	}
+	if s.localBrowserStorage() {
+		filename, err := s.localIGVReferencePath(task)
+		if err != nil {
+			return nil, err
+		}
+		switch asset {
+		case "fasta":
+		case "fai":
+			filename += ".fai"
+		default:
+			return nil, fmt.Errorf("unknown reference resource")
+		}
+		return openLocalIGVFile(filename, requestedRange, asset == "fasta", maxIGVReferenceRead)
+	}
 	keys, err := cvmReferenceObjectKeys(declaredReferenceID(task.InputJSON), false)
 	if err != nil {
 		return nil, err

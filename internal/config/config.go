@@ -168,6 +168,7 @@ type IGVConfig struct {
 }
 
 type IGVReferenceConfig struct {
+	FASTAPath         string
 	FASTAURL          string
 	FAIURL            string
 	AliasURL          string
@@ -333,6 +334,7 @@ func Load() *Config {
 		IGV: IGVConfig{
 			ReferenceProxyBaseURL: strings.TrimRight(strings.TrimSpace(getEnv("IGV_REFERENCE_PROXY_BASE_URL", "")), "/"),
 			HG19: IGVReferenceConfig{
+				FASTAPath:         strings.TrimSpace(getEnv("IGV_HG19_FASTA_PATH", "")),
 				FASTAURL:          strings.TrimSpace(getEnv("IGV_HG19_FASTA_URL", "")),
 				FAIURL:            strings.TrimSpace(getEnv("IGV_HG19_FAI_URL", "")),
 				AliasURL:          strings.TrimSpace(getEnv("IGV_HG19_ALIAS_URL", "")),
@@ -341,6 +343,7 @@ func Load() *Config {
 				GeneTrackIndexURL: strings.TrimSpace(getEnv("IGV_HG19_GENE_TRACK_INDEX_URL", "")),
 			},
 			HG38: IGVReferenceConfig{
+				FASTAPath:         strings.TrimSpace(getEnv("IGV_HG38_FASTA_PATH", "")),
 				FASTAURL:          strings.TrimSpace(getEnv("IGV_HG38_FASTA_URL", "")),
 				FAIURL:            strings.TrimSpace(getEnv("IGV_HG38_FAI_URL", "")),
 				AliasURL:          strings.TrimSpace(getEnv("IGV_HG38_ALIAS_URL", "")),

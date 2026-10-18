@@ -30,11 +30,11 @@ func CORS(cfg *config.ServerConfig) gin.HandlerFunc {
 		if allowOrigin != "" {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", allowOrigin)
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-			c.Writer.Header().Set("Access-Control-Expose-Headers", "Set-Cookie")
+			c.Writer.Header().Set("Access-Control-Expose-Headers", "Set-Cookie, Content-Range, Accept-Ranges")
 		}
 
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie, X-CSRF-Token")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie, X-CSRF-Token, Range")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)

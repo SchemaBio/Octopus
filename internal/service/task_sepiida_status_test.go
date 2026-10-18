@@ -77,3 +77,28 @@ func TestApplySepiidaWorkflowStatusCompletesOnSuccess(t *testing.T) {
 		t.Fatalf("got status %s", task.Status)
 	}
 }
+
+func TestSepiidaClosesLocalExecutionPhase(t *testing.T) {
+	for _, executor := range []model.ExecutorType{model.ExecutorLocal, model.ExecutorSlurm, model.ExecutorLSF} {
+		for _, scenario := range []struct {
+			report model.SepiidaStatus
+			status model.TaskStatus
+		}{
+			{model.SepiidaStatusFailed, model.TaskStatusFailed},
+			{model.SepiidaStatusCancelled, model.TaskStatusCancelled},
+			{model.SepiidaStatusSuccess, model.TaskStatusCompleted},
+		} {
+			for _, priorStatus := range []model.TaskStatus{model.TaskStatusRunning, scenario.status} {
+				task := &model.Task{Executor: executor, Status: priorStatus, ExecutionPhase: "running"}
+				changed, _ := applySepiidaWorkflowStatus(task, scenario.report)
+				if !changed || task.Status != scenario.status || task.ExecutionPhase != "terminal" || task.PhaseUpdatedAt == nil {
+					t.Fatalf("executor=%s report=%s prior=%s left stale state: %+v", executor, scenario.report, priorStatus, task)
+				}
+				changed, _ = applySepiidaWorkflowStatus(task, scenario.report)
+				if changed {
+					t.Fatal("unchanged terminal report must be idempotent")
+				}
+			}
+		}
+	}
+}

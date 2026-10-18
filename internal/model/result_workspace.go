@@ -77,6 +77,7 @@ type QCMetric struct {
 // IGVSessionResponse describes eligible evidence files without exposing their
 // storage location. The browser asks for URLs only for selected track IDs.
 type IGVSessionResponse struct {
+	Transport          string               `json:"transport,omitempty"`
 	TaskUUID           string               `json:"taskUuid"`
 	ExecutionAttemptID string               `json:"executionAttemptId"`
 	Version            string               `json:"version"`
@@ -122,6 +123,7 @@ type IGVTrackURL struct {
 }
 
 type IGVURLResponse struct {
+	Transport string        `json:"transport,omitempty"`
 	Tracks    []IGVTrackURL `json:"tracks"`
 	ExpiresAt string        `json:"expiresAt"`
 }

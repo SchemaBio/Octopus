@@ -234,10 +234,13 @@ func New(cfg *config.Config) *gin.Engine {
 		results.Use(middleware.JWTAuth(cfg), taskHandler.InterpretationEditGuard)
 		{
 			results.GET("/context", resultHandler.GetContext)
+			results.GET("/tables/:table/browser/file", resultHandler.GetLocalBrowserFile)
 			results.GET("/igv", resultHandler.GetIGVSession)
 			results.GET("/igv/snapshot", resultHandler.GetIGVSnapshot)
+			results.GET("/igv/snapshot/file", resultHandler.GetLocalIGVSnapshotFile)
 			results.POST("/igv/snapshot", resultHandler.SaveIGVSnapshot)
 			results.GET("/igv/reference/:asset", resultHandler.GetIGVReference)
+			results.GET("/igv/tracks/:track/:asset", resultHandler.GetLocalIGVTrack)
 			results.POST("/igv/urls", resultHandler.SignIGVTrackURLs)
 			results.GET("/qc", resultHandler.GetQC)
 			results.GET("/snv-indel", resultHandler.ListSNVIndels)

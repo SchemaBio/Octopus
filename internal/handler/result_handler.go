@@ -132,6 +132,25 @@ func (h *ResultHandler) GetBrowserDataset(c *gin.Context) {
 	Success(c, result)
 }
 
+func (h *ResultHandler) GetLocalBrowserFile(c *gin.Context) {
+	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
+	if !ok {
+		return
+	}
+	file, err := h.svc.LocalBrowserFile(c.Request.Context(), task, c.Param("table"), c.Query("attemptId"), c.Query("datasetVersion"))
+	if errors.Is(err, service.ErrAdjustmentConflict) {
+		ErrorConflict(c, "result dataset changed; reload the dataset")
+		return
+	}
+	if err != nil {
+		ErrorNotFound(c, "local result dataset unavailable")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Header("Content-Type", "application/vnd.apache.parquet")
+	c.File(file)
+}
+
 func (h *ResultHandler) GetBrowserAdjustments(c *gin.Context) {
 	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
 	if !ok {

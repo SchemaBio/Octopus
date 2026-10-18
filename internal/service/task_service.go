@@ -234,7 +234,15 @@ func (s *TaskService) StartSepiidaSync(ctx context.Context, interval time.Durati
 // and updates their status based on Sepiida's authoritative workflow state.
 func (s *TaskService) syncRunningTaskStatuses() {
 	var tasks []model.Task
-	err := database.GetDB().Where("status = ? OR (executor = ? AND status = ? AND execution_phase IN ?)", model.TaskStatusRunning, model.ExecutorCVM, model.TaskStatusQueued, []string{"bootstrapping", "running", "archiving"}).Find(&tasks).Error
+	query := database.GetDB().Where("status = ? OR (executor = ? AND status = ? AND execution_phase IN ?)", model.TaskStatusRunning, model.ExecutorCVM, model.TaskStatusQueued, []string{"bootstrapping", "running", "archiving"})
+	if !s.cfg.IsSaaS() {
+		// A completed local workflow can still be waiting for Agent archiving.
+		// Keep observing it until the first import, without retrying real errors.
+		query = query.Or("status = ? AND executor IN ? AND result_import_status IN ?", model.TaskStatusCompleted,
+			[]model.ExecutorType{model.ExecutorLocal, model.ExecutorSlurm, model.ExecutorLSF},
+			[]model.ResultImportStatus{model.ResultImportStatusPending, ""})
+	}
+	err := query.Find(&tasks).Error
 	if err != nil {
 		return
 	}
@@ -259,6 +267,14 @@ func (s *TaskService) syncRunningTaskStatuses() {
 func applySepiidaWorkflowStatus(task *model.Task, status model.SepiidaStatus) (changed bool, completedNow bool) {
 	if task == nil {
 		return false, false
+	}
+	phaseChanged := false
+	if task.Executor != model.ExecutorCVM &&
+		(status == model.SepiidaStatusSuccess || status == model.SepiidaStatusFailed || status == model.SepiidaStatusCancelled) && task.ExecutionPhase != "terminal" {
+		now := time.Now().UTC()
+		task.ExecutionPhase = "terminal"
+		task.PhaseUpdatedAt = &now
+		phaseChanged = true
 	}
 	switch status {
 	case model.SepiidaStatusRunning:
@@ -317,7 +333,7 @@ func applySepiidaWorkflowStatus(task *model.Task, status model.SepiidaStatus) (c
 			return true, false
 		}
 	}
-	return false, false
+	return phaseChanged, false
 }
 
 func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
@@ -361,6 +377,9 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	if sepiidaWorkflow == nil {
 		s.clearSepiidaQueryDegraded(task)
 		s.timeoutMissingSepiidaFirstReport(task, false)
+		return
+	}
+	if !s.currentWorkflowReport(task, sepiidaWorkflow) {
 		return
 	}
 	s.clearSepiidaQueryDegraded(task)
@@ -419,7 +438,8 @@ func (s *TaskService) syncTaskFromSepiida(task *model.Task) {
 	}
 	s.mu.Unlock()
 
-	if completedNow {
+	if completedNow || (!s.cfg.IsSaaS() && task.Executor != model.ExecutorCVM && task.Status == model.TaskStatusCompleted &&
+		(task.ResultImportStatus == model.ResultImportStatusPending || task.ResultImportStatus == "")) {
 		s.importTaskArchive(task)
 	}
 	if task.Executor == model.ExecutorCVM {
@@ -1506,6 +1526,8 @@ func (s *TaskService) launchTask(task *model.Task) {
 
 		previousStatus := task.Status
 		finishedAt := time.Now()
+		task.ExecutionPhase = "terminal"
+		task.PhaseUpdatedAt = &finishedAt
 		if err != nil {
 			task.Status = model.TaskStatusFailed
 			task.Error = err.Error()
@@ -1541,6 +1563,10 @@ func (s *TaskService) updateTaskError(task *model.Task, errMsg string) {
 	task.Status = model.TaskStatusFailed
 	task.Error = errMsg
 	now := time.Now()
+	if task.Executor != model.ExecutorCVM {
+		task.ExecutionPhase = "terminal"
+		task.PhaseUpdatedAt = &now
+	}
 	task.FinishedAt = &now
 	task.UpdatedAt = now
 	s.repo.Update(task)
@@ -1564,6 +1590,9 @@ func (s *TaskService) importTaskArchive(task *model.Task) {
 		return
 	}
 	if _, err := os.Stat(archiveDir); err != nil {
+		return
+	}
+	if !s.localArchiveReady(task, archiveDir) {
 		return
 	}
 	fingerprint := archiveImportFingerprint(task, archiveDir)
@@ -1805,6 +1834,9 @@ func (s *TaskService) RetryResultImport(ctx context.Context, id string) (*model.
 	if _, err := os.Stat(archiveDir); err != nil {
 		return nil, fmt.Errorf("archive not found for task: %s", id)
 	}
+	if !s.localArchiveReady(task, archiveDir) {
+		return nil, fmt.Errorf("result archive is not ready; wait for archiving to complete")
+	}
 
 	if err := s.runTaskArchiveImport(task, archiveDir); err != nil {
 		return nil, err
@@ -1874,7 +1906,7 @@ func (s *TaskService) GetTaskProgress(ctx context.Context, id string) (*model.Ta
 	// Query Sepiida for real-time progress
 	if s.sepiida != nil && task.UUID != "" {
 		sepiidaWorkflow, tasks, err := s.sepiida.GetWorkflowWithTasks(task.UUID, sepiidaWorkflowAgentID(task))
-		if err == nil && sepiidaWorkflow != nil {
+		if err == nil && sepiidaWorkflow != nil && s.currentWorkflowReport(task, sepiidaWorkflow) {
 			resp.Sepiida = sepiidaWorkflow
 			resp.Tasks = tasks
 			s.syncTaskFromSepiida(task)

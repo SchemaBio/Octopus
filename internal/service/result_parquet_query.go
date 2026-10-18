@@ -128,6 +128,9 @@ func (s *ResultService) QueryParquetTable(ctx context.Context, task *model.Task,
 }
 
 func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Task, tenant, attempt, table string) (*model.ResultDataset, error) {
+	if s.localBrowserStorage() {
+		return s.ensureLocalParquetDataset(ctx, task, tenant, attempt, table)
+	}
 	if s.cfg.IsSaaS() {
 		var done func()
 		ctx, done = retention.Track(ctx, task.UUID)
