@@ -95,7 +95,8 @@ func (s *TaskService) EstimateTask(req *model.TaskEstimateRequest, actor model.O
 		SampleID:   strings.TrimSpace(req.SampleID),
 		PedigreeID: strings.TrimSpace(req.PedigreeID),
 		PipelineID: strings.TrimSpace(req.PipelineID),
-		Inputs:     make(map[string]interface{}),
+		VCFAssetID: req.VCFAssetID, VCFSampleName: req.VCFSampleName,
+		Inputs: make(map[string]interface{}),
 	}
 	if _, err := s.resolveAnalysisPipeline(&createReq, actor); err != nil {
 		return nil, err
@@ -118,6 +119,12 @@ func (s *TaskService) EstimateTask(req *model.TaskEstimateRequest, actor model.O
 		return nil, fmt.Errorf("analysis input data is not available")
 	}
 
+	if createReq.Template == "vcf2anno" {
+		if _, err := s.resolveVCFAsset(&createReq, actor); err != nil {
+			return nil, err
+		}
+		return &model.TaskEstimateResponse{EstimatedMinutes: defaultTaskEstimatedMinutes}, nil
+	}
 	return &model.TaskEstimateResponse{EstimatedMinutes: s.estimateTaskMinutes(sample.ID, nil)}, nil
 }
 
@@ -751,6 +758,14 @@ func (s *TaskService) resolveAnalysisPipeline(req *model.TaskCreateRequest, acto
 		req.Inputs["reference_genome"] = genome
 	}
 	switch req.PipelineID {
+	case model.BuiltinPipelineVCFHG19ID, model.BuiltinPipelineVCFHG38ID:
+		genome := "hg19"
+		if req.PipelineID == model.BuiltinPipelineVCFHG38ID {
+			genome = "hg38"
+		}
+		req.PipelineName, req.PipelineVersion, req.Template = "VCF SNP/InDel 注释（"+genome+"）", "builtin-v1", "vcf2anno"
+		setGenome(genome)
+		return nil, nil
 	case model.BuiltinPipelineWESSingleID:
 		req.PipelineName, req.PipelineVersion, req.Template = "WES单样本分析", "builtin-v1", "single"
 		setGenome("hg19")
@@ -833,6 +848,20 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	}
 
 	directAssets := make([]model.TaskDataAsset, 0, len(req.InputAssets))
+	if req.Template == "vcf2anno" {
+		if selectedPipeline != nil {
+			inputs["reference_genome"] = selectedPipeline.ReferenceGenome
+		}
+		asset, err := s.resolveVCFAsset(req, actor)
+		if err != nil {
+			return nil, err
+		}
+		inputs = map[string]interface{}{"reference_genome": inputs["reference_genome"], "VCF2Anno.vcf": asset.StorageKey}
+		if req.VCFSampleName != "" {
+			inputs["VCF2Anno.sample_name"] = req.VCFSampleName
+		}
+		directAssets = append(directAssets, model.TaskDataAsset{AssetID: asset.ID, InputRole: model.TaskAssetRoleVCF})
+	}
 	read1Inputs := make([]string, 0)
 	read2Inputs := make([]string, 0)
 	for _, inputAsset := range req.InputAssets {
@@ -882,7 +911,11 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		}
 		sampleIDRef = sample.ID
 
-		if matchedPair := sample.GetMatchedPair(); matchedPairComplete(matchedPair) {
+		if req.Template == "vcf2anno" {
+			sampleDataReady = true
+			req.InternalID = sample.InternalID
+		}
+		if matchedPair := sample.GetMatchedPair(); req.Template != "vcf2anno" && matchedPairComplete(matchedPair) {
 			sampleDataReady = true
 			if _, exists := inputs["fastq_r1"]; !exists && matchedPair.R1Path != "" {
 				if filepath.IsAbs(matchedPair.R1Path) {
@@ -937,6 +970,9 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		}
 	}
 
+	if req.Template == "vcf2anno" && req.UploadJobID != "" {
+		return nil, fmt.Errorf("VCF tasks must select a VCF data asset")
+	}
 	if req.UploadJobID != "" {
 		var err error
 		uploadJob, err = s.uploadJobRepo.FindByUUID(req.UploadJobID)
@@ -972,12 +1008,15 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		}
 	}
 
-	if req.Template == "single" || req.Template == "trio" {
+	if req.Template == "single" || req.Template == "trio" || req.Template == "vcf2anno" {
 		inputs, err = buildCVMWDLInputs(req.Template, fmt.Sprint(inputs["reference_genome"]), inputs)
 		if err != nil {
 			return nil, err
 		}
 		prefix := "SingleWES"
+		if req.Template == "vcf2anno" {
+			prefix = "VCF2Anno"
+		}
 		if req.Template == "trio" {
 			prefix = "TrioWES"
 		}
@@ -1053,6 +1092,9 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		UpdatedAt:          now,
 	}
 
+	if req.Template == "vcf2anno" {
+		task.EstimatedMinutes = defaultTaskEstimatedMinutes
+	}
 	if err := s.admitTask(ctx, model.OverlayAdmissionActionCreate, actor, task); err != nil {
 		return nil, err
 	}
@@ -2225,7 +2267,7 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 	if inputs == nil {
 		inputs = make(map[string]interface{})
 	}
-	if task.SampleIDRef != 0 {
+	if task.SampleIDRef != 0 && task.Template != "vcf2anno" {
 		sample, err := s.sampleRepo.FindByID(task.SampleIDRef)
 		if err != nil {
 			return false, "sample not found"
@@ -2285,7 +2327,7 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 	if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
 		return false, err.Error()
 	}
-	if task.SampleIDRef != 0 {
+	if task.SampleIDRef != 0 && task.Template != "vcf2anno" {
 		if r1, ok := inputs["fastq_r1"].(string); !ok || strings.TrimSpace(r1) == "" {
 			return false, "sample R1 data is not ready"
 		}
@@ -2296,10 +2338,10 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 
 	for key, val := range inputs {
 		path, ok := val.(string)
-		if !ok || path == "" {
+		if !ok || path == "" || key == "reference_genome" {
 			continue
 		}
-		if !containsAny(key, "fastq", "file", "bed", "reference") {
+		if key != "VCF2Anno.vcf" && !containsAny(key, "fastq", "file", "bed", "reference") {
 			continue
 		}
 
@@ -2472,7 +2514,7 @@ func (s *TaskService) collectTaskAssets(task *model.Task) (map[uint]*model.DataA
 		assets[asset.ID] = asset
 		directLinks[asset.ID] = append(directLinks[asset.ID], link)
 	}
-	if task.SampleIDRef != 0 {
+	if task.SampleIDRef != 0 && task.Template != "vcf2anno" {
 		var link model.SampleDataLink
 		db := database.GetDB()
 		err := db.Where("sample_id = ? AND match_mode = ?", task.SampleIDRef, model.SampleMatchModeManual).First(&link).Error
@@ -2545,13 +2587,32 @@ func (s *TaskService) stageCOSArchive(task *model.Task, metadata model.SepiidaAr
 	if err := os.MkdirAll(archiveDir, 0750); err != nil {
 		return err
 	}
+	metadataNames := map[string]bool{}
+	if task.Template == "vcf2anno" {
+		source, err := storage.open(ctx, path.Join(prefix, "outputs.resolved.json"))
+		if err != nil {
+			return err
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(source, maxArchiveOutputsJSONBytes+1))
+		source.Close()
+		if readErr != nil {
+			return readErr
+		}
+		if len(raw) > maxArchiveOutputsJSONBytes {
+			return fmt.Errorf("outputs manifest exceeds size limit")
+		}
+		metadataNames, err = vcfArchiveMetadataNames(raw)
+		if err != nil {
+			return err
+		}
+	}
 	selected := 0
 	for _, object := range objects {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		name := path.Base(object.Key)
-		if name != "outputs.resolved.json" && !isStructuredResultFile(name) {
+		if name != "outputs.resolved.json" && !isStructuredResultFile(name) && !metadataNames[name] {
 			continue
 		}
 		destination := filepath.Join(archiveDir, name)
@@ -2787,7 +2848,7 @@ func (s *TaskService) buildCVMDispatchRequestForContract(ctx context.Context, ac
 		delete(inputs, "TrioWES.ped_content")
 		inlineFiles = append(inlineFiles, model.CVMInlineFile{Target: target, Content: content})
 	}
-	if task.Template == "single" || task.Template == "trio" {
+	if task.Template == "single" || task.Template == "trio" || task.Template == "vcf2anno" {
 		thresholds, configErr := NewWorkflowConfigService().Get(task.Template, referenceGenome)
 		if configErr != nil {
 			return model.CVMDispatchRequest{}, configErr
@@ -2829,12 +2890,19 @@ func buildCVMWDLInputs(template, genome string, taskInputs map[string]interface{
 			inputs[key] = value
 		}
 	}
+	if template == "vcf2anno" {
+		if name, ok := taskInputs["VCF2Anno.sample_name"]; ok {
+			inputs["VCF2Anno.sample_name"] = name
+		}
+	}
 	inputs["reference_genome"] = genome
 	if content, ok := taskInputs["TrioWES.ped_content"]; ok {
 		inputs["TrioWES.ped_content"] = content
 	}
 
 	switch template {
+	case "vcf2anno":
+		copyCVMInput(inputs, "VCF2Anno.vcf", taskInputs, "VCF2Anno.vcf")
 	case "single":
 		copyCVMInput(inputs, "SingleWES.read_1", taskInputs, "fastq_r1")
 		copyCVMInput(inputs, "SingleWES.read_2", taskInputs, "fastq_r2")
@@ -3466,6 +3534,8 @@ func setIndexedInput(values []string, index int, value string) []string {
 
 func applyTaskAssetPath(inputs map[string]interface{}, link model.TaskDataAsset, value string) {
 	switch link.InputRole {
+	case model.TaskAssetRoleVCF:
+		inputs["VCF2Anno.vcf"] = value
 	case model.TaskAssetRoleTrioRead1, model.TaskAssetRoleTrioRead2:
 		meta, _ := inputs["TrioWES.meta_info"].(map[string]interface{})
 		if meta == nil {

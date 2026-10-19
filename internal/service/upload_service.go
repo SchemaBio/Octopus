@@ -103,6 +103,11 @@ func (s *UploadService) getUserStorageFolder(ctx context.Context, userID uint) (
 }
 
 func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string, req *model.UploadJobCreateRequest) (*model.UploadJob, []*model.UploadFile, []string, error) {
+	if req.FileType == model.UploadFileTypeVCF {
+		if len(req.Files) != 1 || req.Files[0].ReadType != model.ReadTypeVCF || !isVCFFilename(req.Files[0].FileName) {
+			return nil, nil, nil, fmt.Errorf("VCF upload requires exactly one .vcf/.vcf.gz/.vcf.bgz file")
+		}
+	}
 	if len(req.Files) == 0 {
 		return nil, nil, nil, fmt.Errorf("at least one file is required")
 	}
@@ -126,6 +131,9 @@ func (s *UploadService) CreateJob(ctx context.Context, userID uint, orgID string
 
 	var requestedBytes int64
 	for _, f := range req.Files {
+		if f.ReadType == model.ReadTypeVCF && req.FileType != model.UploadFileTypeVCF {
+			return nil, nil, nil, fmt.Errorf("VCF files require file_type=vcf")
+		}
 		if err := validateUploadFilename(f.FileName); err != nil {
 			return nil, nil, nil, err
 		}

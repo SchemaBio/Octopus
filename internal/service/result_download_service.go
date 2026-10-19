@@ -166,6 +166,25 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	for _, object := range objects {
 		byKey[object.Key] = object
 	}
+	if task.Template == "vcf2anno" {
+		manifest, err = vcfDownloadManifest(manifest, func(name string, data []byte) (string, error) {
+			digest := fmt.Sprintf("%x", sha256.Sum256(data))
+			key := path.Join(prefix, "vcf-metadata", digest, name)
+			size, statErr := storage.stat(ctx, key)
+			if statErr != nil || size != int64(len(data)) {
+				if e := storage.put(ctx, key, "application/json", data); e != nil {
+					return "", e
+				}
+			}
+			object := s3ObjectInfo{Key: key, Size: int64(len(data))}
+			byKey[key] = object
+			byBase[strings.ToLower(name)] = object
+			return key, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	fieldTables := map[string]string{"snp_indel": "snv-indel", "mt": "mt", "cnv_region": "cnv-segment", "cnv_gene": "cnv-exon", "mei": "mei", "upd": "upd", "roh": "roh", "str": "str"}
 	var embeddedQC []interface{}
 	var findQC func(interface{})
@@ -237,6 +256,10 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	fields := []string{"vcf_raw", "vcf_raw_tbi", "mt_vcf", "mt_vcf_tbi", "snp_indel", "mt", "cnv_region", "cnv_gene", "mei", "upd", "roh", "qc_result", "str"}
 	mtRefs, mtIndexRefs := archivedMitochondrialVCFRefs(manifest, byBase)
 	sources := map[string]s3ObjectInfo{}
+	if task.Template == "vcf2anno" {
+		fields = []string{"normalized_vcf", "normalized_vcf_tbi", "annotated_vcf", "annotated_vcf_tbi", "snp_indel", "preprocessing", "sex_inference", "sex_explanation", "summary"}
+		catalog.BAMStatus = "not_provided"
+	}
 	for _, field := range fields {
 		refs := manifestFileRefs(manifest, field)
 		if field == "mt_vcf" {
@@ -276,6 +299,13 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 						object = original
 					}
 				}
+			}
+			if task.Template == "vcf2anno" && (field == "snp_indel" || field == "sex_explanation") && strings.HasSuffix(strings.ToLower(object.Key), ".parquet") {
+				original, exists := byKey[strings.TrimSuffix(object.Key, path.Ext(object.Key))+".txt"]
+				if !exists {
+					return nil, fmt.Errorf("VCF report original text is missing")
+				}
+				object = original
 			}
 			if object.Size <= 0 {
 				return nil, fmt.Errorf("原始结果 %s 为空", field)

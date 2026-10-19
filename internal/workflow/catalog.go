@@ -29,6 +29,9 @@ type Definition struct {
 }
 
 var definitions = map[string]Definition{
+	"germline_vcf2anno": {Name: "germline_vcf2anno", ShortName: "vcf2anno", Domain: "germline", Workflow: "VCF2Anno", Description: "VCF SNP/InDel annotation", Inputs: mustParseInputs(`{
+"VCF2Anno.prefix":"sample", "VCF2Anno.vcf":"", "VCF2Anno.assembly":"GRCh37", "VCF2Anno.fasta":"/mnt/data/database/Homo_sapiens.GRCh37.dna.primary_assembly.fa", "VCF2Anno.ref_dir":"/mnt/data/database", "VCF2Anno.cache_dir":"/mnt/data/database/vep", "VCF2Anno.schema_bundle":"/mnt/data/database/schema_bundle", "VCF2Anno.threads":8, "VCF2Anno.clinvar_version":"20260415", "VCF2Anno.sex_min_sites":100, "VCF2Anno.female_max_ratio":0.5, "VCF2Anno.male_min_ratio":0.7
+}`)},
 	"germline_single": {
 		Name:        "germline_single",
 		ShortName:   "single",
@@ -116,7 +119,7 @@ var definitions = map[string]Definition{
 }
 
 var adjustableThresholdSuffixes = []string{
-	"sry_sex_cutoff", "cnv_bin_size", "cnv_dup_threshold", "cnv_del_threshold",
+	"sex_min_sites", "female_max_ratio", "male_min_ratio", "sry_sex_cutoff", "cnv_bin_size", "cnv_dup_threshold", "cnv_del_threshold",
 }
 
 // AdjustableThresholdSuffixes returns the workflow parameters that SaaS

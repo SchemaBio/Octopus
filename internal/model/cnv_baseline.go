@@ -8,6 +8,7 @@ const (
 )
 
 const (
+	TaskAssetRoleVCF         = "analysis_vcf"
 	TaskAssetRoleCNVRead1    = "cnv_baseline_read1"
 	TaskAssetRoleCNVRead2    = "cnv_baseline_read2"
 	TaskAssetRoleCNVBED      = "cnv_baseline_bed"

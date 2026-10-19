@@ -216,7 +216,16 @@ func (s *DataAssetService) ImportLocalPair(ctx context.Context, req *model.Local
 	default:
 		return nil, localImportError("busy")
 	}
-	assets, err := validateLocalPair(ctx, s.cfg.Storage.LocalDir, strings.TrimSpace(req.Read1Path), strings.TrimSpace(req.Read2Path))
+	var assets []model.DataAsset
+	var err error
+	if req.VCFPath != "" {
+		if req.Read1Path != "" || req.Read2Path != "" {
+			return nil, localImportError("format")
+		}
+		assets, err = validateLocalVCF(ctx, s.cfg.Storage.LocalDir, req.VCFPath)
+	} else {
+		assets, err = validateLocalPair(ctx, s.cfg.Storage.LocalDir, strings.TrimSpace(req.Read1Path), strings.TrimSpace(req.Read2Path))
+	}
 	if err != nil {
 		return nil, err
 	}

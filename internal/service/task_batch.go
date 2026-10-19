@@ -18,6 +18,7 @@ const (
 )
 
 var taskBatchHeaders = map[string]string{
+	"vcfassetid": "vcf_asset_id", "vcf_asset_id": "vcf_asset_id", "vcf数据id": "vcf_asset_id", "vcfsamplename": "vcf_sample_name", "vcf内样本名": "vcf_sample_name",
 	"样本id":             "sample",
 	"sampleid":         "sample",
 	"sampleidentifier": "sample",
@@ -93,7 +94,10 @@ func ParseTaskBatchWorkbook(reader io.Reader) ([]model.TaskBatchInputRow, error)
 	}
 
 	cell := func(row []string, key string) string {
-		index := columns[key]
+		index, exists := columns[key]
+		if !exists {
+			return ""
+		}
 		if index >= len(row) {
 			return ""
 		}
@@ -120,10 +124,11 @@ func ParseTaskBatchWorkbook(reader io.Reader) ([]model.TaskBatchInputRow, error)
 			SampleIdentifier: sampleIdentifier,
 			PedigreeID:       pedigreeID,
 			PipelineID:       pipelineID,
-			Remark:           remark,
-			EnableCNV:        enableCNV,
-			EnableSV:         enableSV,
-			ParseErrors:      make([]string, 0, 2),
+			VCFAssetID:       cell(row, "vcf_asset_id"), VCFSampleName: cell(row, "vcf_sample_name"),
+			Remark:      remark,
+			EnableCNV:   enableCNV,
+			EnableSV:    enableSV,
+			ParseErrors: make([]string, 0, 2),
 		}
 		if cnvErr != nil {
 			parsedRow.ParseErrors = append(parsedRow.ParseErrors, fmt.Sprintf("启用CNV值 %q 无效，%v", cnvValue, cnvErr))
@@ -159,7 +164,8 @@ func (s *TaskService) previewTaskBatchRow(input model.TaskBatchInputRow, actor m
 		SampleID:   input.SampleIdentifier,
 		PedigreeID: input.PedigreeID,
 		PipelineID: input.PipelineID,
-		Remark:     input.Remark,
+		VCFAssetID: input.VCFAssetID, VCFSampleName: input.VCFSampleName,
+		Remark: input.Remark,
 		Inputs: map[string]interface{}{
 			"enable_cnv": input.EnableCNV,
 			"enable_sv":  input.EnableSV,
@@ -206,6 +212,12 @@ func (s *TaskService) previewTaskBatchRow(input model.TaskBatchInputRow, actor m
 			}
 		}
 	}
+	if req.Template == "vcf2anno" {
+		preview.EstimatedMinutes = defaultTaskEstimatedMinutes
+		if _, err := s.resolveVCFAsset(req, actor); err != nil {
+			preview.Errors = append(preview.Errors, err.Error())
+		}
+	}
 	preview.Valid = len(preview.Errors) == 0
 	return preview, req
 }
@@ -215,7 +227,7 @@ func (s *TaskService) PreviewTaskBatch(inputs []model.TaskBatchInputRow, actor m
 	seen := make(map[string]int)
 	for _, input := range inputs {
 		preview, _ := s.previewTaskBatchRow(input, actor)
-		key := strings.ToLower(strings.Join([]string{preview.SampleIdentifier, preview.PedigreeID, preview.PipelineID}, "\x1f"))
+		key := strings.ToLower(strings.Join([]string{preview.SampleIdentifier, preview.PedigreeID, preview.PipelineID, preview.VCFAssetID}, "\x1f")) + "\x1f" + preview.VCFSampleName
 		if firstRow, ok := seen[key]; ok && preview.Valid {
 			preview.Valid = false
 			preview.Errors = append(preview.Errors, fmt.Sprintf("与第 %d 行重复", firstRow))

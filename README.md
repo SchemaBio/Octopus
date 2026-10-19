@@ -757,3 +757,7 @@ curl -X POST http://localhost:8080/api/v1/results/cnv-segment/{id}/report \
 3. Before the token expires, call `/auth/refresh`
 4. Load variant data, including review/report status, through the result APIs
 5. After the user acts, call the review/report APIs to sync status to the database
+
+## VCF2Anno
+
+支持 VCF 起始的 SNP/InDel 注释，hg19/hg38 共用工作流；SaaS 沿用 WES 计算时间计费，自部署不扣积分。输入、部署、配置及验证见 [VCF2Anno 接入说明](docs/vcf2anno-integration.md)。

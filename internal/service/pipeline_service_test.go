@@ -6,10 +6,10 @@ import (
 	"github.com/SchemaBio/Octopus/internal/model"
 )
 
-func TestBuiltinPipelineCatalogContainsOnlySupportedWESFlows(t *testing.T) {
+func TestBuiltinPipelineCatalogContainsSupportedFlows(t *testing.T) {
 	items := builtinPipelineResponses()
-	if len(items) != 4 {
-		t.Fatalf("expected exactly four built-in pipelines, got %d", len(items))
+	if len(items) != 6 {
+		t.Fatalf("expected exactly six built-in pipelines, got %d", len(items))
 	}
 	if items[0].ID != model.BuiltinPipelineWESSingleID || items[0].Template != "single" || !items[0].IsBuiltin {
 		t.Fatalf("unexpected single-sample built-in: %+v", items[0])

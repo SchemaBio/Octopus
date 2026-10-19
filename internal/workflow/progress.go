@@ -19,6 +19,9 @@ type progressStageProfile struct {
 type progressProfile struct{ stages []progressStageProfile }
 
 var progressProfiles = map[string]progressProfile{
+	"germline_vcf2anno": {stages: []progressStageProfile{
+		{"preparation", "VCF 初始化", 15, []string{"InitializeVcf"}}, {"sex_inference", "性别推算", 2, []string{"InferSex"}}, {"annotation", "VEP 注释", 70, []string{"Annotate"}}, {"report", "报表与索引", 10, []string{"IndexAnnotatedVcf", "SNPInDelReport"}},
+	}},
 	"germline_single": {stages: []progressStageProfile{
 		{"preparation", "准备", 3, []string{"FixBed", "TargetBed"}},
 		{"alignment", "预处理与比对", 30, []string{"Fastp", "BwaAlign", "Markdup"}},
@@ -145,6 +148,8 @@ func normalizeProgressTemplate(template string) string {
 		return value
 	}
 	switch strings.ToLower(value) {
+	case "vcf2anno":
+		return "germline_vcf2anno"
 	case "single", "singlewes":
 		return "germline_single"
 	case "trio", "triowes":

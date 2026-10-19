@@ -416,7 +416,7 @@ func manifestStringValues(value interface{}, wantedKey string) []string {
 		switch typed := node.(type) {
 		case map[string]interface{}:
 			for key, child := range typed {
-				if key == wantedKey {
+				if key == wantedKey || key == "VCF2Anno."+wantedKey || (wantedKey == "vcf_raw" && key == "VCF2Anno.normalized_vcf") || (wantedKey == "vcf_raw_tbi" && key == "VCF2Anno.normalized_vcf_tbi") {
 					values = append(values, stringsFromManifestValue(child)...)
 				}
 				walk(child)

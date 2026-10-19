@@ -14,11 +14,14 @@ const (
 type PipelineBaseType string
 
 const (
-	PipelineBaseWESSingle PipelineBaseType = "wes_single"
-	PipelineBaseWESFamily PipelineBaseType = "wes_family"
+	PipelineBaseVCFAnnotation PipelineBaseType = "vcf_annotation"
+	PipelineBaseWESSingle     PipelineBaseType = "wes_single"
+	PipelineBaseWESFamily     PipelineBaseType = "wes_family"
 )
 
 const (
+	BuiltinPipelineVCFHG19ID       = "builtin-vcf2anno-hg19"
+	BuiltinPipelineVCFHG38ID       = "builtin-vcf2anno-hg38"
 	BuiltinPipelineWESSingleID     = "builtin-wes-single"
 	BuiltinPipelineWESFamilyID     = "builtin-wes-family"
 	BuiltinPipelineWESSingleHG38ID = "builtin-wes-single-hg38"
@@ -141,6 +144,12 @@ func (p *Pipeline) ToResponse() PipelineResponse {
 }
 
 func BuiltinPipelineID(baseType PipelineBaseType, genome string) string {
+	if baseType == PipelineBaseVCFAnnotation {
+		if genome == "hg38" {
+			return BuiltinPipelineVCFHG38ID
+		}
+		return BuiltinPipelineVCFHG19ID
+	}
 	if genome == "hg38" {
 		if baseType == PipelineBaseWESFamily {
 			return BuiltinPipelineWESFamilyHG38ID
@@ -154,6 +163,9 @@ func BuiltinPipelineID(baseType PipelineBaseType, genome string) string {
 }
 
 func PipelineTemplate(baseType PipelineBaseType) string {
+	if baseType == PipelineBaseVCFAnnotation {
+		return "vcf2anno"
+	}
 	if baseType == PipelineBaseWESFamily {
 		return "trio"
 	}
@@ -162,7 +174,7 @@ func PipelineTemplate(baseType PipelineBaseType) string {
 
 func IsBuiltinPipelineID(id string) bool {
 	switch id {
-	case BuiltinPipelineWESSingleID, BuiltinPipelineWESFamilyID,
+	case BuiltinPipelineVCFHG19ID, BuiltinPipelineVCFHG38ID, BuiltinPipelineWESSingleID, BuiltinPipelineWESFamilyID,
 		BuiltinPipelineWESSingleHG38ID, BuiltinPipelineWESFamilyHG38ID:
 		return true
 	default:

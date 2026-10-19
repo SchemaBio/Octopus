@@ -132,6 +132,9 @@ func cvmValidationMetadata(asset *model.DataAsset, links []model.TaskDataAsset) 
 	if asset == nil {
 		return "", "", fmt.Errorf("CVM input asset is required")
 	}
+	if asset.ReadType == model.ReadTypeVCF {
+		return "vcf", "", nil
+	}
 	if asset.ReadType == model.ReadTypeBed {
 		return "bed", "", nil
 	}
@@ -161,9 +164,15 @@ func cvmValidationMetadata(asset *model.DataAsset, links []model.TaskDataAsset) 
 
 func validateCVMDownloadPairs(downloads []model.CVMInputDownload) error {
 	type pair struct{ r1, r2 int }
+	vcfs := 0
 	pairs := make(map[string]pair)
 	for _, item := range downloads {
 		switch item.ValidationRole {
+		case "vcf":
+			if item.PairKey != "" {
+				return fmt.Errorf("VCF must not have a pair key")
+			}
+			vcfs++
 		case "bed":
 			if item.PairKey != "" {
 				return fmt.Errorf("BED validation role must not have a pair key")
@@ -187,6 +196,12 @@ func validateCVMDownloadPairs(downloads []model.CVMInputDownload) error {
 		if pair.r1 != 1 || pair.r2 != 1 {
 			return fmt.Errorf("CVM FASTQ pair is incomplete or duplicated")
 		}
+	}
+	if vcfs > 0 {
+		if vcfs != 1 || len(downloads) != 1 {
+			return fmt.Errorf("VCF execution requires exactly one VCF")
+		}
+		return nil
 	}
 	if len(pairs) == 0 {
 		return fmt.Errorf("CVM execution requires at least one complete FASTQ pair")

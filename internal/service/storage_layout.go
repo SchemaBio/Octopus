@@ -29,6 +29,8 @@ func tenantStoragePrefix(orgID string) (string, error) {
 
 func tenantUploadCategory(fileType model.UploadFileType, referenceGenome string) (string, error) {
 	switch fileType {
+	case model.UploadFileTypeVCF:
+		return "vcf", nil
 	case model.UploadFileTypeFastqPaired:
 		return "fastq/paired", nil
 	case model.UploadFileTypeFastqSingle:

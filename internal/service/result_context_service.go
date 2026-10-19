@@ -74,6 +74,9 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 	}
 	qcs = s.enrichArchivedQC(task, qcs)
 	members, qc := resultMembersAndQC(qcs)
+	if task.Template == "vcf2anno" {
+		members = []model.ResultMember{{ID: task.SampleID, Role: "single", SampleID: task.SampleID}}
+	}
 	if err := s.addQCGenderComparison(ctx, task, qc); err != nil {
 		return nil, err
 	}
@@ -105,7 +108,15 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 			version += ":" + parquet.AutomaticAssessmentProfile
 		}
 	}
+	var annotation map[string]interface{}
+	if task.Template == "vcf2anno" && task.ResultImportStatus == model.ResultImportStatusSuccess {
+		annotation, err = loadVCFAnnotationInfo(s.cfg, task)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &model.ResultContextResponse{
+		Capabilities: task.ResultCapabilities(), VCFAnnotation: annotation,
 		TaskUUID:           task.UUID,
 		ExecutionAttemptID: attemptID,
 		ImportBatchID:      importBatchID,

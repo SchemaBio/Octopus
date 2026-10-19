@@ -18,10 +18,11 @@ import (
 )
 
 type localDownloadSource struct {
-	file     ResultDownloadFile
-	filename string
-	modified time.Time
-	zipped   bool
+	generated bool
+	file      ResultDownloadFile
+	filename  string
+	modified  time.Time
+	zipped    bool
 }
 type localDownloadArchive struct {
 	catalog *ResultDownloadCatalog
@@ -60,14 +61,35 @@ func (s *ResultDownloadService) collectLocalDownloads(task *model.Task) (*localD
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return nil, fmt.Errorf("本地结果清单无效")
 	}
+	metadataFiles := map[string]string{}
+	if task.Template == "vcf2anno" {
+		manifest, err = vcfDownloadManifest(manifest, func(name string, data []byte) (string, error) {
+			filename, e := cacheVCFMetadata(s.cfg.ResultQuery.CacheDir, task, name, data)
+			if e != nil {
+				return "", e
+			}
+			metadataFiles[name] = filename
+			return name, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	catalog := &ResultDownloadCatalog{Transport: "local", AttemptID: executionAttempt(task), ZIPStatus: "pending", BAMStatus: "available", BAMs: []ResultDownloadFile{}, Files: []ResultDownloadFile{}, Missing: []string{}}
 	archive := &localDownloadArchive{catalog: catalog}
 	seen := map[string]bool{}
 	fields := []string{"vcf_raw", "vcf_raw_tbi", "mt_vcf", "mt_vcf_tbi", "snp_indel", "snv", "mt", "cnv_region", "cnv_gene", "mei", "upd", "roh", "qc_result", "str", "bam", "bai"}
+	if task.Template == "vcf2anno" {
+		fields = []string{"normalized_vcf", "normalized_vcf_tbi", "annotated_vcf", "annotated_vcf_tbi", "snp_indel", "preprocessing", "sex_inference", "sex_explanation", "summary"}
+		catalog.BAMStatus = "not_provided"
+	}
 	for _, field := range fields {
 		refs := manifestFileRefs(manifest, field)
 		for _, ref := range refs {
 			base := archiveReferenceBaseName(ref)
+			if task.Template == "vcf2anno" && (field == "snp_indel" || field == "sex_explanation") && strings.HasSuffix(strings.ToLower(base), ".parquet") {
+				base = strings.TrimSuffix(base, filepath.Ext(base)) + ".txt"
+			}
 			if base == "" || seen[base] {
 				continue
 			}
@@ -88,6 +110,9 @@ func (s *ResultDownloadService) collectLocalDownloads(task *model.Task) (*localD
 				}
 			}
 			filename, err := resolveArchiveRegularFile(dir, filepath.Join(dir, base))
+			if generated, ok := metadataFiles[base]; ok {
+				filename, err = generated, nil
+			}
 			if err != nil {
 				catalog.Missing = append(catalog.Missing, field+" 未归档或不可读取")
 				continue
@@ -99,7 +124,7 @@ func (s *ResultDownloadService) collectLocalDownloads(task *model.Task) (*localD
 			}
 			seen[base] = true
 			file := ResultDownloadFile{ID: downloadID(task.UUID + "/" + executionAttempt(task) + "/" + base), Filename: base, SizeBytes: info.Size()}
-			archive.sources = append(archive.sources, localDownloadSource{file: file, filename: filename, modified: info.ModTime(), zipped: field != "bam" && field != "bai"})
+			archive.sources = append(archive.sources, localDownloadSource{generated: metadataFiles[base] != "", file: file, filename: filename, modified: info.ModTime(), zipped: field != "bam" && field != "bai"})
 			catalog.Files = append(catalog.Files, file)
 			if field == "bam" {
 				catalog.BAMs = append(catalog.BAMs, file)
@@ -249,7 +274,7 @@ func (s *ResultDownloadService) writeLocalDownloadZIP(ctx context.Context, task 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		filename, err := resolveArchiveRegularFile(dir, source.filename)
+		filename, err := resolveLocalDownloadSource(dir, s.cfg.ResultQuery.CacheDir, source)
 		if err != nil {
 			return err
 		}
@@ -355,9 +380,17 @@ func (s *ResultDownloadService) SelfHostedDownloadFile(ctx context.Context, task
 	}
 	for _, source := range archive.sources {
 		if source.file.ID == id {
-			file, e := resolveArchiveRegularFile(dir, source.filename)
+			file, e := resolveLocalDownloadSource(dir, s.cfg.ResultQuery.CacheDir, source)
 			return file, source.file.Filename, "", e
 		}
 	}
 	return "", "", "", fmt.Errorf("归档文件不可用")
+}
+
+func resolveLocalDownloadSource(archiveDir, cacheDir string, source localDownloadSource) (string, error) {
+	root := archiveDir
+	if source.generated {
+		root = filepath.Join(cacheDir, "vcf-metadata")
+	}
+	return resolveArchiveRegularFile(root, source.filename)
 }

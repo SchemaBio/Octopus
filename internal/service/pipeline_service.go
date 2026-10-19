@@ -70,15 +70,21 @@ func builtinPipelineResponses() []model.PipelineResponse {
 			CNVBaseline: "内置 WES CNV 基线（hg38）", CNVBaselineID: model.BuiltinCNVBaselineHG38ID,
 			Template: "trio", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive,
 		},
+		{ID: model.BuiltinPipelineVCFHG19ID, BasePipelineID: model.BuiltinPipelineVCFHG19ID, Name: "VCF SNP/InDel 注释（hg19）", BaseType: model.PipelineBaseVCFAnnotation, Version: "builtin-v1", ReferenceGenome: "hg19", Template: "vcf2anno", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive},
+		{ID: model.BuiltinPipelineVCFHG38ID, BasePipelineID: model.BuiltinPipelineVCFHG38ID, Name: "VCF SNP/InDel 注释（hg38）", BaseType: model.PipelineBaseVCFAnnotation, Version: "builtin-v1", ReferenceGenome: "hg38", Template: "vcf2anno", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive},
 	}
 }
 
 func isAllowedPipelineBase(value model.PipelineBaseType) bool {
-	return value == model.PipelineBaseWESSingle || value == model.PipelineBaseWESFamily
+	return value == model.PipelineBaseVCFAnnotation || value == model.PipelineBaseWESSingle || value == model.PipelineBaseWESFamily
 }
 
 func resolvePipelineBase(basePipelineID string, legacyBase model.PipelineBaseType, legacyGenome string) (model.PipelineBaseType, string, error) {
 	switch strings.TrimSpace(basePipelineID) {
+	case model.BuiltinPipelineVCFHG19ID:
+		return model.PipelineBaseVCFAnnotation, "hg19", nil
+	case model.BuiltinPipelineVCFHG38ID:
+		return model.PipelineBaseVCFAnnotation, "hg38", nil
 	case model.BuiltinPipelineWESSingleID:
 		return model.PipelineBaseWESSingle, "hg19", nil
 	case model.BuiltinPipelineWESFamilyID:
@@ -164,6 +170,9 @@ func (s *PipelineService) CreatePipeline(_ context.Context, req *model.PipelineC
 	baseType, genome, err := resolvePipelineBase(req.BasePipelineID, req.BaseType, req.ReferenceGenome)
 	if err != nil {
 		return nil, err
+	}
+	if baseType == model.PipelineBaseVCFAnnotation {
+		req.BEDAssetID, req.CNVBaselineID = "", ""
 	}
 	bed, baseline, err := s.resolveResources(req.BEDAssetID, req.CNVBaselineID, genome, actor)
 	if err != nil {
@@ -258,6 +267,9 @@ func (s *PipelineService) UpdatePipeline(_ context.Context, id string, req *mode
 	if s.repo.ExistsByName(name, actor, id) {
 		return nil, fmt.Errorf("pipeline name already exists")
 	}
+	if baseType == model.PipelineBaseVCFAnnotation {
+		req.BEDAssetID, req.CNVBaselineID = "", ""
+	}
 	bed, baseline, err := s.resolveResources(req.BEDAssetID, req.CNVBaselineID, genome, actor)
 	if err != nil {
 		return nil, err
@@ -305,6 +317,10 @@ func (s *PipelineService) DeletePipeline(_ context.Context, id string, actor mod
 func (s *PipelineService) toResponse(pipeline *model.Pipeline, bed *model.DataAsset, baseline *model.CNVBaseline) model.PipelineResponse {
 	response := pipeline.ToResponse()
 	response.ResourceAvailable = true
+	if pipeline.BaseType == model.PipelineBaseVCFAnnotation {
+		response.BEDFile, response.CNVBaseline, response.BEDAssetID, response.CNVBaselineID = "", "", "", ""
+		return response
+	}
 	if pipeline.BEDAssetID != nil {
 		if bed == nil {
 			bed, _ = s.assets.FindByID(*pipeline.BEDAssetID)

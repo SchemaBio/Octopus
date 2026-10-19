@@ -119,6 +119,8 @@ type Task struct {
 
 // TaskCreateRequest is the request body for creating a task
 type TaskCreateRequest struct {
+	VCFAssetID      string `json:"vcf_asset_id"`
+	VCFSampleName   string `json:"vcf_sample_name"`
 	SampleID        string `json:"sampleId"`
 	PedigreeID      string `json:"pedigreeId"`
 	InternalID      string `json:"internalId"`
@@ -140,9 +142,11 @@ type TaskCreateRequest struct {
 // TaskEstimateRequest identifies the same analysis inputs used during task
 // creation, without creating or starting a task.
 type TaskEstimateRequest struct {
-	SampleID   string `json:"sampleId"`
-	PedigreeID string `json:"pedigreeId"`
-	PipelineID string `json:"pipelineId" binding:"required"`
+	VCFAssetID    string `json:"vcf_asset_id"`
+	VCFSampleName string `json:"vcf_sample_name"`
+	SampleID      string `json:"sampleId"`
+	PedigreeID    string `json:"pedigreeId"`
+	PipelineID    string `json:"pipelineId" binding:"required"`
 }
 
 type TaskEstimateResponse struct {
@@ -150,6 +154,8 @@ type TaskEstimateResponse struct {
 }
 
 type TaskBatchInputRow struct {
+	VCFAssetID       string   `json:"vcf_asset_id"`
+	VCFSampleName    string   `json:"vcf_sample_name"`
 	RowNumber        int      `json:"row_number"`
 	SampleIdentifier string   `json:"sample_identifier"`
 	PedigreeID       string   `json:"pedigree_id"`
@@ -227,6 +233,7 @@ type TaskListQuery struct {
 
 // TaskResponse matches frontend AnalysisTask type
 type TaskResponse struct {
+	ResultCapabilities        []string   `json:"result_capabilities"`
 	Template                  string     `json:"template"`
 	RetryStartedAt            *time.Time `json:"retryStartedAt,omitempty"`
 	InterpretationCompletedAt *time.Time `json:"interpretationCompletedAt,omitempty"`
@@ -260,6 +267,7 @@ type TaskResponse struct {
 
 // TaskDetailResponse matches frontend AnalysisTaskDetail type
 type TaskDetailResponse struct {
+	ResultCapabilities        []string   `json:"result_capabilities"`
 	Template                  string     `json:"template"`
 	RetryStartedAt            *time.Time `json:"retryStartedAt,omitempty"`
 	InterpretationCompletedAt *time.Time `json:"interpretationCompletedAt,omitempty"`
@@ -473,6 +481,7 @@ type Template struct {
 // ToResponse converts Task to TaskResponse
 func (t *Task) ToResponse() TaskResponse {
 	resp := TaskResponse{
+		ResultCapabilities:        t.ResultCapabilities(),
 		Template:                  t.Template,
 		RetryStartedAt:            t.RetryStartedAt,
 		InterpretationCompletedAt: t.InterpretationCompletedAt, InterpretationCompletedBy: t.InterpretationCompletedBy,
@@ -508,6 +517,7 @@ func (t *Task) ToResponse() TaskResponse {
 // ToDetailResponse converts Task to TaskDetailResponse
 func (t *Task) ToDetailResponse() TaskDetailResponse {
 	resp := TaskDetailResponse{
+		ResultCapabilities:        t.ResultCapabilities(),
 		Template:                  t.Template,
 		RetryStartedAt:            t.RetryStartedAt,
 		InterpretationCompletedAt: t.InterpretationCompletedAt, InterpretationCompletedBy: t.InterpretationCompletedBy,
@@ -542,4 +552,14 @@ func (t *Task) ToDetailResponse() TaskDetailResponse {
 // TableName specifies the table name for Task
 func (Task) TableName() string {
 	return "tasks"
+}
+
+func (t *Task) ResultCapabilities() []string {
+	if t.Template == "vcf2anno" {
+		return []string{"snv_indel", "report", "vcf"}
+	}
+	if t.Template == "baseline_fix" || t.Template == "baseline" {
+		return []string{}
+	}
+	return []string{"snv_indel", "report", "vcf", "qc", "bam", "cnv", "str", "mei", "mt", "roh"}
 }

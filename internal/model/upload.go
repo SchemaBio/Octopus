@@ -7,6 +7,7 @@ import (
 type UploadFileType string
 
 const (
+	UploadFileTypeVCF         UploadFileType = "vcf"
 	UploadFileTypeFastqPaired UploadFileType = "fastq_paired"
 	UploadFileTypeFastqSingle UploadFileType = "fastq_single"
 	UploadFileTypeBed         UploadFileType = "bed"
@@ -40,6 +41,7 @@ const (
 type ReadType string
 
 const (
+	ReadTypeVCF    ReadType = "vcf"
 	ReadTypeRead1  ReadType = "read1"
 	ReadTypeRead2  ReadType = "read2"
 	ReadTypeSingle ReadType = "single"

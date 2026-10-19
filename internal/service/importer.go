@@ -146,8 +146,12 @@ func (imp *Importer) importFromArchive(taskID string, archiveDir string) (*Impor
 	}
 
 	// 1. Read and import QC from outputs.resolved.json
-	if err := imp.importQC(taskID, archiveDir, result); err != nil {
-		return result, fmt.Errorf("failed to import QC: %w", err)
+	if imp.task == nil || imp.task.Template != "vcf2anno" {
+		if err := imp.importQC(taskID, archiveDir, result); err != nil {
+			return result, fmt.Errorf("failed to import QC: %w", err)
+		}
+	} else if _, err := loadVCFAnnotationInfo(imp.cfg, imp.task); err != nil {
+		return result, err
 	}
 
 	// 2. Find result TSV files in the archive directory

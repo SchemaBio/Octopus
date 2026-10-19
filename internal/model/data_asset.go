@@ -102,6 +102,7 @@ func (DataAsset) TableName() string { return "data_assets" }
 // Each request registers one fully validated pair; the browser batches CSV rows.
 type LocalDataImportRequest struct {
 	InternalID string `json:"internal_id" binding:"required,max=100"`
-	Read1Path  string `json:"read1_path" binding:"required,max=1000"`
-	Read2Path  string `json:"read2_path" binding:"required,max=1000"`
+	VCFPath    string `json:"vcf_path" binding:"omitempty,max=1000"`
+	Read1Path  string `json:"read1_path" binding:"omitempty,max=1000"`
+	Read2Path  string `json:"read2_path" binding:"omitempty,max=1000"`
 }

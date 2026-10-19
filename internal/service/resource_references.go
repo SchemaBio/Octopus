@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"sort"
+	"time"
 )
 
 type ResourceReference struct {
@@ -17,7 +18,7 @@ type ResourceReference struct {
 type ResourceInUseError struct{ References []ResourceReference }
 
 func (e *ResourceInUseError) Error() string {
-	return "BED is referenced by a workflow, baseline, or active task; remove the references first"
+	return "Data asset is referenced by a workflow, baseline, or active task; remove the references first"
 }
 
 func lockTaskAssets(tx *gorm.DB, links []model.TaskDataAsset) error {
@@ -34,6 +35,9 @@ func lockTaskAssets(tx *gorm.DB, links []model.TaskDataAsset) error {
 		var a model.DataAsset
 		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&a, id).Error; e != nil {
 			return e
+		}
+		if a.ReadType == model.ReadTypeVCF && (a.Status != model.FileStatusCompleted || (a.ExpiresAt != nil && !a.ExpiresAt.After(time.Now()))) {
+			return errors.New("VCF data asset is not ready or expired")
 		}
 		if a.Status == model.FileStatusDeleted || a.Status == model.FileStatusDeleting {
 			return errors.New("referenced asset was deleted")
@@ -63,6 +67,20 @@ func lockPipelineBED(tx *gorm.DB, p *model.Pipeline) error {
 }
 
 func checkBEDReferences(tx *gorm.DB, a *model.DataAsset) error {
+	if a.ReadType == model.ReadTypeVCF {
+		var tasks []model.Task
+		if e := tx.Model(&model.Task{}).Joins("JOIN task_data_assets AS a ON a.task_uuid=tasks.uuid").Where("a.asset_id=? AND tasks.status IN ?", a.ID, []model.TaskStatus{model.TaskStatusQueued, model.TaskStatusRunning, model.TaskStatusWaitingData}).Distinct("tasks.*").Find(&tasks).Error; e != nil {
+			return e
+		}
+		refs := []ResourceReference{}
+		for _, t := range tasks {
+			refs = append(refs, ResourceReference{"task", t.UUID, t.Name})
+		}
+		if len(refs) > 0 {
+			return &ResourceInUseError{refs}
+		}
+		return nil
+	}
 	if a.ReadType != model.ReadTypeBed {
 		return nil
 	}

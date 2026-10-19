@@ -567,3 +567,7 @@ tar -xzf homo_sapiens_merged_vep_116_GRCh37.tar.gz -C vep
 ```
 
 hg38 对应使用 `GRCh38` 的参考基因组和 VEP cache 文件。
+
+## VCF 注释流程升级
+
+VCF2Anno 使用单一 vcf2anno.wdl，由 Octopus 配置 hg19/hg38 参考资源。执行端工作流包及 germline 镜像必须包含新增初始化、性别推算脚本和更新的报表脚本，固定调用 /opt/schema-germline/scripts/。升级时先准备执行环境，再更新 Squid（SaaS）、Octopus 和两个前端；Octopus 自动迁移性别阈值字段。具体参数与回归要求见 [VCF2Anno 接入说明](vcf2anno-integration.md)。

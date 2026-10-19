@@ -115,6 +115,9 @@ func (s *DataScanner) scanS3(ctx context.Context, stableFor time.Duration) {
 
 func (s *DataScanner) register(provider model.UploadProvider, storageKey, filename string, size int64, discoveredAt time.Time) {
 	_, readType, ok := parseFASTQPairName(filename)
+	if isVCFFilename(filename) {
+		readType, ok = model.ReadTypeVCF, true
+	}
 	if !ok || s.assets.ExistsByProviderKey(provider, storageKey) {
 		return
 	}

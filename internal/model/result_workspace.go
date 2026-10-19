@@ -4,6 +4,8 @@ package model
 // interpretation workspace. It intentionally carries IDs and availability
 // state, never archive paths or signed object URLs.
 type ResultContextResponse struct {
+	Capabilities       []string               `json:"capabilities"`
+	VCFAnnotation      map[string]interface{} `json:"vcfAnnotation,omitempty"`
 	TaskUUID           string                 `json:"taskUuid"`
 	ExecutionAttemptID string                 `json:"executionAttemptId"`
 	ImportBatchID      uint                   `json:"importBatchId,omitempty"`
