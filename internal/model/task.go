@@ -233,19 +233,20 @@ type TaskListQuery struct {
 
 // TaskResponse matches frontend AnalysisTask type
 type TaskResponse struct {
-	ResultCapabilities        []string   `json:"result_capabilities"`
-	Template                  string     `json:"template"`
-	RetryStartedAt            *time.Time `json:"retryStartedAt,omitempty"`
-	InterpretationCompletedAt *time.Time `json:"interpretationCompletedAt,omitempty"`
-	InterpretationCompletedBy string     `json:"interpretationCompletedBy,omitempty"`
-	ExecutionPhase            string     `json:"execution_phase,omitempty"`
-	ExecutionReasonCode       string     `json:"execution_reason_code,omitempty"`
-	AttemptID                 string     `json:"attempt_id,omitempty"`
-	PhaseUpdatedAt            *time.Time `json:"phase_updated_at,omitempty"`
-	BootstrapPhase            string     `json:"bootstrap_phase,omitempty"`
-	BootstrapLastHeartbeatAt  *time.Time `json:"bootstrap_last_heartbeat_at,omitempty"`
-	DiagnosticHoldUntil       *time.Time `json:"diagnostic_hold_until,omitempty"`
-	DiagnosticSummary         string     `json:"diagnostic_summary,omitempty"`
+	ResultImportStatus        ResultImportStatus `json:"result_import_status"`
+	ResultCapabilities        []string           `json:"result_capabilities"`
+	Template                  string             `json:"template"`
+	RetryStartedAt            *time.Time         `json:"retryStartedAt,omitempty"`
+	InterpretationCompletedAt *time.Time         `json:"interpretationCompletedAt,omitempty"`
+	InterpretationCompletedBy string             `json:"interpretationCompletedBy,omitempty"`
+	ExecutionPhase            string             `json:"execution_phase,omitempty"`
+	ExecutionReasonCode       string             `json:"execution_reason_code,omitempty"`
+	AttemptID                 string             `json:"attempt_id,omitempty"`
+	PhaseUpdatedAt            *time.Time         `json:"phase_updated_at,omitempty"`
+	BootstrapPhase            string             `json:"bootstrap_phase,omitempty"`
+	BootstrapLastHeartbeatAt  *time.Time         `json:"bootstrap_last_heartbeat_at,omitempty"`
+	DiagnosticHoldUntil       *time.Time         `json:"diagnostic_hold_until,omitempty"`
+	DiagnosticSummary         string             `json:"diagnostic_summary,omitempty"`
 
 	ID                      string     `json:"id"`
 	SampleID                string     `json:"sampleId"`
@@ -267,19 +268,20 @@ type TaskResponse struct {
 
 // TaskDetailResponse matches frontend AnalysisTaskDetail type
 type TaskDetailResponse struct {
-	ResultCapabilities        []string   `json:"result_capabilities"`
-	Template                  string     `json:"template"`
-	RetryStartedAt            *time.Time `json:"retryStartedAt,omitempty"`
-	InterpretationCompletedAt *time.Time `json:"interpretationCompletedAt,omitempty"`
-	InterpretationCompletedBy string     `json:"interpretationCompletedBy,omitempty"`
-	ExecutionPhase            string     `json:"execution_phase,omitempty"`
-	ExecutionReasonCode       string     `json:"execution_reason_code,omitempty"`
-	AttemptID                 string     `json:"attempt_id,omitempty"`
-	PhaseUpdatedAt            *time.Time `json:"phase_updated_at,omitempty"`
-	BootstrapPhase            string     `json:"bootstrap_phase,omitempty"`
-	BootstrapLastHeartbeatAt  *time.Time `json:"bootstrap_last_heartbeat_at,omitempty"`
-	DiagnosticHoldUntil       *time.Time `json:"diagnostic_hold_until,omitempty"`
-	DiagnosticSummary         string     `json:"diagnostic_summary,omitempty"`
+	ResultImportStatus        ResultImportStatus `json:"result_import_status"`
+	ResultCapabilities        []string           `json:"result_capabilities"`
+	Template                  string             `json:"template"`
+	RetryStartedAt            *time.Time         `json:"retryStartedAt,omitempty"`
+	InterpretationCompletedAt *time.Time         `json:"interpretationCompletedAt,omitempty"`
+	InterpretationCompletedBy string             `json:"interpretationCompletedBy,omitempty"`
+	ExecutionPhase            string             `json:"execution_phase,omitempty"`
+	ExecutionReasonCode       string             `json:"execution_reason_code,omitempty"`
+	AttemptID                 string             `json:"attempt_id,omitempty"`
+	PhaseUpdatedAt            *time.Time         `json:"phase_updated_at,omitempty"`
+	BootstrapPhase            string             `json:"bootstrap_phase,omitempty"`
+	BootstrapLastHeartbeatAt  *time.Time         `json:"bootstrap_last_heartbeat_at,omitempty"`
+	DiagnosticHoldUntil       *time.Time         `json:"diagnostic_hold_until,omitempty"`
+	DiagnosticSummary         string             `json:"diagnostic_summary,omitempty"`
 
 	ID                      string     `json:"id"`
 	Name                    string     `json:"name"`
@@ -481,6 +483,7 @@ type Template struct {
 // ToResponse converts Task to TaskResponse
 func (t *Task) ToResponse() TaskResponse {
 	resp := TaskResponse{
+		ResultImportStatus:        t.ResultImportStatus,
 		ResultCapabilities:        t.ResultCapabilities(),
 		Template:                  t.Template,
 		RetryStartedAt:            t.RetryStartedAt,
@@ -517,6 +520,7 @@ func (t *Task) ToResponse() TaskResponse {
 // ToDetailResponse converts Task to TaskDetailResponse
 func (t *Task) ToDetailResponse() TaskDetailResponse {
 	resp := TaskDetailResponse{
+		ResultImportStatus:        t.ResultImportStatus,
 		ResultCapabilities:        t.ResultCapabilities(),
 		Template:                  t.Template,
 		RetryStartedAt:            t.RetryStartedAt,

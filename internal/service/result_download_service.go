@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/SchemaBio/Octopus/internal/retention"
 	"io"
@@ -576,10 +577,33 @@ func (s *ResultDownloadService) Quote(ctx context.Context, task *model.Task, act
 		return nil, fmt.Errorf("下载文件大小超限")
 	}
 	quote := &model.ResultDownload{ID: uuid.NewString(), TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, OrgID: actor.OrgID, UserID: actor.UserID, ClientIP: ip, Kind: kind, ObjectKey: chosen.key, Filename: chosen.Filename, SizeBytes: size, ETag: aws.ToString(meta.ETag), Credits: credits, QuoteExpiresAt: time.Now().Add(10 * time.Minute)}
-	if err = database.DB.Create(quote).Error; err != nil {
+	return reuseOrCreateDownloadQuote(ctx, task, quote)
+}
+
+// Serialize on the task, not on a fresh quote UUID: double clicks, new tabs and
+// network retries for the same current object must share one billing key.
+func reuseOrCreateDownloadQuote(ctx context.Context, task *model.Task, quote *model.ResultDownload) (*model.ResultDownload, error) {
+	var selected model.ResultDownload
+	err := database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var locked model.Task
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("uuid = ? AND external_org_id = ?", task.UUID, task.ExternalOrgID).First(&locked).Error; err != nil {
+			return err
+		}
+		err := tx.Where("task_uuid = ? AND attempt_id = ? AND org_id = ? AND user_id = ? AND kind = ? AND object_key = ? AND e_tag = ? AND size_bytes = ? AND refunded_at IS NULL", quote.TaskUUID, quote.AttemptID, quote.OrgID, quote.UserID, quote.Kind, quote.ObjectKey, quote.ETag, quote.SizeBytes).
+			Where("(link_expires_at > ?) OR (charged_at IS NULL AND quote_expires_at > ?)", time.Now(), time.Now()).Order("created_at DESC").First(&selected).Error
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		selected = *quote
+		return tx.Create(&selected).Error
+	})
+	if err != nil {
 		return nil, err
 	}
-	return quote, nil
+	return &selected, nil
 }
 
 // Issue serializes one quote, prepares authorization before billing and uses
