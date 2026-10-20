@@ -16,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -186,8 +187,12 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("this attempt has no manifest-declared Parquet table %s", table)
 	}
-	if len(candidates) != 1 {
-		return nil, fmt.Errorf("Parquet table %s is ambiguous across multiple archive objects", table)
+	if len(candidates) > 1 {
+		selected, err := uniqueArchivedParquetObject(candidates, func(key string) (io.ReadCloser, error) { return storage.open(ctx, key) })
+		if err != nil {
+			return nil, fmt.Errorf("Parquet table %s: %w", table, err)
+		}
+		candidates = []s3ObjectInfo{selected}
 	}
 	if lookupErr == nil && current.ManifestVersion == manifestVersion && current.ObjectKey == candidates[0].Key && current.SourceSize == candidates[0].Size && current.SourceLastModified.Equal(candidates[0].LastModified) && current.ObjectSHA256 != "" {
 		if st, statErr := os.Stat(cachePath); statErr == nil && st.Size() == current.SourceSize {
@@ -740,4 +745,54 @@ func archiveParquetRefKey(bucket, prefix, ref string) (string, error) {
 		return "", err
 	}
 	return key, nil
+}
+
+// The Agent may archive standalone outputs and summary references separately.
+// Collapse only byte-identical declared objects; conflicting results still fail.
+func uniqueArchivedParquetObject(candidates []s3ObjectInfo, open func(string) (io.ReadCloser, error)) (s3ObjectInfo, error) {
+	if len(candidates) == 0 {
+		return s3ObjectInfo{}, fmt.Errorf("no archived Parquet candidate")
+	}
+	ordered := append([]s3ObjectInfo(nil), candidates...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Key < ordered[j].Key })
+	if len(ordered) == 1 {
+		return ordered[0], nil
+	}
+	first := ordered[0]
+	if first.Size <= 0 || first.Size > maxCachedParquetBytes {
+		return s3ObjectInfo{}, fmt.Errorf("invalid archived Parquet size")
+	}
+	digest := ""
+	seen := map[string]bool{}
+	for _, object := range ordered {
+		if object.Size != first.Size {
+			return s3ObjectInfo{}, fmt.Errorf("ambiguous archived Parquet objects")
+		}
+		if seen[object.Key] {
+			continue
+		}
+		seen[object.Key] = true
+		source, err := open(object.Key)
+		if err != nil {
+			return s3ObjectInfo{}, err
+		}
+		hash := sha256.New()
+		n, copyErr := io.Copy(hash, io.LimitReader(source, object.Size+1))
+		closeErr := source.Close()
+		if copyErr != nil {
+			return s3ObjectInfo{}, copyErr
+		}
+		if closeErr != nil {
+			return s3ObjectInfo{}, closeErr
+		}
+		if n != object.Size {
+			return s3ObjectInfo{}, fmt.Errorf("archived Parquet size mismatch")
+		}
+		current := hex.EncodeToString(hash.Sum(nil))
+		if digest != "" && digest != current {
+			return s3ObjectInfo{}, fmt.Errorf("ambiguous archived Parquet objects")
+		}
+		digest = current
+	}
+	return first, nil
 }

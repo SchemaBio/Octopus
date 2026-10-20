@@ -256,6 +256,7 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	fields := []string{"vcf_raw", "vcf_raw_tbi", "mt_vcf", "mt_vcf_tbi", "snp_indel", "mt", "cnv_region", "cnv_gene", "mei", "upd", "roh", "qc_result", "str"}
 	mtRefs, mtIndexRefs := archivedMitochondrialVCFRefs(manifest, byBase)
 	sources := map[string]s3ObjectInfo{}
+	zipNames := map[string]string{}
 	if task.Template == "vcf2anno" {
 		fields = []string{"normalized_vcf", "normalized_vcf_tbi", "annotated_vcf", "annotated_vcf_tbi", "snp_indel", "preprocessing", "sex_inference", "sex_explanation", "summary"}
 		catalog.BAMStatus = "not_provided"
@@ -310,6 +311,13 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 			if object.Size <= 0 {
 				return nil, fmt.Errorf("原始结果 %s 为空", field)
 			}
+			if task.Template == "vcf2anno" {
+				name, err := vcfDownloadArchiveName(task.UUID, field)
+				if err != nil {
+					return nil, err
+				}
+				zipNames[object.Key] = name
+			}
 			sources[object.Key] = object
 		}
 	}
@@ -328,6 +336,9 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 		o := sources[key]
 		total += o.Size
 		fmt.Fprintf(hash, "%s\x00%d\x00%d\n", key, o.Size, o.LastModified.UnixNano())
+		if name := zipNames[key]; name != "" {
+			fmt.Fprintf(hash, "zip-name:%s\n", name)
+		}
 	}
 	// Leave sufficient disk headroom and reject unexpectedly large reports.
 	maxBytes := int64(s.cfg.Report.PackageMaxSizeMB) * 1024 * 1024
@@ -380,7 +391,7 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 		return nil, err
 	}
 	if claimed {
-		go s.buildRawZIP(storage, key, prefix, keys, sources, catalog.Missing, qcJSON)
+		go s.buildRawZIP(storage, key, prefix, keys, sources, catalog.Missing, qcJSON, zipNames)
 	}
 	catalog.ZIPStatus = "building"
 	catalog.ZIPError = ""
@@ -420,7 +431,7 @@ func archivedMitochondrialVCFRefs(manifest map[string]interface{}, byBase map[st
 	return refs, indexes
 }
 
-func (s *ResultDownloadService) buildRawZIP(storage *s3Storage, key, prefix string, keys []string, sources map[string]s3ObjectInfo, missing []string, qcJSON []byte) {
+func (s *ResultDownloadService) buildRawZIP(storage *s3Storage, key, prefix string, keys []string, sources map[string]s3ObjectInfo, missing []string, qcJSON []byte, archiveNames ...map[string]string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	parts := strings.Split(prefix, "/")
@@ -453,6 +464,12 @@ func (s *ResultDownloadService) buildRawZIP(storage *s3Storage, key, prefix stri
 			rel, err := safeResultPackageRelativePath(prefix, source)
 			if err != nil {
 				return err
+			}
+			if len(archiveNames) > 0 && archiveNames[0][source] != "" {
+				rel = archiveNames[0][source]
+				if path.Base(rel) != rel || strings.ContainsAny(rel, "\\\r\n") {
+					return fmt.Errorf("invalid ZIP member name")
+				}
 			}
 			reader, err := storage.open(ctx, source)
 			if err != nil {
@@ -698,4 +715,18 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 	settings := downloadSettings(s.cfg.Storage)
 	log.Printf("download_link_issued grant=%s task=%s kind=%s count=%d bytes=%d", quote.ID, task.UUID, quote.Kind, quote.IssueCount, quote.SizeBytes)
 	return map[string]interface{}{"id": quote.ID, "url": link, "filename": quote.Filename, "size_bytes": quote.SizeBytes, "credits_charged": quote.Credits, "expires_at": linkExpires, "grant_expires_at": quote.LinkExpiresAt, "ip_bound": false, "refresh_after": quote.LastIssuedAt.Add(settings.ResultDownloadRefreshInterval), "remaining_issues": settings.ResultDownloadMaxIssues - quote.IssueCount, "traffic_limit_bps": settings.ResultDownloadTrafficLimit}, nil
+}
+
+// Stable names keep each downloaded VCF next to its matching .tbi, even when
+// the Agent assigned collision suffixes to duplicate archive references.
+func vcfDownloadArchiveName(taskID, field string) (string, error) {
+	if _, err := uuid.Parse(taskID); err != nil {
+		return "", err
+	}
+	suffixes := map[string]string{"normalized_vcf": ".normalized.vcf.gz", "normalized_vcf_tbi": ".normalized.vcf.gz.tbi", "annotated_vcf": ".vep.vcf.gz", "annotated_vcf_tbi": ".vep.vcf.gz.tbi", "snp_indel": ".snv_indel.txt", "preprocessing": ".preprocessing.json", "sex_inference": ".sex_inference.json", "sex_explanation": ".sex_inference.txt", "summary": ".summary.json"}
+	suffix, ok := suffixes[field]
+	if !ok {
+		return "", fmt.Errorf("unsupported VCF download output")
+	}
+	return taskID + suffix, nil
 }
