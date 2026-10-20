@@ -3274,10 +3274,10 @@ func (s *TaskService) HandleCVMStateEvent(event model.CVMStateEvent) error {
 		// fulfilled a durable delete intent and soft-deleted the task. Treat that
 		// authenticated replay as acknowledged so Squid can finish its outbox;
 		// non-terminal events for unknown tasks remain errors.
-		if event.ExecutionPhase == "terminal" || cvmAttemptStateTerminal(event.InstanceState) {
+		if errors.Is(err, gorm.ErrRecordNotFound) && (event.ExecutionPhase == "terminal" || cvmAttemptStateTerminal(event.InstanceState)) {
 			return nil
 		}
-		return fmt.Errorf("task not found: %s", event.TaskUUID)
+		return fmt.Errorf("task lookup failed for CVM event: %w", err)
 	}
 	if task.Executor != model.ExecutorCVM {
 		return fmt.Errorf("task is not a CVM task")

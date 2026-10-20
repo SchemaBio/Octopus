@@ -46,7 +46,7 @@ type Task struct {
 	InterpretationCompletedBy    string     `json:"interpretationCompletedBy,omitempty" gorm:"size:200"`
 	PipelineSnapshotJSON         string     `json:"-" gorm:"type:jsonb;not null;default:'{}'"`
 	Version                      uint64     `json:"-" gorm:"default:0"`
-	LastCVMEventVersion          uint64     `json:"-" gorm:"default:0"`
+	LastCVMEventVersion          uint64     `json:"-" gorm:"column:last_cvm_event_version;default:0"`
 	ExecutionPhase               string     `json:"execution_phase,omitempty" gorm:"size:32"`
 	ExecutionReasonCode          string     `json:"execution_reason_code,omitempty" gorm:"size:120"`
 	PhaseUpdatedAt               *time.Time `json:"phase_updated_at,omitempty"`

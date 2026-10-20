@@ -437,6 +437,13 @@ func migrateTaskExecutionColumns() error {
 	if err := DB.Exec("UPDATE tasks SET version = 0 WHERE version IS NULL").Error; err != nil {
 		return fmt.Errorf("failed to backfill task versions: %w", err)
 	}
+	// Earlier GORM naming split CVM into c_vm while SQL recovery used cvm.
+	// Retain both historical columns for rollback and preserve the newest fence.
+	if DB.Migrator().HasColumn(&model.Task{}, "last_c_vm_event_version") {
+		if err := DB.Exec("UPDATE tasks SET last_cvm_event_version = GREATEST(COALESCE(last_cvm_event_version, 0), COALESCE(last_c_vm_event_version, 0)) WHERE COALESCE(last_c_vm_event_version, 0) > COALESCE(last_cvm_event_version, 0)").Error; err != nil {
+			return fmt.Errorf("failed to reconcile legacy CVM event versions: %w", err)
+		}
+	}
 	if err := DB.Exec("UPDATE tasks SET last_cvm_event_version = 0 WHERE last_cvm_event_version IS NULL").Error; err != nil {
 		return fmt.Errorf("failed to backfill CVM event versions: %w", err)
 	}
