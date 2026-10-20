@@ -15,6 +15,8 @@ func TestDeclaredReferenceIDUsesInputSnapshot(t *testing.T) {
 		{name: "hg19", json: `{"reference_genome":"hg19"}`, want: "hg19"},
 		{name: "nested grch37", json: `{"workflow":{"assembly":"GRCh37"}}`, want: "hg19"},
 		{name: "hg38 fasta", json: `{"inputs":{"fasta":"/refs/GRCh38.fa"}}`, want: "hg38"},
+		{name: "VCF qualified assembly", json: `{"VCF2Anno.assembly":"GRCh37","VCF2Anno.fasta":"/refs/reference.fa"}`, want: "hg19"},
+		{name: "qualified hg38 assembly", json: `{"VCF2Anno.assembly":"GRCh38","VCF2Anno.fasta":"/refs/GRCh37.fa"}`, want: "hg38"},
 		{name: "unknown", json: `{"assembly":"T2T-CHM13"}`, want: ""},
 		{name: "invalid", json: `not-json`, want: ""},
 	}
@@ -24,6 +26,22 @@ func TestDeclaredReferenceIDUsesInputSnapshot(t *testing.T) {
 				t.Fatalf("declaredReferenceID() = %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+func TestTaskReferenceUsesFrozenPipelineWhenInputsHaveNoDeclaration(t *testing.T) {
+	tests := []struct{ inputs, snapshot, want string }{
+		{`{}`, `{"reference":"hg19"}`, "hg19"},
+		{`{"VCF2Anno.fasta":"/refs/reference.fa"}`, `{"reference":"hg38"}`, "hg38"},
+		{`{"VCF2Anno.assembly":"T2T-CHM13"}`, `{"reference":"hg19"}`, ""},
+		{`{"VCF2Anno.assembly":"GRCh38"}`, `{"reference":"hg19"}`, "hg38"},
+		{`{}`, `{"reference":"hg38"}`, "hg38"},
+	}
+	for _, test := range tests {
+		task := &model.Task{InputJSON: test.inputs, PipelineSnapshotJSON: test.snapshot}
+		if got := taskReferenceID(task); got != test.want {
+			t.Fatalf("taskReferenceID(%s, %s)=%q, want %q", test.inputs, test.snapshot, got, test.want)
+		}
 	}
 }
 

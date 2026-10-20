@@ -74,6 +74,9 @@ func (s *TaskService) enqueueCVM(ctx context.Context, id string, actor model.Ove
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid = ?", id).First(&task).Error; err != nil {
 			return err
 		}
+		if err := requireAnalysisAvailable(task.Template); err != nil {
+			return err
+		}
 		if task.ExecutionPhase != "" && task.ExecutionPhase != "idle" && task.ExecutionPhase != "terminal" {
 			// A pre-outbox deployment or an interrupted migration may leave an
 			// active dispatching task without its durable submission row. Repeated

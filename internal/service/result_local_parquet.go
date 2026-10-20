@@ -60,13 +60,59 @@ func (s *ResultService) localResultSources(task *model.Task) (string, []byte, ma
 					continue
 				}
 				if previous != file {
-					return "", nil, nil, fmt.Errorf("ambiguous local result table %s", table)
+					same, err := identicalLocalResultFiles(previous, file)
+					if err != nil {
+						return "", nil, nil, err
+					}
+					if !same {
+						return "", nil, nil, fmt.Errorf("ambiguous local result table %s", table)
+					}
+					// The Agent can archive a standalone output and its summary
+					// reference separately. Keep a stable choice only when identical.
+					if previous < file {
+						continue
+					}
 				}
 			}
 			sources[table] = file
 		}
 	}
 	return dir, raw, sources, nil
+}
+
+func identicalLocalResultFiles(left, right string) (bool, error) {
+	a, err := os.Stat(left)
+	if err != nil {
+		return false, err
+	}
+	b, err := os.Stat(right)
+	if err != nil {
+		return false, err
+	}
+	if a.Size() != b.Size() {
+		return false, nil
+	}
+	if os.SameFile(a, b) {
+		return true, nil
+	}
+	digest := func(name string) (string, error) {
+		file, err := os.Open(name)
+		if err != nil {
+			return "", err
+		}
+		defer file.Close()
+		hash := sha256.New()
+		if _, err := io.Copy(hash, file); err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(hash.Sum(nil)), nil
+	}
+	first, err := digest(left)
+	if err != nil {
+		return false, err
+	}
+	second, err := digest(right)
+	return first == second, err
 }
 
 func (s *ResultService) localParquetArchiveState(task *model.Task) model.ParquetResultState {

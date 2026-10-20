@@ -93,6 +93,37 @@ func TestLocalIGVDiscoveryAuthorizationAndRanges(t *testing.T) {
 	}
 }
 
+func TestLocalVCFReferenceContextAndIGVAgree(t *testing.T) {
+	s, task, dir := localIGVFixture(t)
+	task.Template = "vcf2anno"
+	for _, inputs := range []string{`{"VCF2Anno.assembly":"GRCh37"}`, `{}`} {
+		task.InputJSON = inputs
+		task.PipelineSnapshotJSON = `{"reference":"hg19"}`
+		ref := resultReferenceForTask(s.cfg, task)
+		if !ref.Available || ref.DeclaredID != "hg19" || ref.Reason != "" {
+			t.Fatalf("local context ignored configured FASTA/FAI: %+v", ref)
+		}
+		if !s.localIGVReference(task).Available {
+			t.Fatal("context and IGV disagreed")
+		}
+	}
+	s.cfg.IGV.HG38.FASTAPath = filepath.Join(dir, "reference.fa")
+	task.InputJSON = `{"VCF2Anno.assembly":"GRCh38"}`
+	if ref := resultReferenceForTask(s.cfg, task); !ref.Available || ref.DeclaredID != "hg38" {
+		t.Fatalf("hg38 execution used a different pipeline reference: %+v", ref)
+	}
+	if err := os.Remove(filepath.Join(dir, "reference.fa.fai")); err != nil {
+		t.Fatal(err)
+	}
+	if ref := resultReferenceForTask(s.cfg, task); ref.Available {
+		t.Fatal("missing FAI was reported as available")
+	}
+	task.InputJSON = `{"VCF2Anno.assembly":"T2T-CHM13"}`
+	if _, err := s.localIGVReferencePath(task); err == nil {
+		t.Fatal("unsupported assembly fell back to hg19")
+	}
+}
+
 func TestLocalIGVRejectsEscapingSymlinksAndSaaS(t *testing.T) {
 	s, task, dir := localIGVFixture(t)
 	outside := filepath.Join(t.TempDir(), "private.bam")

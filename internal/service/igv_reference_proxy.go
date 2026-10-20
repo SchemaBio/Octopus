@@ -48,7 +48,7 @@ func (s *ResultService) OpenIGVReference(ctx context.Context, task *model.Task, 
 		}
 		return openLocalIGVFile(filename, requestedRange, asset == "fasta", maxIGVReferenceRead)
 	}
-	keys, err := cvmReferenceObjectKeys(declaredReferenceID(task.InputJSON), false)
+	keys, err := cvmReferenceObjectKeys(taskReferenceID(task), false)
 	if err != nil {
 		return nil, err
 	}

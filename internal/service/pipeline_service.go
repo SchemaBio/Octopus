@@ -33,7 +33,7 @@ func NewPipelineService(_ *config.Config) *PipelineService {
 }
 
 func builtinPipelineResponses() []model.PipelineResponse {
-	return []model.PipelineResponse{
+	items := []model.PipelineResponse{
 		{
 			ID: model.BuiltinPipelineWESSingleID, Name: "WES单样本分析",
 			BasePipelineID: model.BuiltinPipelineWESSingleID,
@@ -73,6 +73,14 @@ func builtinPipelineResponses() []model.PipelineResponse {
 		{ID: model.BuiltinPipelineVCFHG19ID, BasePipelineID: model.BuiltinPipelineVCFHG19ID, Name: "VCF SNP/InDel 注释（hg19）", BaseType: model.PipelineBaseVCFAnnotation, Version: "builtin-v1", ReferenceGenome: "hg19", Template: "vcf2anno", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive},
 		{ID: model.BuiltinPipelineVCFHG38ID, BasePipelineID: model.BuiltinPipelineVCFHG38ID, Name: "VCF SNP/InDel 注释（hg38）", BaseType: model.PipelineBaseVCFAnnotation, Version: "builtin-v1", ReferenceGenome: "hg38", Template: "vcf2anno", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive},
 	}
+	for i := range items {
+		if requireAnalysisAvailable(items[i].Template) != nil {
+			items[i].Status = model.PipelineStatusInactive
+			items[i].ResourceAvailable = false
+			items[i].ResourceError = ErrFamilyAnalysisUnavailable.Error()
+		}
+	}
+	return items
 }
 
 func isAllowedPipelineBase(value model.PipelineBaseType) bool {
@@ -164,12 +172,15 @@ func (s *PipelineService) CreatePipeline(_ context.Context, req *model.PipelineC
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
-	if s.repo.ExistsByName(name, actor, "") {
-		return nil, fmt.Errorf("pipeline name already exists")
-	}
 	baseType, genome, err := resolvePipelineBase(req.BasePipelineID, req.BaseType, req.ReferenceGenome)
 	if err != nil {
 		return nil, err
+	}
+	if err := requireAnalysisAvailable(model.PipelineTemplate(baseType)); err != nil {
+		return nil, err
+	}
+	if s.repo.ExistsByName(name, actor, "") {
+		return nil, fmt.Errorf("pipeline name already exists")
 	}
 	if baseType == model.PipelineBaseVCFAnnotation {
 		req.BEDAssetID, req.CNVBaselineID = "", ""
@@ -260,6 +271,9 @@ func (s *PipelineService) UpdatePipeline(_ context.Context, id string, req *mode
 			return nil, err
 		}
 	}
+	if err := requireAnalysisAvailable(model.PipelineTemplate(baseType)); err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		name = pipeline.Name
@@ -317,6 +331,12 @@ func (s *PipelineService) DeletePipeline(_ context.Context, id string, actor mod
 func (s *PipelineService) toResponse(pipeline *model.Pipeline, bed *model.DataAsset, baseline *model.CNVBaseline) model.PipelineResponse {
 	response := pipeline.ToResponse()
 	response.ResourceAvailable = true
+	if requireAnalysisAvailable(response.Template) != nil {
+		response.Status = model.PipelineStatusInactive
+		response.ResourceAvailable = false
+		response.ResourceError = ErrFamilyAnalysisUnavailable.Error()
+		return response
+	}
 	if pipeline.BaseType == model.PipelineBaseVCFAnnotation {
 		response.BEDFile, response.CNVBaseline, response.BEDAssetID, response.CNVBaselineID = "", "", "", ""
 		return response

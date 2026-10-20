@@ -124,7 +124,7 @@ func (r *SampleRepository) PaginateByQuery(query *model.SampleListQuery) ([]mode
 	}
 	if query.Search != "" {
 		search := "%" + query.Search + "%"
-		db = db.Where("internal_id LIKE ? OR uuid LIKE ?", search, search)
+		db = db.Where("internal_id ILIKE ? OR uuid ILIKE ?", search, search)
 	}
 	if query.Status != "" {
 		db = db.Where("status = ?", query.Status)

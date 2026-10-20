@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/workflow"
 )
 
 func archiveTransport(archive *igvArchive) string {
@@ -22,31 +23,36 @@ func archiveTransport(archive *igvArchive) string {
 }
 
 func localIGVReferenceID(task *model.Task) string {
-	if id := declaredReferenceID(task.InputJSON); id != "" {
-		return id
-	}
-	// WDL input snapshots use qualified keys such as SingleWES.fasta.
-	var inputs map[string]interface{}
-	_ = json.Unmarshal([]byte(task.InputJSON), &inputs)
-	for key, value := range inputs {
-		if strings.HasSuffix(key, ".fasta") {
-			if name, ok := value.(string); ok {
-				return normalizeReferenceID(name)
-			}
-		}
-	}
-	return ""
+	return taskReferenceID(task)
 }
 
 // Serve only administrator-configured reference files, never a user-supplied
 // task input path. The input snapshot selects the assembly, not a filesystem path.
 func (s *ResultService) localIGVReferencePath(task *model.Task) (string, error) {
+	if s.cfg == nil || task == nil {
+		return "", fmt.Errorf("local IGV reference is not configured")
+	}
+	referenceID := localIGVReferenceID(task)
 	var filename string
-	switch localIGVReferenceID(task) {
+	switch referenceID {
 	case "hg19":
 		filename = s.cfg.IGV.HG19.FASTAPath
 	case "hg38":
 		filename = s.cfg.IGV.HG38.FASTAPath
+	default:
+		return "", fmt.Errorf("local IGV reference assembly is unsupported")
+	}
+	if filename == "" {
+		// The administrator-controlled workflow catalog uses the same reference
+		// resources as execution. Never serve a path taken from task.InputJSON.
+		inputs, err := workflow.InputsForGenome(task.Template, referenceID)
+		if err == nil {
+			for key, value := range inputs {
+				if strings.HasSuffix(key, ".fasta") {
+					filename, _ = value.(string)
+				}
+			}
+		}
 	}
 	if !filepath.IsAbs(filename) {
 		return "", fmt.Errorf("local IGV reference is not configured")

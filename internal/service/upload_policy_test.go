@@ -38,6 +38,13 @@ func TestDataAssetExpiryKeepsBEDIndefinitely(t *testing.T) {
 	if expiry == nil || !expiry.Equal(now.AddDate(0, 0, 7)) {
 		t.Fatalf("FASTQ expiry = %v, want seven days", expiry)
 	}
+	vcfExpiry := dataAssetExpiry(7, model.ReadTypeVCF, now)
+	if vcfExpiry == nil || !vcfExpiry.Equal(now.AddDate(0, 0, 7)) {
+		t.Fatalf("VCF expiry = %v, want seven days", vcfExpiry)
+	}
+	if expiry := dataAssetExpiry(0, model.ReadTypeVCF, now); expiry != nil {
+		t.Fatalf("self-hosted VCF expiry=%v, want nil", expiry)
+	}
 }
 
 func TestValidateSaaSUploadFileSize(t *testing.T) {

@@ -220,10 +220,10 @@ func resultWorkspaceVersion(task *model.Task, attemptID string) string {
 }
 
 func resultReferenceForTask(cfg *config.Config, task *model.Task) model.ResultReference {
-	if cfg == nil {
+	if cfg == nil || task == nil {
 		return model.ResultReference{Reason: "IGV 参考资源配置不可用"}
 	}
-	declared := declaredReferenceID(task.InputJSON)
+	declared := taskReferenceID(task)
 	if declared == "" {
 		return model.ResultReference{Reason: "该执行的输入快照未提供参考序列身份"}
 	}
@@ -235,6 +235,11 @@ func resultReferenceForTask(cfg *config.Config, task *model.Task) model.ResultRe
 		reference = cfg.IGV.HG38
 	default:
 		return model.ResultReference{DeclaredID: declared, Reason: "该参考序列未配置为可判读的 IGV 参考资源"}
+	}
+	local := &ResultService{cfg: cfg}
+	if local.localBrowserStorage() {
+		ref := local.localIGVReference(task)
+		return model.ResultReference{DeclaredID: ref.ID, Available: ref.Available, Reason: ref.Reason}
 	}
 	if cfg.IGV.ReferenceProxyBaseURL == "" && (strings.TrimSpace(reference.FASTAURL) == "" || strings.TrimSpace(reference.FAIURL) == "") {
 		return model.ResultReference{DeclaredID: declared, Reason: "该执行的参考 FASTA 与 FAI 尚未配置"}
@@ -250,22 +255,60 @@ func declaredReferenceID(raw string) string {
 	return normalizeReferenceID(findReferenceString(value))
 }
 
+// Resolve the execution snapshot, never today's editable pipeline definition.
+// An explicit unsupported assembly must not fall back to a different genome.
+func taskReferenceID(task *model.Task) string {
+	if task == nil {
+		return ""
+	}
+	var inputs interface{}
+	if json.Unmarshal([]byte(task.InputJSON), &inputs) == nil {
+		if declared := findReferenceValue(inputs, []string{"assembly", "reference_genome", "referenceGenome", "genome"}); declared != "" {
+			return normalizeReferenceID(declared)
+		}
+		if inferred := normalizeReferenceID(findReferenceString(inputs)); inferred != "" {
+			return inferred
+		}
+	}
+	var snapshot pipelineResourceSnapshot
+	if json.Unmarshal([]byte(task.PipelineSnapshotJSON), &snapshot) == nil {
+		return normalizeReferenceID(snapshot.Reference)
+	}
+	return ""
+}
+
 func findReferenceString(value interface{}) string {
+	return findReferenceValue(value, []string{"assembly", "reference_genome", "referenceGenome", "genome", "fasta"})
+}
+
+func findReferenceValue(value interface{}, fields []string) string {
 	switch node := value.(type) {
 	case map[string]interface{}:
-		for _, key := range []string{"reference_genome", "referenceGenome", "assembly", "genome", "fasta"} {
+		keys := make([]string, 0, len(node))
+		for key := range node {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range fields {
 			if text, ok := node[key].(string); ok && strings.TrimSpace(text) != "" {
 				return text
 			}
+			for _, qualified := range keys {
+				if strings.HasSuffix(qualified, "."+key) {
+					if text, ok := node[qualified].(string); ok && strings.TrimSpace(text) != "" {
+						return text
+					}
+				}
+			}
 		}
-		for _, child := range node {
-			if found := findReferenceString(child); found != "" {
+		for _, key := range keys {
+			if found := findReferenceValue(node[key], fields); found != "" {
 				return found
 			}
 		}
 	case []interface{}:
 		for _, child := range node {
-			if found := findReferenceString(child); found != "" {
+			if found := findReferenceValue(child, fields); found != "" {
 				return found
 			}
 		}

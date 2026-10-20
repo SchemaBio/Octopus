@@ -60,6 +60,7 @@ type DataAssetUpdateRequest struct {
 }
 
 type DataAssetListQuery struct {
+	AvailableOnly   bool       `form:"available_only"`
 	Page            int        `form:"page" binding:"omitempty,min=1"`
 	PageSize        int        `form:"page_size" binding:"omitempty,min=1,max=100"`
 	Search          string     `form:"search"`

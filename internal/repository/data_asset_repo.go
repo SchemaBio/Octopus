@@ -75,6 +75,9 @@ func (r *DataAssetRepository) Paginate(query *model.DataAssetListQuery) ([]model
 	if search := strings.TrimSpace(query.Search); search != "" {
 		db = db.Where("file_name ILIKE ? OR uuid ILIKE ? OR internal_id ILIKE ?", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 	}
+	if query.AvailableOnly {
+		db = db.Where("status = ? AND (expires_at IS NULL OR expires_at > ?)", model.FileStatusCompleted, time.Now().UTC())
+	}
 	if query.Status != "" {
 		db = db.Where("status = ?", query.Status)
 	}

@@ -771,17 +771,13 @@ func (s *TaskService) resolveAnalysisPipeline(req *model.TaskCreateRequest, acto
 		setGenome("hg19")
 		return nil, nil
 	case model.BuiltinPipelineWESFamilyID:
-		req.PipelineName, req.PipelineVersion, req.Template = "WES家系分析", "builtin-v1", "trio"
-		setGenome("hg19")
-		return nil, nil
+		return nil, ErrFamilyAnalysisUnavailable
 	case model.BuiltinPipelineWESSingleHG38ID:
 		req.PipelineName, req.PipelineVersion, req.Template = "WES单样本分析（hg38）", "builtin-v1", "single"
 		setGenome("hg38")
 		return nil, nil
 	case model.BuiltinPipelineWESFamilyHG38ID:
-		req.PipelineName, req.PipelineVersion, req.Template = "WES家系分析（hg38）", "builtin-v1", "trio"
-		setGenome("hg38")
-		return nil, nil
+		return nil, ErrFamilyAnalysisUnavailable
 	case "":
 		return nil, fmt.Errorf("pipelineId is required")
 	}
@@ -789,6 +785,9 @@ func (s *TaskService) resolveAnalysisPipeline(req *model.TaskCreateRequest, acto
 	pipeline, err := s.pipelineRepo.FindScopedByUUID(req.PipelineID, actor)
 	if err != nil || pipeline.Status != model.PipelineStatusActive || !isAllowedPipelineBase(pipeline.BaseType) {
 		return nil, fmt.Errorf("pipeline not found: %s", req.PipelineID)
+	}
+	if err := requireAnalysisAvailable(model.PipelineTemplate(pipeline.BaseType)); err != nil {
+		return nil, err
 	}
 	req.PipelineName = pipeline.Name
 	req.PipelineVersion = pipeline.Version
@@ -817,6 +816,9 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		}
 	}
 	if err := validateTemplateName(req.Template); err != nil {
+		return nil, err
+	}
+	if err := requireAnalysisAvailable(req.Template); err != nil {
 		return nil, err
 	}
 	// CVM tasks execute the WDL bundle baked into the selected image. The
@@ -1161,6 +1163,9 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
 	}
+	if err := requireAnalysisAvailable(peek.Template); err != nil {
+		return nil, err
+	}
 
 	if peek.Executor == model.ExecutorCVM {
 		return s.enqueueCVM(ctx, id, actor)
@@ -1339,6 +1344,9 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
+	}
+	if err := requireAnalysisAvailable(task.Template); err != nil {
+		return nil, err
 	}
 
 	if task.Executor == model.ExecutorCVM {
@@ -2761,6 +2769,9 @@ func (s *TaskService) buildCVMDispatchRequest(ctx context.Context, actor model.O
 }
 
 func (s *TaskService) buildCVMDispatchRequestForContract(ctx context.Context, actor model.OverlayActor, task *model.Task, contractVersion string) (model.CVMDispatchRequest, error) {
+	if err := requireAnalysisAvailable(task.Template); err != nil {
+		return model.CVMDispatchRequest{}, err
+	}
 	contractVersion = strings.TrimSpace(contractVersion)
 	if contractVersion == "" {
 		contractVersion = workflow.ContractVersion
