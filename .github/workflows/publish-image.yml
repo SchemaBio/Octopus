@@ -1,0 +1,87 @@
+name: Publish GHCR image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 镜像标签，例如 v0.0.1。会同时推送该标签和 latest。
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-ghcr-octopus
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+
+      - name: Validate tag
+        id: tag
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::标签格式无效。只允许字母、数字、下划线、点、连字符，例如 v0.0.1"
+            exit 1
+          fi
+          if [[ "$TAG" == "latest" ]]; then
+            echo "::error::请输入版本标签。latest 会在发布时自动更新。"
+            exit 1
+          fi
+          echo "value=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Set image name
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "IMAGE=${image}" >> "$GITHUB_ENV"
+          echo "Image: ${image}"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.value }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.tag.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Write summary
+        shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          {
+            echo "### Published"
+            echo ""
+            echo "- \`${IMAGE}:${TAG}\`"
+            echo "- \`${IMAGE}:latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
