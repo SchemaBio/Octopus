@@ -706,3 +706,7 @@ curl -X POST http://localhost:8080/api/v1/results/cnv-segment/{id}/report \
 3. Token 过期前调用 `/auth/refresh` 刷新
 4. 通过结果查询 API 加载各类变异数据 (含审核/回报状态)
 5. 用户操作后调用 review/report API 同步状态到数据库
+
+## VCF2Anno
+
+支持 VCF 起始的 SNP/InDel 注释，hg19/hg38 共用工作流。SaaS 沿用 WES 计算时间计费，自部署不扣积分。输入、部署、配置及验证见 [VCF2Anno 接入说明](docs/vcf2anno-integration.md)。

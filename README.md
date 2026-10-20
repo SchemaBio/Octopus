@@ -760,4 +760,7 @@ curl -X POST http://localhost:8080/api/v1/results/cnv-segment/{id}/report \
 
 ## VCF2Anno
 
-支持 VCF 起始的 SNP/InDel 注释，hg19/hg38 共用工作流；SaaS 沿用 WES 计算时间计费，自部署不扣积分。输入、部署、配置及验证见 [VCF2Anno 接入说明](docs/vcf2anno-integration.md)。
+VCF-first SNP/InDel annotation is supported. hg19 and hg38 share one workflow.
+SaaS bills it with the same WES compute-time rate. Self-hosted deployments do
+not charge credits. Inputs, deployment, configuration, and verification are
+described in [VCF2Anno integration](docs/vcf2anno-integration.md).
