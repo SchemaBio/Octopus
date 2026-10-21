@@ -11,8 +11,11 @@ func TestEstimateTaskMinutesFromBytes(t *testing.T) {
 		{name: "unknown size uses default", totalBytes: 0, want: 60},
 		{name: "invalid size uses default", totalBytes: -1, want: 60},
 		{name: "small data rounds up to one minute", totalBytes: 1, want: 1},
-		{name: "five gibibytes takes sixty minutes", totalBytes: 5 * 1024 * 1024 * 1024, want: 60},
-		{name: "ten gibibytes takes two hours", totalBytes: 10 * 1024 * 1024 * 1024, want: 120},
+		{name: "five gibibytes takes thirty minutes", totalBytes: 5 * 1024 * 1024 * 1024, want: 30},
+		{name: "ten gibibytes takes sixty minutes", totalBytes: 10 * 1024 * 1024 * 1024, want: 60},
+		{name: "twenty gibibytes takes two hours", totalBytes: 20 * 1024 * 1024 * 1024, want: 120},
+		{name: "partial minute rounds up", totalBytes: 10*1024*1024*1024 + 1, want: 61},
+		{name: "beta fastq pair takes fifty six minutes", totalBytes: 9943569006, want: 56},
 	}
 
 	for _, tt := range tests {

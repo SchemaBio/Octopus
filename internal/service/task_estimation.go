@@ -4,7 +4,7 @@ import "math"
 
 const (
 	defaultTaskEstimatedMinutes = 60
-	pairedFastqBaselineBytes    = int64(5 * 1024 * 1024 * 1024)
+	pairedFastqBaselineBytes    = int64(10 * 1024 * 1024 * 1024)
 )
 
 func estimateTaskMinutesFromBytes(totalBytes int64) int {
