@@ -172,12 +172,6 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if len(request.Adjustments) == 0 {
 		return nil, nil, fmt.Errorf("at least one adjustment is required")
 	}
-	if _, hasEvidence := request.Adjustments["acmgEvidence"]; (hasEvidence || request.Adjustments["resetAcmg"] == true) && strings.TrimSpace(request.Reason) == "" {
-		return nil, nil, fmt.Errorf("ACMG evidence changes require an adjustment reason")
-	}
-	if _, hasOverride := request.Adjustments["acmgOverride"]; hasOverride && strings.TrimSpace(request.Reason) == "" {
-		return nil, nil, fmt.Errorf("ACMG override changes require an adjustment reason")
-	}
 	allowed := map[string]bool{"svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "focused": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
 	if _, has := request.Adjustments["cnvAssessment"]; has && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("CNV evidence changes require an adjustment reason")
@@ -193,9 +187,6 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		case "svcv4Assessment", "activeAcmgVersion":
 			if table != "snv-indel" {
 				return nil, nil, fmt.Errorf("SVCv4 is only valid for SNP/InDel")
-			}
-			if key == "svcv4Assessment" && strings.TrimSpace(request.Reason) == "" {
-				return nil, nil, fmt.Errorf("SVCv4 evidence changes require an adjustment reason")
 			}
 			if key == "activeAcmgVersion" {
 				version, ok := value.(string)
@@ -252,11 +243,6 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			if err := normalizeCNVScoring(value.(map[string]interface{})); err != nil {
 				return nil, nil, err
 			}
-		}
-	}
-	if value, ok := request.Adjustments["acmgOverride"]; ok {
-		if strings.TrimSpace(fmt.Sprint(value)) != "" && strings.TrimSpace(stringAdjustment(request.Adjustments, "acmgOverrideReason")) == "" {
-			return nil, nil, fmt.Errorf("manual ACMG override requires a reason")
 		}
 	}
 	dataset, err := s.verifyBrowserRow(ctx, task, table, rowID, request.RowOrdinal)
