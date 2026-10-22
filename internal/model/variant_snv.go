@@ -26,7 +26,7 @@ type SNVIndel struct {
 	Impact              string             `json:"impact,omitempty" gorm:"size:20"` // HIGH, MODERATE, LOW, MODIFIER
 	HGVSc               string             `json:"hgvsc" gorm:"size:200"`
 	HGVSp               string             `json:"hgvsp" gorm:"size:200"`
-	AminoAcids          string             `json:"aminoAcids,omitempty" gorm:"size:50"`
+	AminoAcids          string             `json:"aminoAcids,omitempty" gorm:"type:text"` // Indel peptide sequences have no fixed 50-character limit.
 	Cytoband            string             `json:"cytoband,omitempty" gorm:"size:50"`
 	ClinvarSignificance string             `json:"clinvarSignificance,omitempty" gorm:"size:500"`
 	ClinvarRevStat      string             `json:"clinvarRevStat,omitempty" gorm:"size:200"`
