@@ -1357,6 +1357,15 @@ func (s *UploadService) GetFileStatsWithStale(ctx context.Context, query *model.
 	return total, bytes, stale, err
 }
 
+func (s *UploadService) GetCapacityStats(ctx context.Context, query *model.UploadFileListQuery) (*model.UploadCapacityStats, error) {
+	stats, err := s.fileRepo.StorageCapacityStats(query)
+	if err != nil {
+		return nil, err
+	}
+	stats.StalePending, err = s.fileRepo.CountStalePending(query)
+	return stats, err
+}
+
 func (s *UploadService) GetLocalFilePath(ctx context.Context, actor model.OverlayActor, fileUUID string) (string, error) {
 	file, err := s.fileRepo.FindByUUID(fileUUID)
 	if err != nil {

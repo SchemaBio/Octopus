@@ -155,12 +155,12 @@ func (h *UploadHandler) GetFileStats(c *gin.Context) {
 		query.UserID = userID
 	}
 
-	total, bytes, stalePending, err := h.svc.GetFileStatsWithStale(c.Request.Context(), &query)
+	stats, err := h.svc.GetCapacityStats(c.Request.Context(), &query)
 	if err != nil {
 		ErrorInternal(c, err.Error())
 		return
 	}
-	Success(c, gin.H{"total": total, "total_bytes": bytes, "stale_pending": stalePending})
+	Success(c, stats)
 }
 
 func (h *UploadHandler) GetJob(c *gin.Context) {

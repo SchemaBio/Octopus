@@ -292,6 +292,13 @@ type UploadFileListResponse struct {
 	Items []UploadFileAuditResponse `json:"items"`
 }
 
+type UploadCapacityStats struct {
+	Total         int64 `json:"total"`
+	TotalBytes    int64 `json:"total_bytes"`
+	ReservedBytes int64 `json:"reserved_bytes"`
+	StalePending  int64 `json:"stale_pending"`
+}
+
 func (UploadJob) TableName() string {
 	return "upload_jobs"
 }

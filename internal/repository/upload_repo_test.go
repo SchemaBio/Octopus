@@ -53,6 +53,25 @@ func TestCompletedStorageStatsIncludesBEDAndScannerAssets(t *testing.T) {
 	}
 }
 
+func TestStorageCapacityStatsSeparatesReservationsInTenantSnapshot(t *testing.T) {
+	db, mock := newUploadRepositoryTestDB(t)
+	repo := NewUploadFileRepository()
+	repo.Repository.db = db
+	query := `SELECT COUNT(CASE WHEN data_assets.status = $1 THEN 1 END) AS total, COALESCE(SUM(CASE WHEN data_assets.status = $2 THEN data_assets.file_size ELSE 0 END), 0) AS total_bytes, COALESCE(SUM(CASE WHEN data_assets.status <> $3 THEN data_assets.file_size ELSE 0 END), 0) AS reserved_bytes FROM "data_assets" WHERE data_assets.external_org_id = $4 AND data_assets.status <> $5`
+	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs(model.FileStatusCompleted, model.FileStatusCompleted, model.FileStatusCompleted, "org-1", model.FileStatusDeleted).
+		WillReturnRows(sqlmock.NewRows([]string{"total", "total_bytes", "reserved_bytes"}).AddRow(2, 20, 9))
+	stats, err := repo.StorageCapacityStats(&model.UploadFileListQuery{ExternalOrgID: "org-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.TotalBytes != 20 || stats.ReservedBytes != 9 || stats.Total != 2 {
+		t.Fatalf("unexpected capacity snapshot: %+v", stats)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUploadJobListStandaloneScopeExcludesOrganizationJobs(t *testing.T) {
 	db, mock := newUploadRepositoryTestDB(t)
 	repo := NewUploadJobRepository()

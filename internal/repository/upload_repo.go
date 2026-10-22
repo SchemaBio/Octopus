@@ -171,7 +171,7 @@ func (r *UploadFileRepository) PaginateFilesByQuery(q *model.UploadFileListQuery
 	return rows, total, err
 }
 
-func (r *UploadFileRepository) completedStorageAssets(q *model.UploadFileListQuery) *gorm.DB {
+func (r *UploadFileRepository) storageAssets(q *model.UploadFileListQuery) *gorm.DB {
 	db := r.db.Model(&model.DataAsset{})
 
 	if q.SharedInstance {
@@ -190,8 +190,22 @@ func (r *UploadFileRepository) completedStorageAssets(q *model.UploadFileListQue
 	if q.OrgID != "" {
 		db = db.Where("data_assets.external_org_id = ?", q.OrgID)
 	}
-	db = db.Where("data_assets.status = ?", model.FileStatusCompleted)
 	return db
+}
+
+func (r *UploadFileRepository) completedStorageAssets(q *model.UploadFileListQuery) *gorm.DB {
+	return r.storageAssets(q).Where("data_assets.status = ?", model.FileStatusCompleted)
+}
+
+// StorageCapacityStats uses one snapshot for completed and reserved bytes.
+// Failed/deleting records retain their reservation until deletion succeeds,
+// exactly as the upload admission transaction does.
+func (r *UploadFileRepository) StorageCapacityStats(q *model.UploadFileListQuery) (*model.UploadCapacityStats, error) {
+	stats := &model.UploadCapacityStats{}
+	err := r.storageAssets(q).Where("data_assets.status <> ?", model.FileStatusDeleted).
+		Select("COUNT(CASE WHEN data_assets.status = ? THEN 1 END) AS total, COALESCE(SUM(CASE WHEN data_assets.status = ? THEN data_assets.file_size ELSE 0 END), 0) AS total_bytes, COALESCE(SUM(CASE WHEN data_assets.status <> ? THEN data_assets.file_size ELSE 0 END), 0) AS reserved_bytes", model.FileStatusCompleted, model.FileStatusCompleted, model.FileStatusCompleted).
+		Scan(stats).Error
+	return stats, err
 }
 
 // CompletedStorageStats returns count and bytes from the same authoritative
