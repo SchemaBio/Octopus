@@ -213,7 +213,7 @@ func (s *TaskService) previewTaskBatchRow(input model.TaskBatchInputRow, actor m
 		}
 	}
 	if req.Template == "vcf2anno" {
-		preview.EstimatedMinutes = defaultTaskEstimatedMinutes
+		preview.EstimatedMinutes = vcfAnnotationEstimatedMinutes
 		if _, err := s.resolveVCFAsset(req, actor); err != nil {
 			preview.Errors = append(preview.Errors, err.Error())
 		}

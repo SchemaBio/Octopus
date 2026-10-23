@@ -70,14 +70,18 @@ func TestVCFLifecycleCreateArchiveImportAndContext(t *testing.T) {
 		t.Run(id, func(t *testing.T) {
 			request := &model.TaskCreateRequest{SampleID: sample.UUID, PipelineID: id, VCFAssetID: asset.UUID, VCFSampleName: "S1", DeferStart: true}
 			estimate, err := service.EstimateTask(&model.TaskEstimateRequest{SampleID: sample.UUID, PipelineID: id, VCFAssetID: asset.UUID}, actor)
-			if err != nil || estimate.EstimatedMinutes != 60 {
+			if err != nil || estimate.EstimatedMinutes != 25 {
 				t.Fatalf("estimate %+v %v", estimate, err)
+			}
+			preview := service.PreviewTaskBatch([]model.TaskBatchInputRow{{RowNumber: 2, SampleIdentifier: sample.UUID, PipelineID: id, VCFAssetID: asset.UUID}}, actor)
+			if preview.ValidRows != 1 || preview.TotalEstimatedMinutes != 25 || preview.Rows[0].EstimatedMinutes != 25 {
+				t.Fatalf("VCF batch estimate %+v", preview)
 			}
 			task, err := service.CreateTask(context.Background(), request, actor)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if task.Status != model.TaskStatusQueued || task.EstimatedMinutes != 60 {
+			if task.Status != model.TaskStatusQueued || task.EstimatedMinutes != 25 {
 				t.Fatalf("task %+v", task)
 			}
 			if ok, reason := service.checkDataReady(task); !ok {

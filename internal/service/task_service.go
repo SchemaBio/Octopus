@@ -123,7 +123,7 @@ func (s *TaskService) EstimateTask(req *model.TaskEstimateRequest, actor model.O
 		if _, err := s.resolveVCFAsset(&createReq, actor); err != nil {
 			return nil, err
 		}
-		return &model.TaskEstimateResponse{EstimatedMinutes: defaultTaskEstimatedMinutes}, nil
+		return &model.TaskEstimateResponse{EstimatedMinutes: vcfAnnotationEstimatedMinutes}, nil
 	}
 	return &model.TaskEstimateResponse{EstimatedMinutes: s.estimateTaskMinutes(sample.ID, nil)}, nil
 }
@@ -1095,7 +1095,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	}
 
 	if req.Template == "vcf2anno" {
-		task.EstimatedMinutes = defaultTaskEstimatedMinutes
+		task.EstimatedMinutes = vcfAnnotationEstimatedMinutes
 	}
 	if err := s.admitTask(ctx, model.OverlayAdmissionActionCreate, actor, task); err != nil {
 		return nil, err

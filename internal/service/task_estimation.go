@@ -3,8 +3,9 @@ package service
 import "math"
 
 const (
-	defaultTaskEstimatedMinutes = 60
-	pairedFastqBaselineBytes    = int64(10 * 1024 * 1024 * 1024)
+	defaultTaskEstimatedMinutes   = 60
+	vcfAnnotationEstimatedMinutes = 25
+	pairedFastqBaselineBytes      = int64(10 * 1024 * 1024 * 1024)
 )
 
 func estimateTaskMinutesFromBytes(totalBytes int64) int {
