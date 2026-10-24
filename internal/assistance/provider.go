@@ -3,6 +3,7 @@ package assistance
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -15,8 +16,15 @@ func (s *Service) TestProvider(ctx context.Context, draft Draft, user uint, org 
 	if draft.ClearKey {
 		return nil, errors.New("cannot test a cleared key")
 	}
+	draft.BaseURL = strings.TrimSpace(draft.BaseURL)
+	if draft.BaseURL != "" && !strings.HasPrefix(draft.BaseURL, "http://") && !strings.HasPrefix(draft.BaseURL, "https://") {
+		draft.BaseURL = "http://" + draft.BaseURL
+	}
 	if draft.APIKey == "" {
 		draft.APIKey = old.APIKey
+	}
+	if draft.APIKey == "" && (strings.HasPrefix(draft.BaseURL, "http://") || strings.Contains(draft.BaseURL, "localhost") || strings.Contains(draft.BaseURL, "127.0.0.1")) {
+		draft.APIKey = "none"
 	}
 	if draft.APIKey == "" || draft.BaseURL == "" || draft.Model == "" {
 		return nil, errors.New("complete model configuration required")

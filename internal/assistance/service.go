@@ -61,6 +61,10 @@ func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, err
 	if out.Protocol == "" {
 		out.Protocol = "openai_responses"
 	}
+	if admin {
+		out.BaseURL = draft.BaseURL
+	}
+	out.Model = draft.Model
 	for feature := range Engines {
 		out.Capabilities[feature] = Capability{Enabled: false, Reason: "AI 服务尚未就绪", Mode: "formal"}
 	}
@@ -157,6 +161,10 @@ func (s *Service) SaveSettingsAs(ctx context.Context, draft Draft, user uint, or
 	if s.Cipher == nil || s.DB == nil || s.upstreamID() == "" {
 		return PublicSettings{}, ErrUnavailable
 	}
+	draft.BaseURL = strings.TrimSpace(draft.BaseURL)
+	if draft.BaseURL != "" && !strings.HasPrefix(draft.BaseURL, "http://") && !strings.HasPrefix(draft.BaseURL, "https://") {
+		draft.BaseURL = "http://" + draft.BaseURL
+	}
 	if draft.Protocol == "" {
 		draft.Protocol = "openai_responses"
 	}
@@ -181,6 +189,9 @@ func (s *Service) SaveSettingsAs(ctx context.Context, draft Draft, user uint, or
 			draft.APIKey = ""
 		} else if draft.APIKey == "" {
 			draft.APIKey = old.APIKey
+		}
+		if draft.APIKey == "" && (strings.HasPrefix(draft.BaseURL, "http://") || strings.Contains(draft.BaseURL, "localhost") || strings.Contains(draft.BaseURL, "127.0.0.1")) {
+			draft.APIKey = "none"
 		}
 		ready := draft.APIKey != "" && draft.Model != "" && draft.BaseURL != ""
 		if draft.Enabled && !ready && !draft.ClearKey {
