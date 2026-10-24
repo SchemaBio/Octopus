@@ -102,11 +102,12 @@ func (s *Service) observeHPOCancellation(parent context.Context, id string) (con
 	return ctx, func() { cancel(); <-done }
 }
 
-// Remove encrypted clinical payloads/results after 30 days. Keep only request
-// identity and billing metadata for idempotency and ledger reconciliation.
+// Remove encrypted clinical payloads/results after 30 days, except completed
+// HPO candidate results that users reuse until regenerating or deleting them.
+// Original HPO text is never retained in these records.
 func (s *Service) purgeExpired(ctx context.Context) {
 	_ = s.DB.WithContext(ctx).Model(&Request{}).Where("feature = 'hpo' AND state IN ? AND ciphertext <> ''", []string{"completed", "failed", "cancelled", "uncertain", "expired"}).Update("ciphertext", "").Error
-	_ = s.DB.WithContext(ctx).Model(&Request{}).Where("state IN ? AND updated_at < ? AND (billing_enabled = false OR billing_done = true)", []string{"completed", "failed", "cancelled"}, time.Now().Add(-30*24*time.Hour)).Updates(map[string]any{"ciphertext": "", "result_ciphertext": "", "state": "expired"}).Error
+	_ = s.DB.WithContext(ctx).Model(&Request{}).Where("state IN ? AND updated_at < ? AND (feature <> 'hpo' OR state <> 'completed') AND (billing_enabled = false OR billing_done = true)", []string{"completed", "failed", "cancelled"}, time.Now().Add(-30*24*time.Hour)).Updates(map[string]any{"ciphertext": "", "result_ciphertext": "", "state": "expired"}).Error
 	if s.DB.Migrator().HasTable("tasks") {
 		_ = s.DB.WithContext(ctx).Model(&Request{}).Where("state IN ? AND task_id <> '' AND NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.uuid = ai_assistance_requests.task_id AND tasks.deleted_at IS NULL) AND (billing_enabled = false OR billing_done = true)", []string{"completed", "failed", "cancelled"}).Updates(map[string]any{"ciphertext": "", "result_ciphertext": "", "state": "expired"}).Error
 	}

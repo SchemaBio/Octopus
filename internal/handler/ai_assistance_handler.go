@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/SchemaBio/Octopus/internal/assistance"
 	"github.com/SchemaBio/Octopus/internal/config"
@@ -36,6 +37,26 @@ func (h *AIAssistanceHandler) Settings(c *gin.Context) {
 		return
 	}
 	Success(c, out)
+}
+
+// A POST body keeps phenotype text out of URLs and access logs. This is a
+// cache read only: it does not contact SepiLens or the configured model.
+func (h *AIAssistanceHandler) CachedHPO(c *gin.Context) {
+	var in struct {
+		Diagnosis string `json:"diagnosis"`
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+	if c.ShouldBindJSON(&in) != nil || strings.TrimSpace(in.Diagnosis) == "" || utf8.RuneCountInString(in.Diagnosis) > 10000 {
+		ErrorBadRequest(c, "表型文本格式无效")
+		return
+	}
+	scope, _, user := aiIdentity(c)
+	result, err := h.svc.CachedHPO(c.Request.Context(), scope, user, in.Diagnosis)
+	if err != nil {
+		Error(c, 503, "已保存的 HPO 结果暂不可用")
+		return
+	}
+	Success(c, result)
 }
 func (h *AIAssistanceHandler) SaveSettings(c *gin.Context) {
 	var draft assistance.Draft

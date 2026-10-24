@@ -34,7 +34,7 @@ func CORS(cfg *config.ServerConfig) gin.HandlerFunc {
 		}
 
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie, X-CSRF-Token, Range")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie, X-CSRF-Token, Range, Idempotency-Key")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)

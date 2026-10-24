@@ -146,6 +146,7 @@ func New(cfg *config.Config) *gin.Engine {
 		assistanceHandler := handler.NewAIAssistanceHandler(cfg)
 		assistance := v1.Group("/ai-assistance", middleware.JWTAuth(cfg))
 		assistance.GET("/settings", assistanceHandler.Settings)
+		assistance.POST("/hpo-cache", assistanceHandler.CachedHPO)
 		assistance.PUT("/settings", middleware.RequireAdmin(), middleware.IPRateLimit(10, time.Minute), assistanceHandler.SaveSettings)
 		assistance.POST("/settings/test", middleware.RequireAdmin(), middleware.IPRateLimit(3, time.Minute), assistanceHandler.TestProvider)
 		assistance.POST("/requests", middleware.IPRateLimit(30, time.Minute), assistanceHandler.DecodeInput, taskHandler.InterpretationEditGuard, assistanceHandler.Generate)
