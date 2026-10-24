@@ -53,7 +53,7 @@ var progressProfiles = map[string]progressProfile{
 	}},
 }
 
-var scatterSuffix = regexp.MustCompile(`_[0-9]+$`)
+var scatterSuffix = regexp.MustCompile(`(?:[-_][0-9]+)+$`)
 
 // NormalizeCallAlias reduces MiniWDL task names to their WDL call alias.
 func NormalizeCallAlias(name string) string {

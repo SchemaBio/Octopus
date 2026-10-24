@@ -2,9 +2,19 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/SchemaBio/Octopus/internal/model"
 )
+
+func TestDelayedRunningReportPreservesCVMArchivePhase(t *testing.T) {
+	now := time.Now().UTC()
+	task := &model.Task{Executor: model.ExecutorCVM, Status: model.TaskStatusRunning, ExecutionPhase: "archiving", Progress: 99, PhaseUpdatedAt: &now}
+	changed, completed := applySepiidaWorkflowStatus(task, model.SepiidaStatusRunning)
+	if changed || completed || task.ExecutionPhase != "archiving" || task.Progress != 99 || task.PhaseUpdatedAt != &now {
+		t.Fatalf("stale running report changed archive phase: %+v", task)
+	}
+}
 
 func TestApplySepiidaWorkflowStatusDoesNotFailCVMFromSepiida(t *testing.T) {
 	task := &model.Task{

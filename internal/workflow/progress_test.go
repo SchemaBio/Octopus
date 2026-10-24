@@ -54,12 +54,34 @@ func TestCalculateAnalysisProgressCompletionAndUnknownTemplate(t *testing.T) {
 
 func TestNormalizeCallAlias(t *testing.T) {
 	for input, want := range map[string]string{
-		"call-Fastp_2":      "Fastp",
-		"SingleWES.Fastp_0": "Fastp",
-		"workflow/Whatshap": "Whatshap",
+		"call-Fastp_2":         "Fastp",
+		"SingleWES.Fastp_0":    "Fastp",
+		"workflow/Whatshap":    "Whatshap",
+		"call-Fastp-0":         "Fastp",
+		"call-Markdup-1":       "Markdup",
+		"call-VEP_Parallel-23": "VEP_Parallel",
+		"call-Whatshap-02":     "Whatshap",
+		"call-Nested-0-12":     "Nested",
 	} {
 		if got := NormalizeCallAlias(input); got != want {
 			t.Errorf("NormalizeCallAlias(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestTrioProgressCountsActualMiniWDLScatterNames(t *testing.T) {
+	var tasks []model.SepiidaTask
+	for _, alias := range []string{"Fastp", "BwaAlign", "Markdup", "SamtoolsSexCheck", "Xamdst", "MtXamdst", "CollectQCMetrics", "FingerPrint", "QCReport"} {
+		for _, shard := range []string{"0", "1", "2"} {
+			tasks = append(tasks, model.SepiidaTask{JobName: "call-" + alias + "-" + shard, Status: model.SepiidaStatusSuccess})
+		}
+	}
+	tasks = append(tasks, model.SepiidaTask{JobName: "call-VEP_Parallel-00", Status: model.SepiidaStatusRunning})
+	progress := CalculateAnalysisProgress("trio", tasks, false)
+	if progress.Stages[1].Percent != 100 || progress.Stages[2].Percent != 100 || progress.Percent < 45 {
+		t.Fatalf("completed trio alignment/QC must count: %+v", progress)
+	}
+	if len(progress.ActiveStages) != 1 || progress.ActiveStages[0] != "family_variants" {
+		t.Fatalf("VEP shard must activate family analysis: %+v", progress.ActiveStages)
 	}
 }

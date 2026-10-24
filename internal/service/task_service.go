@@ -288,6 +288,10 @@ func applySepiidaWorkflowStatus(task *model.Task, status model.SepiidaStatus) (c
 	}
 	switch status {
 	case model.SepiidaStatusRunning:
+		// A delayed progress report must not undo the newer CVM archive phase.
+		if task.Executor == model.ExecutorCVM && task.ExecutionPhase == "archiving" {
+			return false, false
+		}
 		phaseChanged := task.ExecutionPhase != "running"
 		if task.Status != model.TaskStatusRunning || phaseChanged || task.StartedAt == nil {
 			task.Status = model.TaskStatusRunning
@@ -2919,6 +2923,15 @@ func buildCVMWDLInputs(template, genome string, taskInputs map[string]interface{
 	inputs["reference_genome"] = genome
 	if content, ok := taskInputs["TrioWES.ped_content"]; ok {
 		inputs["TrioWES.ped_content"] = content
+	}
+	if template == "trio" {
+		// These are task metadata, not WDL inputs, but must survive conversion
+		// until the immutable task snapshot and admission estimate are saved.
+		for _, key := range []string{"trio_members", "trio_input_bytes"} {
+			if value, ok := taskInputs[key]; ok {
+				inputs[key] = value
+			}
+		}
 	}
 
 	switch template {

@@ -7,7 +7,7 @@ type SNVIndel struct {
 	TaskID              string             `json:"taskId" gorm:"size:36;index"`
 	Chromosome          string             `json:"chromosome" gorm:"size:10"`
 	Position            int64              `json:"position"`
-	VariantID           string             `json:"variantId,omitempty" gorm:"size:100"`
+	VariantID           string             `json:"variantId,omitempty" gorm:"type:text"` // Includes complete REF/ALT alleles for long Indels.
 	Ref                 string             `json:"ref" gorm:"size:1000"`
 	Alt                 string             `json:"alt" gorm:"size:1000"`
 	VariantType         string             `json:"variantType" gorm:"size:20"` // SNP, DEL, INS

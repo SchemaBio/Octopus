@@ -22,7 +22,7 @@ type VariantReviewEvent struct {
 	ExecutionAttemptID  string              `json:"executionAttemptId" gorm:"size:36;index;not null"`
 	ImportBatchID       uint                `json:"importBatchId" gorm:"index"`
 	VariantType         string              `json:"variantType" gorm:"size:30;index;not null"`
-	VariantID           string              `json:"variantId" gorm:"size:100;index;not null"`
+	VariantID           string              `json:"variantId" gorm:"type:text;index;not null"`
 	VariantFingerprint  string              `json:"variantFingerprint" gorm:"size:64;index;not null"`
 	HistoryGroupKey     string              `json:"historyGroupKey" gorm:"size:500;index;not null"`
 	Action              VariantReviewAction `json:"action" gorm:"size:20;index;not null"`

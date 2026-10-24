@@ -194,6 +194,38 @@ func TestTrioPEDStatusSnapshotAndTotalEstimate(t *testing.T) {
 	}
 }
 
+func TestTrioWDLConversionPreservesAdmissionEstimateAndMemberSnapshot(t *testing.T) {
+	for _, genome := range []string{"hg19", "hg38"} {
+		t.Run(genome, func(t *testing.T) {
+			total := int64(29995918382)
+			snapshot := []model.TrioMemberSnapshot{{Role: "proband", SampleID: "child"}, {Role: "father", SampleID: "father", AffectedStatus: "carrier"}, {Role: "mother", SampleID: "mother"}}
+			inputs, err := buildCVMWDLInputs("trio", genome, map[string]interface{}{"trio_input_bytes": total, "trio_members": snapshot})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := trioEstimatedMinutes(inputs); got != 168 {
+				t.Fatalf("admission estimate=%d, want six-file estimate 168", got)
+			}
+			raw, err := json.Marshal(inputs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			task := model.Task{InputJSON: string(raw)}
+			members := task.ToResponse().TrioMembers
+			if len(members) != 3 || members[1].SampleID != "father" || members[1].AffectedStatus != "carrier" {
+				t.Fatalf("member snapshot lost during WDL conversion: %+v", members)
+			}
+			var persisted map[string]interface{}
+			if err := json.Unmarshal(raw, &persisted); err != nil {
+				t.Fatal(err)
+			}
+			if trioEstimatedMinutes(persisted) != 168 {
+				t.Fatal("persisted estimate changed")
+			}
+		})
+	}
+}
+
 func TestTrioReadinessDoesNotReloadOrRewriteCurrentSample(t *testing.T) {
 	original := `{"TrioWES.meta_info":{"members":["proband","father","mother"],"read_1":["old-c1","old-f1","old-m1"],"read_2":["old-c2","old-f2","old-m2"]},"trio_members":[{"role":"father","sample_id":"old-father","affected_status":"carrier"}]}`
 	task := &model.Task{Template: "trio", Executor: model.ExecutorCVM, SampleIDRef: 42, InputJSON: original}
