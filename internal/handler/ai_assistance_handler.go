@@ -12,6 +12,7 @@ import (
 	"github.com/SchemaBio/Octopus/internal/middleware"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/SchemaBio/Octopus/internal/repository"
+	"github.com/SchemaBio/Octopus/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -126,6 +127,23 @@ func (h *AIAssistanceHandler) Generate(c *gin.Context) {
 		return
 	}
 	in := value.(assistance.Input)
+	if in.Feature == "acmg" {
+		task, allowed := requireTaskAccess(c, h.tasks, in.TaskID)
+		if !allowed {
+			return
+		}
+		if reference := service.TaskReferenceGenome(task); reference != "" {
+			in.Reference = reference
+		}
+		if task.SampleID != "" {
+			sample, err := repository.NewSampleRepository().FindScopedByUUID(task.SampleID, taskActorFromContext(c))
+			if err != nil {
+				ErrorNotFound(c, "关联样本不可用")
+				return
+			}
+			in.SampleContext = acmgSampleContext(sample)
+		}
+	}
 	scope, org, user := aiIdentity(c)
 	r, err := h.svc.Submit(c.Request.Context(), scope, org, user, strings.TrimSpace(c.GetHeader("Idempotency-Key")), in)
 	if err != nil {

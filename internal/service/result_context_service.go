@@ -277,6 +277,9 @@ func taskReferenceID(task *model.Task) string {
 	return ""
 }
 
+// TaskReferenceGenome resolves the immutable execution inputs for AI context.
+func TaskReferenceGenome(task *model.Task) string { return taskReferenceID(task) }
+
 func findReferenceString(value interface{}) string {
 	return findReferenceValue(value, []string{"assembly", "reference_genome", "referenceGenome", "genome", "fasta"})
 }

@@ -37,7 +37,10 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 		return "", nil, errors.New("AI provider profile required")
 	}
 	c, v := in.ClinicalContext, in.Variant
-	if c.DiseaseID == "" || c.Inheritance == "" {
+	if in.Feature == "acmg" {
+		c = Context{Inheritance: "unknown", SampleType: "unknown", VariantOrigin: "unknown"}
+	}
+	if in.Feature != "acmg" && (c.DiseaseID == "" || c.Inheritance == "") {
 		return "", nil, errors.New("disease and inheritance required")
 	}
 	if c.SampleType == "" {
@@ -58,23 +61,40 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 		return "", nil, errors.New("chromosome required")
 	}
 	ctx := map[string]any{"disease_id": c.DiseaseID, "inheritance": c.Inheritance, "sample_type": c.SampleType, "variant_origin": c.VariantOrigin}
+	// HPO IDs are context supplied by the user, never verified PP4 evidence.
+	if len(c.HPOTerms) > 0 {
+		ctx["hpo_terms"] = c.HPOTerms
+	}
 	opts := map[string]any{"provider_profile_id": profile}
 	pkg := map[string]any{"sources": []any{}}
+	if in.Feature == "acmg" {
+		pkg["ai_context"] = map[string]any{"variant_annotations": acmgVariantAnnotations(v), "sample": in.SampleContext}
+	}
 	body := map[string]any{"schema_version": "sepilens-evaluation-2.0", "mode": "ai_assisted", "engine_id": eng, "options": opts, "clinical_context": ctx, "evidence_package": pkg}
 	if in.Feature == "acmg" || in.Feature == "svcv4" {
-		if c.DiseaseID == "" || c.Inheritance == "" {
+		if in.Feature != "acmg" && (c.DiseaseID == "" || c.Inheritance == "") {
 			return "", nil, errors.New("disease and inheritance required")
 		}
-		if text(v["gene"]) == "" {
+		if in.Feature != "acmg" && text(v["gene"]) == "" {
 			return "", nil, errors.New("gene required")
 		}
 		variant := map[string]any{"assembly": asm, "chrom": chrom, "pos": number(v["position"]), "ref": strings.ToUpper(text(v["ref"])), "alt": strings.ToUpper(text(v["alt"])), "gene": text(v["gene"])}
+		if in.Feature == "acmg" && !canonicalAIGene.MatchString(text(v["gene"])) {
+			variant["gene"] = ""
+		}
 		for from, to := range map[string]string{"transcript": "transcript", "hgvsc": "hgvs_c", "hgvsp": "hgvs_p", "consequence": "consequence"} {
 			if value := text(v[from]); value != "" {
+				if in.Feature == "acmg" && (len(value) > 512 || strings.ContainsAny(value, " \t\r\n\"<>{}")) {
+					continue
+				}
 				variant[to] = value
 			}
 		}
 		body["variant"] = variant
+		// Overall AF must not be relabelled as population maximum AF or FAF95.
+		if af, ok := v["gnomadAF"].(float64); ok {
+			variant["allele_frequency"] = af
+		}
 		if in.Feature == "svcv4" {
 			if in.Mode != "experimental" || c.VariantOrigin != "germline_confirmed" {
 				return "", nil, errors.New("SVC draft requires experimental mode and explicitly confirmed germline origin")
@@ -107,6 +127,7 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 		r := record()
 		r["classification"] = value
 		r["review_status"] = text(v["clinvarReviewStatus"])
+		r["variation_id"] = text(v["clinvarId"])
 		annotations["clinvar"] = r
 	}
 	if value, ok := v["gnomadPopmaxAF"].(float64); ok {
@@ -211,6 +232,13 @@ func NormalizeResult(feature, model string, raw map[string]any) (Result, bool, e
 			return r, false, errors.New("invalid v2 AI result")
 		}
 		r.Summary = "AI 注释证据整理完成，请逐条复核。"
+		if summary := text(ai["clinical_summary"]); summary != "" {
+			r.Summary = summary
+		}
+		r.SuggestedClassification = text(ai["classification"])
+		if text(proposal["retrieval_status"]) == "unavailable" {
+			r.Warnings = append(r.Warnings, "外部文献检索不可用，以下建议未完成文献核验；不可将检索失败理解为没有相关证据。")
+		}
 		if criteria, ok := ai["criteria"].([]any); ok {
 			for _, item := range criteria {
 				if c, ok := item.(map[string]any); ok {
@@ -220,7 +248,7 @@ func NormalizeResult(feature, model string, raw map[string]any) (Result, bool, e
 						reason = text(c["override_reason"])
 					}
 					if code != "" {
-						r.Evidence = append(r.Evidence, map[string]string{"code": code, "reason": reason})
+						r.Evidence = append(r.Evidence, map[string]string{"code": code, "reason": reason, "status": text(c["status"]), "strength": text(c["strength"])})
 					}
 				}
 			}

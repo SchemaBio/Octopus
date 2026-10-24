@@ -58,6 +58,51 @@ func TestV2JobIdentifiers(t *testing.T) {
 	}
 }
 
+func TestACMGTaskContextAndStructuredAIResult(t *testing.T) {
+	in := Input{Feature: "acmg", Reference: "hg38", TaskID: "private-task", Variant: map[string]any{"chromosome": "chr1", "position": float64(100), "ref": "A", "alt": "G", "gene": "TEST", "gnomadAF": 0.0, "clinvarSignificance": "Uncertain significance", "clinvarReviewStatus": "criteria provided", "clinvarId": "123"}, ClinicalContext: Context{DiseaseID: "MONDO:0000001", Inheritance: "AD", SampleType: "blood", HPOTerms: []string{"HP:0001250"}}}
+	_, payload, err := BuildPayload(in, "profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload["variant"].(map[string]any)["allele_frequency"] != 0.0 {
+		t.Fatal("zero AF dropped")
+	}
+	if payload["clinical_context"].(map[string]any)["inheritance"] != "unknown" {
+		t.Fatal("invented inheritance")
+	}
+	pkg := payload["evidence_package"].(map[string]any)
+	annotations := pkg["annotations"].(map[string]any)
+	if annotations["gnomad"] != nil || annotations["clinvar"].(map[string]any)["status"] != "caller_supplied" {
+		t.Fatal("invented population AF or trusted annotation")
+	}
+	encoded, _ := json.Marshal(payload)
+	if strings.Contains(string(encoded), "private-task") {
+		t.Fatal("task ID sent upstream")
+	}
+	r, bill, err := NormalizeResult("acmg", "synthetic", map[string]any{"schema_version": "sepilens-evaluation-2.0", "delivery_status": "delivered", "result_kind": "evidence_only", "agent_proposal": map[string]any{"ai_assessment": map[string]any{"classification": "VUS", "criteria": []any{map[string]any{"code": "PM2", "status": "insufficient_data", "strength": "Supporting", "override_reason": "coverage missing"}}}}})
+	if err != nil || bill || r.Classification != "" || r.SuggestedClassification != "VUS" || r.Evidence[0]["status"] != "insufficient_data" || r.Evidence[0]["strength"] != "Supporting" {
+		t.Fatal(r, bill, err)
+	}
+}
+
+func TestACMGNeedsNoManualContextAndPreservesAllClinicalAnnotations(t *testing.T) {
+	in := Input{Feature: "acmg", Reference: "hg38", Variant: map[string]any{"gene": "TEST1;TEST2", "chromosome": "1", "position": float64(100), "ref": "A", "alt": "G", "id": "private-row", "annotationValues": map[string]any{"SIFT_pred": "deleterious", "GT": "0/1", "API_KEY": "private", "Sample_ID": "private"}}, SampleContext: map[string]any{"gender": "female", "hpo_terms": []any{map[string]any{"id": "HP:0001250"}}}}
+	_, p, err := BuildPayload(in, "profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(p)
+	if strings.Contains(string(raw), "private") || !strings.Contains(string(raw), "SIFT_pred") || !strings.Contains(string(raw), "HP:0001250") {
+		t.Fatal("clinical context omitted or operational metadata included")
+	}
+	if p["variant"].(map[string]any)["gene"] != "" {
+		t.Fatal("multiple genes treated as one canonical gene")
+	}
+	if p["clinical_context"].(map[string]any)["disease_id"] != "" {
+		t.Fatal("invented disease ID")
+	}
+}
+
 func TestV2HPOAIExtractionDoesNotPersistOriginal(t *testing.T) {
 	s, calls := integrationService(t)
 	r, err := s.Submit(context.Background(), "org:a", "a", 1, "hpo-memory", Input{Feature: "hpo", Diagnosis: "private phenotype text"})

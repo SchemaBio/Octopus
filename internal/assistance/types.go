@@ -96,7 +96,9 @@ type Input struct {
 	Variant         map[string]any  `json:"variant"`
 	Calculator      json.RawMessage `json:"calculator"`
 	ClinicalContext Context         `json:"clinicalContext"`
-	ConfirmedCharge bool            `json:"confirmedCharge"`
+	// Clinical fields loaded under task/sample access checks, never browser input.
+	SampleContext   map[string]any `json:"-"`
+	ConfirmedCharge bool           `json:"confirmedCharge"`
 }
 type StoredInput struct {
 	Input          Input
@@ -128,21 +130,22 @@ type PublicSettings struct {
 	ServiceVersion string                `json:"serviceVersion,omitempty"`
 }
 type Result struct {
-	Feature            string              `json:"feature"`
-	Model              string              `json:"model,omitempty"`
-	GeneratedAt        string              `json:"generatedAt"`
-	Summary            string              `json:"summary"`
-	Classification     string              `json:"classification,omitempty"`
-	Evidence           []map[string]string `json:"evidence,omitempty"`
-	HPOTerms           []HPOTerm           `json:"hpoTerms,omitempty"`
-	Warnings           []string            `json:"warnings,omitempty"`
-	AgentProposal      any                 `json:"agentProposal,omitempty"`
-	RuleEngineResult   any                 `json:"ruleEngineResult,omitempty"`
-	ReviewerDecision   any                 `json:"reviewerDecision,omitempty"`
-	ResultKind         string              `json:"resultKind,omitempty"`
-	ExperimentalResult any                 `json:"experimentalResult,omitempty"`
-	RulesetHash        string              `json:"rulesetHash,omitempty"`
-	DatasetHash        string              `json:"datasetHash,omitempty"`
+	Feature                 string              `json:"feature"`
+	Model                   string              `json:"model,omitempty"`
+	GeneratedAt             string              `json:"generatedAt"`
+	Summary                 string              `json:"summary"`
+	Classification          string              `json:"classification,omitempty"`
+	SuggestedClassification string              `json:"suggestedClassification,omitempty"`
+	Evidence                []map[string]string `json:"evidence,omitempty"`
+	HPOTerms                []HPOTerm           `json:"hpoTerms,omitempty"`
+	Warnings                []string            `json:"warnings,omitempty"`
+	AgentProposal           any                 `json:"agentProposal,omitempty"`
+	RuleEngineResult        any                 `json:"ruleEngineResult,omitempty"`
+	ReviewerDecision        any                 `json:"reviewerDecision,omitempty"`
+	ResultKind              string              `json:"resultKind,omitempty"`
+	ExperimentalResult      any                 `json:"experimentalResult,omitempty"`
+	RulesetHash             string              `json:"rulesetHash,omitempty"`
+	DatasetHash             string              `json:"datasetHash,omitempty"`
 }
 type HPOTerm struct {
 	ID        string `json:"id"`
