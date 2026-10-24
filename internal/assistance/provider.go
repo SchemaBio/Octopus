@@ -32,7 +32,7 @@ func (s *Service) TestProvider(ctx context.Context, draft Draft, user uint, org 
 	var result struct {
 		Capabilities map[string]string `json:"capabilities"`
 	}
-	_, err = s.Client.Call(probe, "POST", "/v1/providers/test", "", map[string]any{"base_url": draft.BaseURL, "api_key": draft.APIKey, "model": draft.Model, "protocol": draft.Protocol}, &result)
+	_, err = s.Client.Call(probe, "POST", "/v2/providers/test", "", map[string]any{"base_url": draft.BaseURL, "api_key": draft.APIKey, "model": draft.Model, "protocol": draft.Protocol}, &result)
 	if err != nil {
 		return nil, errors.New("model capability probe unavailable")
 	}

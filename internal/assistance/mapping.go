@@ -19,20 +19,27 @@ func assembly(s string) string {
 	}
 	return ""
 }
+
+// BuildPayload exposes only SepiLens AI execution. Local evaluation is never
+// submitted, and an AI failure must never be replaced with its local baseline.
 func BuildPayload(in Input, profile string) (string, map[string]any, error) {
-	opts := map[string]any{"provider_profile_id": profile, "allow_local_fallback": false, "retrieval_mode": "targeted"}
 	if in.Feature == "hpo" {
-		if strings.TrimSpace(in.Diagnosis) == "" {
-			return "", nil, errors.New("clinical diagnosis required")
+		if strings.TrimSpace(in.Diagnosis) == "" || profile == "" {
+			return "", nil, errors.New("clinical text and provider profile required")
 		}
-		return "/v1/hpo/extract", map[string]any{"text": in.Diagnosis, "options": opts}, nil
+		return "/v2/hpo/extract", map[string]any{"text": in.Diagnosis, "options": map[string]any{"provider_profile_id": profile, "allow_local_fallback": false}}, nil
 	}
 	eng, ok := Engines[in.Feature]
 	if !ok {
 		return "", nil, errors.New("unknown AI feature")
 	}
-	v := in.Variant
-	c := in.ClinicalContext
+	if profile == "" {
+		return "", nil, errors.New("AI provider profile required")
+	}
+	c, v := in.ClinicalContext, in.Variant
+	if c.DiseaseID == "" || c.Inheritance == "" {
+		return "", nil, errors.New("disease and inheritance required")
+	}
 	if c.SampleType == "" {
 		return "", nil, errors.New("sample type required")
 	}
@@ -50,25 +57,22 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 	if chrom == "" {
 		return "", nil, errors.New("chromosome required")
 	}
-	ctx := map[string]any{"disease_id": c.DiseaseID, "sample_type": c.SampleType, "variant_origin": c.VariantOrigin, "hpo_terms": c.HPOTerms}
-	body := map[string]any{"engine_id": eng, "options": opts, "clinical_context": ctx}
+	ctx := map[string]any{"disease_id": c.DiseaseID, "inheritance": c.Inheritance, "sample_type": c.SampleType, "variant_origin": c.VariantOrigin}
+	opts := map[string]any{"provider_profile_id": profile}
+	pkg := map[string]any{"sources": []any{}}
+	body := map[string]any{"schema_version": "sepilens-evaluation-2.0", "mode": "ai_assisted", "engine_id": eng, "options": opts, "clinical_context": ctx, "evidence_package": pkg}
 	if in.Feature == "acmg" || in.Feature == "svcv4" {
 		if c.DiseaseID == "" || c.Inheritance == "" {
 			return "", nil, errors.New("disease and inheritance required")
 		}
-		ctx["inheritance"] = c.Inheritance
-		gene := text(v["gene"])
-		if gene == "" {
+		if text(v["gene"]) == "" {
 			return "", nil, errors.New("gene required")
 		}
-		variant := map[string]any{"assembly": asm, "chrom": chrom, "pos": number(v["position"]), "ref": strings.ToUpper(text(v["ref"])), "alt": strings.ToUpper(text(v["alt"])), "gene": gene}
+		variant := map[string]any{"assembly": asm, "chrom": chrom, "pos": number(v["position"]), "ref": strings.ToUpper(text(v["ref"])), "alt": strings.ToUpper(text(v["alt"])), "gene": text(v["gene"])}
 		for from, to := range map[string]string{"transcript": "transcript", "hgvsc": "hgvs_c", "hgvsp": "hgvs_p", "consequence": "consequence"} {
-			if s := text(v[from]); s != "" {
-				variant[to] = s
+			if value := text(v[from]); value != "" {
+				variant[to] = value
 			}
-		}
-		if af, ok := v["gnomadAF"].(float64); ok {
-			variant["allele_frequency"] = af
 		}
 		body["variant"] = variant
 		if in.Feature == "svcv4" {
@@ -79,9 +83,8 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 			if json.Unmarshal(in.DraftAssessment, &method) != nil || method["upstream_commit"] == nil || method["moi"] != c.Inheritance {
 				return "", nil, errors.New("SVC structured draft and matching inheritance required")
 			}
-			body["draft_assessment"] = method
+			pkg["draft_assessment"] = method
 			opts["allow_experimental"] = true
-			opts["retrieval_mode"] = "off"
 		}
 	} else {
 		typ := "gain"
@@ -94,29 +97,32 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 		}
 		body["cnv"] = cnv
 	}
-	// Annotation and calculator material is explicitly unverified. It cannot
-	// assert facts, provenance, applied scores or reviewer approval.
-	allowed := map[string]bool{}
-	for _, k := range strings.Fields("gene genes clinvarSignificance clinvarReviewStatus clinvarStars clinvarDisease gnomadAF gnomadEasAF alphaMissenseScore pangolinGain pangolinLoss evoScore diseaseAssociation inheritanceMode copyNumber copyRatio confidence exon") {
-		allowed[k] = true
+	// Browser annotation values have no verified dataset version or record identity.
+	// Preserve that distinction rather than inventing trusted sources or criteria.
+	annotations := map[string]any{"source": "caller_supplied"}
+	record := func() map[string]any {
+		return map[string]any{"source": "caller_supplied", "status": "caller_supplied", "version": "unverified", "assembly": asm}
 	}
-	annotations := map[string]any{}
-	for k, v := range v {
-		if allowed[k] {
-			annotations[k] = v
-		}
+	if value := text(v["clinvarSignificance"]); value != "" {
+		r := record()
+		r["classification"] = value
+		r["review_status"] = text(v["clinvarReviewStatus"])
+		annotations["clinvar"] = r
 	}
-	var draft any
-	if len(in.Calculator) > 0 {
-		_ = json.Unmarshal(in.Calculator, &draft)
+	if value, ok := v["gnomadPopmaxAF"].(float64); ok {
+		r := record()
+		r["popmax_af"] = value
+		annotations["gnomad"] = r
 	}
-	snippet, _ := json.Marshal(map[string]any{"annotations": annotations, "calculator_draft": sanitizeDraft(draft)})
-	body["sources"] = []any{map[string]any{"id": "platform-draft", "type": "curated_snapshot", "title": "Platform annotation and unreviewed calculator draft", "snippet": string(snippet), "retrieved_at": time.Now().UTC().Format(time.RFC3339), "validation_status": "unverified", "identifier_valid": false, "record_exists": false, "object_matched": false, "material_verified": false, "full_text_available": false, "case_count": 0}}
-	path := "/v1/variants/snv/evaluations"
-	if strings.HasPrefix(in.Feature, "cnv_") {
-		path = "/v1/variants/cnv/evaluations"
+	if value, ok := v["alphaMissenseScore"].(float64); ok {
+		r := record()
+		r["score"] = value
+		annotations["alphamissense"] = r
 	}
-	return path, body, nil
+	if len(annotations) > 1 {
+		pkg["annotations"] = annotations
+	}
+	return "/v2/evaluations", body, nil
 }
 func sanitizeDraft(v any) any {
 	switch x := v.(type) {
@@ -191,11 +197,50 @@ func NormalizeResult(feature, model string, raw map[string]any) (Result, bool, e
 	r.ReviewerDecision = raw["reviewer_decision"]
 	proposal, _ := r.AgentProposal.(map[string]any)
 	if experimental, ok := proposal["experimental_result"].(map[string]any); ok {
+		if _, model := proposal["ai_assessment"].(map[string]any); !model {
+			return r, false, errors.New("missing AI proposal")
+		}
 		r.ExperimentalResult = experimental
 		r.ResultKind = "experimental"
 		r.Summary = "SVC 锁定草案实验评分，仅供研究与工程对照。"
 		r.Warnings = []string{"输入未经核验；禁止临床用途、人工审核采纳和积分结算。"}
 		return r, false, nil
+	}
+	if ai, ok := proposal["ai_assessment"].(map[string]any); ok {
+		if text(raw["schema_version"]) != "sepilens-evaluation-2.0" || text(raw["failure_code"]) != "" {
+			return r, false, errors.New("invalid v2 AI result")
+		}
+		r.Summary = "AI 注释证据整理完成，请逐条复核。"
+		if criteria, ok := ai["criteria"].([]any); ok {
+			for _, item := range criteria {
+				if c, ok := item.(map[string]any); ok {
+					code := text(c["code"])
+					reason := text(c["reason"])
+					if reason == "" {
+						reason = text(c["override_reason"])
+					}
+					if code != "" {
+						r.Evidence = append(r.Evidence, map[string]string{"code": code, "reason": reason})
+					}
+				}
+			}
+		}
+		if result, ok := r.RuleEngineResult.(map[string]any); ok {
+			r.Classification = text(result["classification"])
+			if missing, ok := result["missing_information"].([]any); ok {
+				for _, item := range missing {
+					if value := text(item); value != "" {
+						r.Warnings = append(r.Warnings, value)
+					}
+				}
+			}
+		}
+		r.Warnings = append(r.Warnings, "模型建议、规则结果与人工判定分别保存；本结果尚未由人工采纳。")
+		eligible, _ := raw["settlement_eligible"].(bool)
+		return r, eligible && suggestionBillingPolicy(r.ResultKind, false), nil
+	}
+	if text(raw["schema_version"]) == "sepilens-evaluation-2.0" {
+		return r, false, errors.New("missing v2 AI proposal")
 	}
 	p := proposal
 	hasModel := false

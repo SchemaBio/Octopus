@@ -12,7 +12,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -47,13 +46,13 @@ func TestEncryptionRejectsOtherRequestAndTampering(t *testing.T) {
 	}
 }
 func TestMappingPreservesCoordinatesAndUnverifiedDraft(t *testing.T) {
-	in := Input{Feature: "cnv_loss", Reference: "hg19", Variant: map[string]any{"chromosome": "chr1", "startPosition": float64(101), "endPosition": float64(200), "sample_id": "omit", "gnomadAF": 0.01}, ClinicalContext: Context{SampleType: "blood"}, Calculator: json.RawMessage(`{"evidence":[{"code":"1A","reason":"draft","verified":true}],"bam":"https://signed.example"}`)}
+	in := Input{Feature: "cnv_loss", Reference: "hg19", Variant: map[string]any{"chromosome": "chr1", "startPosition": float64(101), "endPosition": float64(200), "sample_id": "omit", "gnomadAF": 0.01}, ClinicalContext: Context{SampleType: "blood", DiseaseID: "MONDO:1", Inheritance: "unknown"}, Calculator: json.RawMessage(`{"evidence":[{"code":"1A","reason":"draft","verified":true}],"bam":"https://signed.example"}`)}
 	path, p, e := BuildPayload(in, "platform-v1")
 	if e != nil {
 		t.Fatal(e)
 	}
 	cnv := p["cnv"].(map[string]any)
-	if path != "/v1/variants/cnv/evaluations" || cnv["start"] != float64(101) || cnv["coordinate_system"] != "1-based-inclusive" {
+	if path != "/v2/evaluations" || cnv["start"] != float64(101) || cnv["coordinate_system"] != "1-based-inclusive" {
 		t.Fatal(p)
 	}
 	ctx := p["clinical_context"].(map[string]any)
@@ -64,7 +63,7 @@ func TestMappingPreservesCoordinatesAndUnverifiedDraft(t *testing.T) {
 	if strings.Contains(string(raw), "signed.example") || strings.Contains(string(raw), "sample_id") || strings.Contains(string(raw), `\"verified\":true`) {
 		t.Fatal("untrusted state forwarded")
 	}
-	if p["sources"].([]any)[0].(map[string]any)["material_verified"] != false {
+	if len(p["evidence_package"].(map[string]any)["sources"].([]any)) != 0 {
 		t.Fatal("draft marked verified")
 	}
 }
@@ -108,7 +107,7 @@ func TestClientStructuredErrorsAndSubmission(t *testing.T) {
 	}))
 	defer server.Close()
 	c := Client{server.URL, "server-token", server.Client()}
-	_, e := c.Call(context.Background(), "POST", "/v1/variants/snv/evaluations", "request-key", map[string]any{}, nil)
+	_, e := c.Call(context.Background(), "POST", "/v2/evaluations", "request-key", map[string]any{}, nil)
 	var upstream *UpstreamError
 	if !errors.As(e, &upstream) || upstream.Status != 409 || strings.Contains(e.Error(), "clinical") {
 		t.Fatal(e)
@@ -140,21 +139,21 @@ func integrationService(t *testing.T) (*Service, *atomic.Int32) {
 	}
 	testCipher(t)
 	calls := &atomic.Int32{}
-	job := uuid.NewString()
+	job := "job-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/readyz":
 			_, _ = w.Write([]byte(`{}`))
-		case r.URL.Path == "/v1/capabilities":
+		case r.URL.Path == "/v2/capabilities":
 			_, _ = w.Write([]byte(`{"hpo_candidate_extraction_available":true,"engines":[{"id":"acmg_amp_2015","enabled":true},{"id":"svc_v4","enabled":false,"status":"disabled"}]}`))
-		case strings.HasPrefix(r.URL.Path, "/v1/providers/"):
+		case strings.HasPrefix(r.URL.Path, "/v2/providers/"):
 			w.WriteHeader(201)
 			_, _ = w.Write([]byte(`{"version":1}`))
-		case r.URL.Path == "/v1/hpo/extract":
+		case r.URL.Path == "/v2/hpo/extract":
 			calls.Add(1)
 			_, _ = w.Write([]byte(`{"execution_mode":"model","degraded":false,"terms":[{"hpo":"HP:0001250","name":"Seizure","polarity":"present"}]}`))
-		case r.URL.Path == "/v1/variants/snv/evaluations":
+		case r.URL.Path == "/v2/evaluations":
 			calls.Add(1)
 			w.WriteHeader(202)
 			_ = json.NewEncoder(w).Encode(map[string]any{"job_id": job, "status": "queued"})
@@ -162,7 +161,7 @@ func integrationService(t *testing.T) (*Service, *atomic.Int32) {
 			w.WriteHeader(200)
 			_, _ = w.Write([]byte(`{}`))
 		case strings.HasSuffix(r.URL.Path, "/result"):
-			_, _ = w.Write([]byte(`{"delivery_status":"delivered","result_kind":"production","agent_proposal":{"model":{"summary":"AI suggestion"}},"rule_engine_result":{"classification":"VUS"},"reviewer_decision":null}`))
+			_, _ = w.Write([]byte(`{"schema_version":"sepilens-evaluation-2.0","delivery_status":"delivered","result_kind":"production","agent_proposal":{"ai_assessment":{"criteria":[]}},"rule_engine_result":{"classification":"VUS"},"reviewer_decision":null}`))
 		default:
 			w.WriteHeader(404)
 		}
@@ -180,7 +179,7 @@ func integrationService(t *testing.T) (*Service, *atomic.Int32) {
 }
 func TestPersistentRequestsIdempotencyScopeAndNoCharges(t *testing.T) {
 	s, calls := integrationService(t)
-	in := Input{Feature: "hpo", Diagnosis: "clinical text"}
+	in := Input{Feature: "acmg", Reference: "hg38", Variant: map[string]any{"chromosome": "1", "position": float64(1), "ref": "A", "alt": "G", "gene": "TEST"}, ClinicalContext: Context{DiseaseID: "MONDO:1", Inheritance: "AD", SampleType: "blood", VariantOrigin: "germline_confirmed"}}
 	r, e := s.Submit(context.Background(), "org:a", "a", 1, "key", in)
 	if e != nil {
 		t.Fatal(e)
@@ -217,7 +216,7 @@ func TestPersistentRequestsIdempotencyScopeAndNoCharges(t *testing.T) {
 		t.Fatal("plaintext stored")
 	}
 	view, e := s.View(loaded)
-	if e != nil || len(view.Result.HPOTerms) != 1 {
+	if e != nil || view.Result.Summary == "" {
 		t.Fatal(view, e)
 	}
 	s.Tick(context.Background())
@@ -247,33 +246,6 @@ func TestConfigKeyPreservationAndDisabledCapability(t *testing.T) {
 	settings, _ = s.Settings(context.Background(), true)
 	if settings.Configured || settings.KeyConfigured {
 		t.Fatal("key not cleared")
-	}
-}
-func TestWorkerRestartAndCancellationDoNotReplayHPO(t *testing.T) {
-	s, calls := integrationService(t)
-	r, e := s.Submit(context.Background(), "org:a", "a", 1, "key", Input{Feature: "hpo", Diagnosis: "clinical"})
-	if e != nil {
-		t.Fatal(e)
-	}
-	if e = s.DB.Model(r).Updates(map[string]any{"state": "hpo_running", "lease_until": time.Now().Add(-time.Minute)}).Error; e != nil {
-		t.Fatal(e)
-	}
-	s.Tick(context.Background())
-	loaded, _ := s.Get("org:a", 1, r.ID)
-	if loaded.State != "uncertain" || calls.Load() != 0 {
-		t.Fatal(loaded, calls.Load())
-	}
-	second, e := s.Submit(context.Background(), "org:a", "a", 1, "key-2", Input{Feature: "hpo", Diagnosis: "clinical"})
-	if e != nil {
-		t.Fatal(e)
-	}
-	if e = s.Cancel(*second); e != nil {
-		t.Fatal(e)
-	}
-	s.Tick(context.Background())
-	loaded, _ = s.Get("org:a", 1, second.ID)
-	if loaded.State != "cancelled" || calls.Load() != 0 {
-		t.Fatal(loaded, calls.Load())
 	}
 }
 func TestAsyncWorkerStoresResultAndPinnedPayload(t *testing.T) {

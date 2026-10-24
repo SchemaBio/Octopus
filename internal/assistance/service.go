@@ -76,6 +76,7 @@ func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, err
 		Version string `json:"version"`
 		HPO     bool   `json:"hpo_candidate_extraction_available"`
 		Engines []struct {
+			AIAvailable  *bool  `json:"ai_available"`
 			ID           string `json:"id"`
 			Enabled      bool   `json:"enabled"`
 			Status       string `json:"status"`
@@ -83,7 +84,7 @@ func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, err
 			RulesetHash  string `json:"ruleset_hash"`
 		} `json:"engines"`
 	}
-	if _, err = s.Client.Call(probe, "GET", "/v1/capabilities", "", nil, &caps); err != nil {
+	if _, err = s.Client.Call(probe, "GET", "/v2/capabilities", "", nil, &caps); err != nil {
 		return out, nil
 	}
 	out.Connected = true
@@ -93,7 +94,7 @@ func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, err
 		if row.UpstreamID != "" && row.UpstreamID != s.upstreamID() {
 			out.Configured = false
 		}
-		if _, e := s.Client.Call(probe, "GET", "/v1/providers/"+settingsProfile(row), "", nil, nil); e != nil {
+		if _, e := s.Client.Call(probe, "GET", "/v2/providers/"+settingsProfile(row), "", nil, nil); e != nil {
 			out.Configured = false
 		}
 	}
@@ -106,15 +107,21 @@ func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, err
 		if feature == "hpo" {
 			mode = "candidate"
 		}
-		enabled := feature == "hpo" && caps.HPO
+		enabled := false
 		reason := "该引擎尚未开放"
 		for _, e := range caps.Engines {
 			if e.ID == engine {
 				rulesetHash = e.RulesetHash
 				enabled = e.Enabled
-				if feature == "svcv4" && e.Status == "experimental" && e.Experimental {
+				if e.AIAvailable != nil {
+					enabled = *e.AIAvailable
+				}
+				if feature == "svcv4" && e.Status == "experimental" && e.Experimental && (e.AIAvailable == nil || *e.AIAvailable) {
 					enabled = true
 					mode = "experimental"
+				}
+				if e.AIAvailable != nil && *e.AIAvailable && !e.Enabled && feature != "svcv4" {
+					mode = "candidate"
 				}
 				if e.Status != "" {
 					reason = "引擎状态：" + e.Status
@@ -123,6 +130,7 @@ func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, err
 		}
 		if feature == "hpo" {
 			enabled = caps.HPO
+			reason = "HPO AI 提取尚未就绪"
 		}
 		if !out.Configured {
 			enabled = false
@@ -184,7 +192,7 @@ func (s *Service) SaveSettingsAs(ctx context.Context, draft Draft, user uint, or
 			body := map[string]any{"base_url": draft.BaseURL, "api_key": draft.APIKey, "model": draft.Model, "protocol": draft.Protocol}
 			callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 			defer cancel()
-			if _, e := s.Client.Call(callCtx, "PUT", "/v1/providers/"+profile, "", body, nil); e != nil {
+			if _, e := s.Client.Call(callCtx, "PUT", "/v2/providers/"+profile, "", body, nil); e != nil {
 				return errors.New("SepiLens profile synchronization failed")
 			}
 			if e := tx.Create(&ProfileRecord{Version: version, ProfileID: profile, UpstreamID: s.upstreamID()}).Error; e != nil {
@@ -434,7 +442,7 @@ func (s *Service) retireProfiles(ctx context.Context) {
 			if id == "" {
 				id = fmt.Sprintf("platform-v%d", profile.Version)
 			}
-			_, e := s.Client.Call(ctx, "DELETE", "/v1/providers/"+id, "", nil, nil)
+			_, e := s.Client.Call(ctx, "DELETE", "/v2/providers/"+id, "", nil, nil)
 			var upstream *UpstreamError
 			if e != nil && !(errors.As(e, &upstream) && upstream.Status == 404) {
 				return e
@@ -563,7 +571,7 @@ func (s *Service) process(ctx context.Context, r Request) {
 			payload["text"] = text
 			callCtx, stop = s.observeHPOCancellation(ctx, r.ID)
 		}
-		_, e := s.Client.Call(callCtx, "POST", path, r.ID, payload, &raw)
+		submissionStatus, e := s.Client.Call(callCtx, "POST", path, r.ID, payload, &raw)
 		stop()
 		if e != nil {
 			var upstream *UpstreamError
@@ -592,6 +600,10 @@ func (s *Service) process(ctx context.Context, r Request) {
 			}
 			return
 		}
+		if submissionStatus != http.StatusAccepted {
+			_ = s.finish(r, "failed", "unexpected_sync_evaluation", nil, false)
+			return
+		}
 		id := text(raw["job_id"])
 		if id == "" {
 			_ = s.finish(r, "uncertain", "invalid_submission_response", nil, false)
@@ -606,11 +618,11 @@ func (s *Service) process(ctx context.Context, r Request) {
 	if s.DB.First(&latest, "id = ?", r.ID).Error == nil {
 		r.CancelRequested = latest.CancelRequested
 	}
-	if _, e := uuid.Parse(r.JobID); e != nil {
+	if !validJobID(r.JobID) {
 		_ = s.finish(r, "failed", "invalid_job_id", nil, false)
 		return
 	}
-	path := "/v1/jobs/" + r.JobID
+	path := "/v2/jobs/" + r.JobID
 	if r.CancelRequested {
 		_, err = s.Client.Call(ctx, "POST", path+"/cancel", "", map[string]any{}, nil)
 		if err == nil {
@@ -634,6 +646,10 @@ func (s *Service) process(ctx context.Context, r Request) {
 		return
 	}
 	if status == http.StatusAccepted {
+		return
+	}
+	if text(raw["schema_version"]) != "sepilens-evaluation-2.0" {
+		_ = s.finish(r, "failed", "invalid_result", nil, false)
 		return
 	}
 	result, bill, e := NormalizeResult(r.Feature, stored.Model, raw)

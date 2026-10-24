@@ -571,3 +571,9 @@ hg38 对应使用 `GRCh38` 的参考基因组和 VEP cache 文件。
 ## VCF 注释流程升级
 
 VCF2Anno 使用单一 vcf2anno.wdl，由 Octopus 配置 hg19/hg38 参考资源。执行端工作流包及 germline 镜像必须包含新增初始化、性别推算脚本和更新的报表脚本，固定调用 /opt/schema-germline/scripts/。升级时先准备执行环境，再更新 Squid（SaaS）、Octopus 和两个前端；Octopus 自动迁移性别阈值字段。具体参数与回归要求见 [VCF2Anno 接入说明](vcf2anno-integration.md)。
+
+## SepiLens v2 AI 证据整理
+
+YiJian 的个人设置中可配置模型地址、协议、名称和 API Key。Octopus 设置 AI_ASSISTANCE_BASE_URL 指向 SepiLens 内网服务，AI_ASSISTANCE_TOKEN 与 SepiLens 的服务身份密钥一致；AI_ASSISTANCE_MASTER_KEY 使用独立的 base64 32 字节随机密钥，保护已保存的模型配置。独立容器部署时 AI_ASSISTANCE_MANAGED_PROCESS=false。
+
+SepiLens 设置 SEPILENS_AI_MODE=enabled、SEPILENS_AI_ONLY=true，使用独立加密业务存储。默认要求规则签名；仅用于 AI 证据整理时，可显式设置 SEPILENS_REQUIRE_RULE_APPROVAL=false，未批准结果保持 evidence_only，不启用正式医学规则。此集成固定提交 v2 ai_assisted，拒绝本地评估，AI 失败不会回退为本地基线。HPO AI 提取调用 POST /v2/hpo/extract；原文仅在当前请求内存中保留，结束后清理，失败不回退到本地提取。不要把模型 Key 放入前端环境变量。

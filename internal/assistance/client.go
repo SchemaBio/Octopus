@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -29,10 +30,10 @@ type UpstreamError struct {
 func (e *UpstreamError) Error() string { return "SepiLens: " + e.Code }
 func (c *Client) Call(ctx context.Context, method, path, key string, body any, out any) (int, error) {
 	timeout := 15 * time.Second
-	if path == "/v1/hpo/extract" {
+	if path == "/v2/hpo/extract" {
 		timeout = 330 * time.Second
 	}
-	if path == "/v1/providers/test" {
+	if path == "/v2/providers/test" {
 		timeout = 40 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -133,3 +134,5 @@ func validServiceURL(raw string) bool {
 	u, e := url.Parse(raw)
 	return e == nil && u.Host != "" && u.User == nil && (u.Scheme == "http" || u.Scheme == "https") && u.RawQuery == "" && u.Fragment == ""
 }
+
+func validJobID(id string) bool { return regexp.MustCompile(`^job-[a-f0-9]{32}$`).MatchString(id) }

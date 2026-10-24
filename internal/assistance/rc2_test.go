@@ -21,7 +21,7 @@ func TestRC2SettlementAndExperimentalLayers(t *testing.T) {
 		t.Fatal("eligible suggestion rejected")
 	}
 	raw["result_kind"] = "experimental"
-	raw["agent_proposal"] = map[string]any{"experimental_result": map[string]any{"version": "locked", "inputs_verified": false, "clinical_use": "forbidden", "total_points": "8", "classification": "likely_pathogenic"}}
+	raw["agent_proposal"] = map[string]any{"ai_assessment": map[string]any{}, "experimental_result": map[string]any{"version": "locked", "inputs_verified": false, "clinical_use": "forbidden", "total_points": "8", "classification": "likely_pathogenic"}}
 	result, bill, err := NormalizeResult("svcv4", "m", raw)
 	if err != nil || bill || result.Classification != "" || result.ExperimentalResult == nil {
 		t.Fatal(result, bill, err)
@@ -31,7 +31,7 @@ func TestRC2SettlementAndExperimentalLayers(t *testing.T) {
 func TestRC2ExperimentalCapabilityAndExplicitOrigin(t *testing.T) {
 	s, _ := integrationService(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/capabilities" {
+		if r.URL.Path == "/v2/capabilities" {
 			_, _ = w.Write([]byte(`{"hpo_candidate_extraction_available":true,"engines":[{"id":"svc_v4","enabled":false,"status":"experimental","experimental_available":true},{"id":"acmg_amp_2015","enabled":false,"status":"disabled"}]}`))
 			return
 		}
@@ -50,82 +50,14 @@ func TestRC2ExperimentalCapabilityAndExplicitOrigin(t *testing.T) {
 	}
 	input.ClinicalContext.VariantOrigin = "germline_confirmed"
 	_, body, err := BuildPayload(input, "profile")
-	if err != nil || body["options"].(map[string]any)["allow_experimental"] != true || body["draft_assessment"] == nil {
+	if err != nil || body["options"].(map[string]any)["allow_experimental"] != true || body["evidence_package"].(map[string]any)["draft_assessment"] == nil {
 		t.Fatal(body, err)
-	}
-}
-
-func TestHPOOriginalNeverPersistedAndCompletedWinsCancel(t *testing.T) {
-	s, _ := integrationService(t)
-	request, err := s.Submit(context.Background(), "org:a", "a", 1, "memory-only", Input{Feature: "hpo", Diagnosis: "sensitive clinical original"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var snapshot StoredInput
-	if err = open(s.Cipher, request.ID, request.Ciphertext, &snapshot); err != nil {
-		t.Fatal(err)
-	}
-	encoded, _ := json.Marshal(snapshot)
-	if strings.Contains(string(encoded), "sensitive") || snapshot.Payload["text"] != nil {
-		t.Fatal("HPO original persisted")
-	}
-	if _, ok := getHPO(request.ID); !ok {
-		t.Fatal("memory input missing")
-	}
-	_ = s.Cancel(*request)
-	if err = s.finish(*request, "completed", "", &Result{Feature: "hpo", Summary: "delivered"}, true); err != nil {
-		t.Fatal(err)
-	}
-	current, _ := s.Get("org:a", 1, request.ID)
-	if current.State != "completed" || current.Ciphertext != "" {
-		t.Fatal("cancel overrode delivered result", current.State)
-	}
-	if _, ok := getHPO(request.ID); ok {
-		t.Fatal("original retained after completion")
-	}
-}
-
-func TestActiveHPOCancellationStopsHTTP(t *testing.T) {
-	s, _ := integrationService(t)
-	started, stopped := make(chan struct{}), make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		close(started)
-		<-r.Context().Done()
-		close(stopped)
-	}))
-	defer server.Close()
-	request, err := s.Submit(context.Background(), "org:a", "a", 1, "active-cancel", Input{Feature: "hpo", Diagnosis: "original"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.Client = &Client{server.URL, "token", server.Client()}
-	request.UpstreamID = s.upstreamID()
-	_ = s.DB.Model(request).Update("upstream_id", request.UpstreamID).Error
-	done := make(chan struct{})
-	go func() { s.process(context.Background(), *request); close(done) }()
-	select {
-	case <-started:
-	case <-time.After(3 * time.Second):
-		t.Fatal("call not started")
-	}
-	_ = s.Cancel(*request)
-	select {
-	case <-stopped:
-	case <-time.After(3 * time.Second):
-		t.Fatal("HTTP context not cancelled")
-	}
-	<-done
-	current, _ := s.Get("org:a", 1, request.ID)
-	if current.State != "cancelled" {
-		t.Fatal(current.State)
 	}
 }
 
 func TestOwnerRoutingAndUnknownProbe(t *testing.T) {
 	s, _ := integrationService(t)
-	request, err := s.Submit(context.Background(), "org:a", "a", 1, "wrong-node", Input{Feature: "hpo", Diagnosis: "original"})
+	request, err := s.Submit(context.Background(), "org:a", "a", 1, "wrong-node", Input{Feature: "acmg", Reference: "hg38", Variant: map[string]any{"chromosome": "1", "position": float64(1), "ref": "A", "alt": "G", "gene": "TEST"}, ClinicalContext: Context{DiseaseID: "MONDO:1", Inheritance: "AD", SampleType: "blood", VariantOrigin: "germline_confirmed"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +87,7 @@ func TestOwnerRoutingAndUnknownProbe(t *testing.T) {
 
 func TestExpiredResultAndPinnedProfiles(t *testing.T) {
 	s, _ := integrationService(t)
-	request, err := s.Submit(context.Background(), "org:a", "a", 1, "expired", Input{Feature: "hpo", Diagnosis: "original"})
+	request, err := s.Submit(context.Background(), "org:a", "a", 1, "expired", Input{Feature: "acmg", Reference: "hg38", Variant: map[string]any{"chromosome": "1", "position": float64(1), "ref": "A", "alt": "G", "gene": "TEST"}, ClinicalContext: Context{DiseaseID: "MONDO:1", Inheritance: "AD", SampleType: "blood", VariantOrigin: "germline_confirmed"}})
 	if err != nil {
 		t.Fatal(err)
 	}

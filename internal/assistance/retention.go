@@ -3,7 +3,6 @@ package assistance
 import (
 	"context"
 	"errors"
-	"github.com/google/uuid"
 )
 
 // Complete cancellation, billing and remote erasure before dropping local identities.
@@ -27,10 +26,10 @@ func (s *Service) EraseTask(ctx context.Context, task string) error {
 			if r.UpstreamID != s.upstreamID() {
 				return ErrConflict
 			}
-			if _, err := uuid.Parse(r.JobID); err != nil {
-				return err
+			if !validJobID(r.JobID) {
+				return errors.New("invalid upstream job ID")
 			}
-			_, err := s.Client.Call(ctx, "DELETE", "/v1/jobs/"+r.JobID, "", nil, nil)
+			_, err := s.Client.Call(ctx, "DELETE", "/v2/jobs/"+r.JobID, "", nil, nil)
 			var upstream *UpstreamError
 			if err != nil && !(errors.As(err, &upstream) && upstream.Status == 404) {
 				return err

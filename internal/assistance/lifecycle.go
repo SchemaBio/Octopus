@@ -51,7 +51,7 @@ func (s *Service) submissionSnapshotMatches(ctx context.Context, feature string,
 			Hash string `json:"ruleset_hash"`
 		} `json:"engines"`
 	}
-	if _, err := s.Client.Call(ctx, "GET", "/v1/capabilities", "", nil, &caps); err != nil {
+	if _, err := s.Client.Call(ctx, "GET", "/v2/capabilities", "", nil, &caps); err != nil {
 		return false, err
 	}
 	if caps.Version != stored.ServiceVersion {
@@ -113,11 +113,11 @@ func (s *Service) purgeExpired(ctx context.Context) {
 	var expired []Request
 	if s.DB.WithContext(ctx).Where("state = 'expired' AND job_id <> '' AND upstream_deleted = false AND upstream_id = ?", s.upstreamID()).Limit(3).Find(&expired).Error == nil {
 		for _, request := range expired {
-			if _, err := uuid.Parse(request.JobID); err != nil {
+			if !validJobID(request.JobID) {
 				continue
 			}
 			cleanup, cancel := context.WithTimeout(ctx, 2*time.Second)
-			_, err := s.Client.Call(cleanup, "DELETE", "/v1/jobs/"+request.JobID, "", nil, nil)
+			_, err := s.Client.Call(cleanup, "DELETE", "/v2/jobs/"+request.JobID, "", nil, nil)
 			cancel()
 			var upstream *UpstreamError
 			if err == nil || (errors.As(err, &upstream) && upstream.Status == 404) {
