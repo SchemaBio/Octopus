@@ -105,10 +105,7 @@ func (s *TaskService) EstimateTask(req *model.TaskEstimateRequest, actor model.O
 	var sample *model.Sample
 	var err error
 	if createReq.Template == "trio" {
-		if createReq.PedigreeID == "" {
-			return nil, fmt.Errorf("pedigreeId is required for trio analysis")
-		}
-		sample, _, err = s.prepareTrioInputs(createReq.PedigreeID, "estimate", actor, createReq.Inputs)
+		sample, _, err = s.prepareSampleTrio(createReq.SampleID, createReq.PedigreeID, "estimate", actor, createReq.Inputs)
 	} else {
 		if createReq.SampleID == "" {
 			return nil, fmt.Errorf("sampleId is required for single-sample analysis")
@@ -116,6 +113,9 @@ func (s *TaskService) EstimateTask(req *model.TaskEstimateRequest, actor model.O
 		sample, err = s.sampleRepo.FindScopedByUUID(createReq.SampleID, actor)
 	}
 	if err != nil || sample == nil {
+		if err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("analysis input data is not available")
 	}
 
@@ -124,6 +124,9 @@ func (s *TaskService) EstimateTask(req *model.TaskEstimateRequest, actor model.O
 			return nil, err
 		}
 		return &model.TaskEstimateResponse{EstimatedMinutes: vcfAnnotationEstimatedMinutes}, nil
+	}
+	if createReq.Template == "trio" {
+		return &model.TaskEstimateResponse{EstimatedMinutes: trioEstimatedMinutes(createReq.Inputs)}, nil
 	}
 	return &model.TaskEstimateResponse{EstimatedMinutes: s.estimateTaskMinutes(sample.ID, nil)}, nil
 }
@@ -751,6 +754,7 @@ func actorCanUseOwnedResource(actor model.OverlayActor, ownerID uint) bool {
 }
 
 func (s *TaskService) resolveAnalysisPipeline(req *model.TaskCreateRequest, actor model.OverlayActor) (*model.Pipeline, error) {
+	req.PipelineID = model.CanonicalBuiltinPipelineID(req.PipelineID)
 	setGenome := func(genome string) {
 		if req.Inputs == nil {
 			req.Inputs = make(map[string]interface{})
@@ -763,21 +767,25 @@ func (s *TaskService) resolveAnalysisPipeline(req *model.TaskCreateRequest, acto
 		if req.PipelineID == model.BuiltinPipelineVCFHG38ID {
 			genome = "hg38"
 		}
-		req.PipelineName, req.PipelineVersion, req.Template = "VCF SNP/InDel 注释（"+genome+"）", "builtin-v1", "vcf2anno"
+		req.PipelineName, req.PipelineVersion, req.Template = "VCF SNP/InDel 注释_"+genome, "builtin-v1", "vcf2anno"
 		setGenome(genome)
 		return nil, nil
 	case model.BuiltinPipelineWESSingleID:
-		req.PipelineName, req.PipelineVersion, req.Template = "WES单样本分析", "builtin-v1", "single"
+		req.PipelineName, req.PipelineVersion, req.Template = "WES单样本分析_hg19", "builtin-v1", "single"
 		setGenome("hg19")
 		return nil, nil
 	case model.BuiltinPipelineWESFamilyID:
-		return nil, ErrFamilyAnalysisUnavailable
+		req.PipelineName, req.PipelineVersion, req.Template = "WES家系分析_hg19", "builtin-v1", "trio"
+		setGenome("hg19")
+		return nil, nil
 	case model.BuiltinPipelineWESSingleHG38ID:
-		req.PipelineName, req.PipelineVersion, req.Template = "WES单样本分析（hg38）", "builtin-v1", "single"
+		req.PipelineName, req.PipelineVersion, req.Template = "WES单样本分析_hg38", "builtin-v1", "single"
 		setGenome("hg38")
 		return nil, nil
 	case model.BuiltinPipelineWESFamilyHG38ID:
-		return nil, ErrFamilyAnalysisUnavailable
+		req.PipelineName, req.PipelineVersion, req.Template = "WES家系分析_hg38", "builtin-v1", "trio"
+		setGenome("hg38")
+		return nil, nil
 	case "":
 		return nil, fmt.Errorf("pipelineId is required")
 	}
@@ -896,10 +904,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 	needsStaging := false
 
 	if req.Template == "trio" {
-		if strings.TrimSpace(req.PedigreeID) == "" {
-			return nil, fmt.Errorf("pedigreeId is required for trio analysis")
-		}
-		proband, trioAssets, err := s.prepareTrioInputs(req.PedigreeID, workflowUUID, actor, inputs)
+		proband, trioAssets, err := s.prepareSampleTrio(req.SampleID, req.PedigreeID, workflowUUID, actor, inputs)
 		if err != nil {
 			return nil, err
 		}
@@ -1094,6 +1099,9 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		UpdatedAt:          now,
 	}
 
+	if req.Template == "trio" {
+		task.EstimatedMinutes = trioEstimatedMinutes(inputs)
+	}
 	if req.Template == "vcf2anno" {
 		task.EstimatedMinutes = vcfAnnotationEstimatedMinutes
 	}
@@ -1491,6 +1499,8 @@ func (s *TaskService) launchTask(task *model.Task) {
 		return
 	}
 	delete(executionInputs, "reference_genome")
+	delete(executionInputs, "trio_members")
+	delete(executionInputs, "trio_input_bytes")
 	if task.Template == "trio" {
 		inputs := executionInputs
 		content, _ := inputs["TrioWES.ped_content"].(string)
@@ -2275,7 +2285,7 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 	if inputs == nil {
 		inputs = make(map[string]interface{})
 	}
-	if task.SampleIDRef != 0 && task.Template != "vcf2anno" {
+	if task.SampleIDRef != 0 && task.Template != "vcf2anno" && task.Template != "trio" {
 		sample, err := s.sampleRepo.FindByID(task.SampleIDRef)
 		if err != nil {
 			return false, "sample not found"
@@ -2335,7 +2345,7 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 	if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
 		return false, err.Error()
 	}
-	if task.SampleIDRef != 0 && task.Template != "vcf2anno" {
+	if task.SampleIDRef != 0 && task.Template != "vcf2anno" && task.Template != "trio" {
 		if r1, ok := inputs["fastq_r1"].(string); !ok || strings.TrimSpace(r1) == "" {
 			return false, "sample R1 data is not ready"
 		}
@@ -2522,7 +2532,7 @@ func (s *TaskService) collectTaskAssets(task *model.Task) (map[uint]*model.DataA
 		assets[asset.ID] = asset
 		directLinks[asset.ID] = append(directLinks[asset.ID], link)
 	}
-	if task.SampleIDRef != 0 && task.Template != "vcf2anno" {
+	if task.SampleIDRef != 0 && task.Template != "vcf2anno" && task.Template != "trio" {
 		var link model.SampleDataLink
 		db := database.GetDB()
 		err := db.Where("sample_id = ? AND match_mode = ?", task.SampleIDRef, model.SampleMatchModeManual).First(&link).Error
@@ -2964,38 +2974,17 @@ func (s *TaskService) prepareTrioInputs(pedigreeID, workflowUUID string, actor m
 		return nil, nil, fmt.Errorf("trio proband must reference one father and one mother")
 	}
 	ordered := []model.PedigreeMember{*proband, father, mother}
-	read1 := make([]string, 3)
-	read2 := make([]string, 3)
-	assets := make([]model.TaskDataAsset, 0, 6)
-	var probandSample *model.Sample
-	for i, member := range ordered {
-		if strings.TrimSpace(member.SampleID) == "" {
-			return nil, nil, fmt.Errorf("trio member %s has no linked sample", member.Name)
-		}
-		sample, err := s.sampleRepo.FindScopedByUUID(member.SampleID, actor)
+	var samples []model.Sample
+	var statuses []string
+	for _, m := range ordered {
+		sample, err := s.sampleRepo.FindScopedByUUID(m.SampleID, actor)
 		if err != nil {
-			return nil, nil, fmt.Errorf("linked sample for trio member %s was not found", member.Name)
+			return nil, nil, fmt.Errorf("linked trio sample is unavailable")
 		}
-		pair := sample.GetMatchedPair()
-		if !matchedPairComplete(pair) {
-			return nil, nil, fmt.Errorf("trio member %s requires complete R1/R2 data", member.Name)
-		}
-		read1[i], read2[i] = pair.R1Path, pair.R2Path
-		for _, item := range []struct{ storage, role string }{{pair.R1Path, model.TaskAssetRoleTrioRead1}, {pair.R2Path, model.TaskAssetRoleTrioRead2}} {
-			asset, err := s.assetRepo.FindCompletedByStorageKey(item.storage, actor)
-			if err != nil {
-				return nil, nil, fmt.Errorf("trio member %s data asset is unavailable", member.Name)
-			}
-			assets = append(assets, model.TaskDataAsset{AssetID: asset.ID, InputRole: item.role, InputIndex: i})
-		}
-		if i == 0 {
-			probandSample = sample
-		}
+		samples = append(samples, *sample)
+		statuses = append(statuses, string(m.AffectedStatus))
 	}
-	prefix := taskOutputPrefix(workflowUUID)
-	inputs["TrioWES.meta_info"] = map[string]interface{}{"members": []string{"proband", "father", "mother"}, "read_1": read1, "read_2": read2}
-	inputs["TrioWES.ped_content"] = trioPED(prefix, ordered)
-	return probandSample, assets, nil
+	return s.prepareTrioMembers(samples, statuses, workflowUUID, actor, inputs)
 }
 
 func taskOutputPrefix(workflowUUID string) string {

@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // PipelineStatus represents the status of a pipeline
 type PipelineStatus string
@@ -22,8 +25,8 @@ const (
 const (
 	BuiltinPipelineVCFHG19ID       = "builtin-vcf2anno-hg19"
 	BuiltinPipelineVCFHG38ID       = "builtin-vcf2anno-hg38"
-	BuiltinPipelineWESSingleID     = "builtin-wes-single"
-	BuiltinPipelineWESFamilyID     = "builtin-wes-family"
+	BuiltinPipelineWESSingleID     = "builtin-wes-single-hg19"
+	BuiltinPipelineWESFamilyID     = "builtin-wes-family-hg19"
 	BuiltinPipelineWESSingleHG38ID = "builtin-wes-single-hg38"
 	BuiltinPipelineWESFamilyHG38ID = "builtin-wes-family-hg38"
 	BuiltinBEDHG19ID               = "builtin-bed-hg19"
@@ -173,7 +176,7 @@ func PipelineTemplate(baseType PipelineBaseType) string {
 }
 
 func IsBuiltinPipelineID(id string) bool {
-	switch id {
+	switch CanonicalBuiltinPipelineID(id) {
 	case BuiltinPipelineVCFHG19ID, BuiltinPipelineVCFHG38ID, BuiltinPipelineWESSingleID, BuiltinPipelineWESFamilyID,
 		BuiltinPipelineWESSingleHG38ID, BuiltinPipelineWESFamilyHG38ID:
 		return true
@@ -194,4 +197,17 @@ func BuiltinCNVBaselineResourceID(genome string) string {
 		return BuiltinCNVBaselineHG38ID
 	}
 	return BuiltinCNVBaselineHG19ID
+}
+
+// CanonicalBuiltinPipelineID accepts pre-genome hg19 aliases without changing
+// historical task records or user-defined pipeline IDs.
+func CanonicalBuiltinPipelineID(id string) string {
+	switch strings.TrimSpace(id) {
+	case "builtin-wes-single":
+		return BuiltinPipelineWESSingleID
+	case "builtin-wes-family":
+		return BuiltinPipelineWESFamilyID
+	default:
+		return strings.TrimSpace(id)
+	}
 }

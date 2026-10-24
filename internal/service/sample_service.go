@@ -102,6 +102,10 @@ func (s *SampleService) CreateSample(ctx context.Context, req *model.SampleCreat
 		deadline := sample.CreatedAt.Add(720 * time.Hour)
 		sample.ExpiresAt = &deadline
 	}
+	if err := s.applyParents(sample, req.SampleParentUpdate); err != nil {
+		return nil, err
+	}
+	sample.ParentsMigrated = true
 	if err := s.repo.Create(sample); err != nil {
 		return nil, err
 	}
@@ -224,6 +228,9 @@ func (s *SampleService) ListSamples(ctx context.Context, query *model.SampleList
 		return nil, err
 	}
 
+	if err := s.enrichParents(samples); err != nil {
+		return nil, err
+	}
 	items := make([]model.SampleResponse, len(samples))
 	for i, sample := range samples {
 		items[i] = model.SampleToResponse(&sample)
@@ -287,6 +294,9 @@ func (s *SampleService) UpdateSample(ctx context.Context, id string, req *model.
 		sample.Status = req.Status
 	}
 
+	if err := s.applyParents(sample, req.SampleParentUpdate); err != nil {
+		return nil, err
+	}
 	if err := s.repo.Update(sample); err != nil {
 		return nil, err
 	}
@@ -398,14 +408,23 @@ func (s *SampleService) DeleteSample(ctx context.Context, id string, actor model
 
 // SampleToResponse converts sample to response
 func (s *SampleService) SampleToResponse(sample *model.Sample) model.SampleResponse {
-	return model.SampleToResponse(sample)
+	copy := *sample
+	rows := []model.Sample{copy}
+	if s.enrichParents(rows) == nil {
+		copy = rows[0]
+	}
+	return model.SampleToResponse(&copy)
 }
 
 // SampleToDetailResponse converts sample to detail response
 func (s *SampleService) SampleToDetailResponse(sample *model.Sample) model.SampleDetailResponse {
+	rows := []model.Sample{*sample}
+	if s.enrichParents(rows) == nil {
+		sample = &rows[0]
+	}
 	clinical := parseClinicalDiagnosis(sample.ClinicalDiagnosis)
 	clinical.HPOTerms = sample.GetHPOTerms()
-	return model.SampleDetailResponse{ExpiresAt: sample.ExpiresAt,
+	return model.SampleDetailResponse{ExpiresAt: sample.ExpiresAt, SampleParents: sample.SampleParents,
 		ID:                sample.UUID,
 		InternalID:        sample.InternalID,
 		Gender:            sample.Gender,

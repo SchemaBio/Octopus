@@ -54,6 +54,14 @@ func TestParseTaskBatchWorkbook(t *testing.T) {
 	}
 }
 
+func TestParseTrioBatchUsesProbandWithoutPedigreeColumn(t *testing.T) {
+	reader := taskBatchWorkbook(t, taskBatchSheetName, [][]interface{}{{"样本ID", "流程ID", "任务备注", "启用CNV", "启用SV"}, {"PROBAND-001", "builtin-wes-family", "", "TRUE", "FALSE"}})
+	rows, err := ParseTaskBatchWorkbook(reader)
+	if err != nil || len(rows) != 1 || rows[0].SampleIdentifier != "PROBAND-001" || rows[0].PedigreeID != "" {
+		t.Fatalf("new Trio template rejected: %+v %v", rows, err)
+	}
+}
+
 func TestParseTaskBatchWorkbookReportsInvalidBoolean(t *testing.T) {
 	reader := taskBatchWorkbook(t, taskBatchSheetName, [][]interface{}{
 		{"样本ID", "家系ID", "流程ID", "任务备注", "启用CNV", "启用SV"},

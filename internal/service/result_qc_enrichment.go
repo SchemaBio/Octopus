@@ -138,34 +138,42 @@ func (s *ResultService) addQCGenderComparison(ctx context.Context, task *model.T
 		}
 		return normalizeQCGender(string(samples[0].Gender)), nil
 	}
-	gender, err := findGender(task.SampleID)
-	if err != nil {
-		return err
-	}
-	declared["proband"], declared["single"], declared["patient"] = gender, gender, gender
-	if task.PedigreeID != "" {
-		var pedigrees []model.Pedigree
-		if err := database.DB.WithContext(ctx).Where("id = ? AND created_by = ?", task.PedigreeID, task.CreatedBy).Limit(1).Find(&pedigrees).Error; err != nil {
+	snapshot := task.ToResponse().TrioMembers
+	if len(snapshot) > 0 {
+		for _, member := range snapshot {
+			declared[member.Role] = normalizeQCGender(string(member.Gender))
+		}
+		declared["single"], declared["patient"] = declared["proband"], declared["proband"]
+	} else {
+		gender, err := findGender(task.SampleID)
+		if err != nil {
 			return err
 		}
-		if len(pedigrees) == 1 {
-			var members []model.PedigreeMember
-			if err := database.DB.WithContext(ctx).Where("pedigree_id = ?", task.PedigreeID).Find(&members).Error; err != nil {
+		declared["proband"], declared["single"], declared["patient"] = gender, gender, gender
+		if task.PedigreeID != "" {
+			var pedigrees []model.Pedigree
+			if err := database.DB.WithContext(ctx).Where("id = ? AND created_by = ?", task.PedigreeID, task.CreatedBy).Limit(1).Find(&pedigrees).Error; err != nil {
 				return err
 			}
-			byID := map[string]model.PedigreeMember{}
-			for _, member := range members {
-				byID[member.ID] = member
-			}
-			proband, exists := byID[pedigrees[0].ProbandMemberID]
-			if exists {
-				for role, id := range map[string]string{"proband": proband.ID, "father": proband.FatherID, "mother": proband.MotherID} {
-					if member, exists := byID[id]; exists {
-						value, err := findGender(member.SampleID)
-						if err != nil {
-							return err
+			if len(pedigrees) == 1 {
+				var members []model.PedigreeMember
+				if err := database.DB.WithContext(ctx).Where("pedigree_id = ?", task.PedigreeID).Find(&members).Error; err != nil {
+					return err
+				}
+				byID := map[string]model.PedigreeMember{}
+				for _, member := range members {
+					byID[member.ID] = member
+				}
+				proband, exists := byID[pedigrees[0].ProbandMemberID]
+				if exists {
+					for role, id := range map[string]string{"proband": proband.ID, "father": proband.FatherID, "mother": proband.MotherID} {
+						if member, exists := byID[id]; exists {
+							value, err := findGender(member.SampleID)
+							if err != nil {
+								return err
+							}
+							declared[role] = value
 						}
-						declared[role] = value
 					}
 				}
 			}

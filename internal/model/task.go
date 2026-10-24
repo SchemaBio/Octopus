@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
 	"gorm.io/gorm"
@@ -233,6 +234,8 @@ type TaskListQuery struct {
 
 // TaskResponse matches frontend AnalysisTask type
 type TaskResponse struct {
+	TrioMembers []TrioMemberSnapshot `json:"trio_members,omitempty"`
+
 	ResultImportStatus        ResultImportStatus `json:"result_import_status"`
 	ResultCapabilities        []string           `json:"result_capabilities"`
 	Template                  string             `json:"template"`
@@ -482,7 +485,11 @@ type Template struct {
 
 // ToResponse converts Task to TaskResponse
 func (t *Task) ToResponse() TaskResponse {
-	resp := TaskResponse{
+	var saved struct {
+		Members []TrioMemberSnapshot `json:"trio_members"`
+	}
+	_ = json.Unmarshal([]byte(t.InputJSON), &saved)
+	resp := TaskResponse{TrioMembers: saved.Members,
 		ResultImportStatus:        t.ResultImportStatus,
 		ResultCapabilities:        t.ResultCapabilities(),
 		Template:                  t.Template,

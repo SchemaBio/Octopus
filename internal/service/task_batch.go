@@ -87,7 +87,7 @@ func ParseTaskBatchWorkbook(reader io.Reader) ([]model.TaskBatchInputRow, error)
 			columns[key] = index
 		}
 	}
-	for _, required := range []string{"sample", "pedigree", "pipeline", "remark", "enable_cnv", "enable_sv"} {
+	for _, required := range []string{"sample", "pipeline", "remark", "enable_cnv", "enable_sv"} {
 		if _, ok := columns[required]; !ok {
 			return nil, fmt.Errorf("缺少模板列，请重新下载平台模板")
 		}
@@ -182,18 +182,22 @@ func (s *TaskService) previewTaskBatchRow(input model.TaskBatchInputRow, actor m
 	}
 
 	if req.Template == "trio" {
-		if input.PedigreeID == "" {
-			preview.Errors = append(preview.Errors, "家系任务必须填写家系ID")
-		} else if input.SampleIdentifier != "" {
-			preview.Errors = append(preview.Errors, "家系任务不应填写样本ID")
-		} else {
-			proband, _, err := s.prepareTrioInputs(input.PedigreeID, "batch-preview", actor, req.Inputs)
+		if input.SampleIdentifier != "" {
+			sample, err := s.sampleRepo.FindScopedByIdentifier(input.SampleIdentifier, actor)
+			if err != nil {
+				preview.Errors = append(preview.Errors, "先证者样本不存在或无权访问")
+			} else {
+				req.SampleID = sample.UUID
+			}
+		}
+		if len(preview.Errors) == 0 {
+			proband, _, err := s.prepareSampleTrio(req.SampleID, input.PedigreeID, "batch-preview", actor, req.Inputs)
 			if err != nil {
 				preview.Errors = append(preview.Errors, err.Error())
 			} else {
 				req.SampleID, req.InternalID = proband.UUID, proband.InternalID
 				preview.SampleID, preview.SampleInternalID = proband.UUID, proband.InternalID
-				preview.EstimatedMinutes = s.estimateTaskMinutes(proband.ID, nil)
+				preview.EstimatedMinutes = trioEstimatedMinutes(req.Inputs)
 			}
 		}
 	} else if req.Template != "" {

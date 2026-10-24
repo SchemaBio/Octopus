@@ -35,43 +35,43 @@ func NewPipelineService(_ *config.Config) *PipelineService {
 func builtinPipelineResponses() []model.PipelineResponse {
 	items := []model.PipelineResponse{
 		{
-			ID: model.BuiltinPipelineWESSingleID, Name: "WES单样本分析",
+			ID: model.BuiltinPipelineWESSingleID, Name: "WES单样本分析_hg19",
 			BasePipelineID: model.BuiltinPipelineWESSingleID,
 			BaseType:       model.PipelineBaseWESSingle, Version: "builtin-v1",
-			Description: "系统内置 hg19 单样本 WES 分析流程", BEDFile: "内置 WES BED（hg19）",
+			Description: "系统内置 hg19 单样本 WES 分析流程", BEDFile: "WES BED_hg19",
 			BEDAssetID: model.BuiltinBEDHG19ID, ReferenceGenome: "hg19",
-			CNVBaseline: "内置 WES CNV 基线（hg19）", CNVBaselineID: model.BuiltinCNVBaselineHG19ID,
+			CNVBaseline: "WES CNV基线_hg19", CNVBaselineID: model.BuiltinCNVBaselineHG19ID,
 			Template: "single", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive,
 		},
 		{
-			ID: model.BuiltinPipelineWESFamilyID, Name: "WES家系分析",
+			ID: model.BuiltinPipelineWESFamilyID, Name: "WES家系分析_hg19",
 			BasePipelineID: model.BuiltinPipelineWESFamilyID,
 			BaseType:       model.PipelineBaseWESFamily, Version: "builtin-v1",
-			Description: "系统内置 hg19 家系 WES 分析流程", BEDFile: "内置 WES BED（hg19）",
+			Description: "系统内置 hg19 家系 WES 分析流程", BEDFile: "WES BED_hg19",
 			BEDAssetID: model.BuiltinBEDHG19ID, ReferenceGenome: "hg19",
-			CNVBaseline: "内置 WES CNV 基线（hg19）", CNVBaselineID: model.BuiltinCNVBaselineHG19ID,
+			CNVBaseline: "WES CNV基线_hg19", CNVBaselineID: model.BuiltinCNVBaselineHG19ID,
 			Template: "trio", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive,
 		},
 		{
-			ID: model.BuiltinPipelineWESSingleHG38ID, Name: "WES单样本分析（hg38）",
+			ID: model.BuiltinPipelineWESSingleHG38ID, Name: "WES单样本分析_hg38",
 			BasePipelineID: model.BuiltinPipelineWESSingleHG38ID,
 			BaseType:       model.PipelineBaseWESSingle, Version: "builtin-v1",
-			Description: "系统内置 hg38 单样本 WES 分析流程", BEDFile: "内置 WES BED（hg38）",
+			Description: "系统内置 hg38 单样本 WES 分析流程", BEDFile: "WES BED_hg38",
 			BEDAssetID: model.BuiltinBEDHG38ID, ReferenceGenome: "hg38",
-			CNVBaseline: "内置 WES CNV 基线（hg38）", CNVBaselineID: model.BuiltinCNVBaselineHG38ID,
+			CNVBaseline: "WES CNV基线_hg38", CNVBaselineID: model.BuiltinCNVBaselineHG38ID,
 			Template: "single", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive,
 		},
 		{
-			ID: model.BuiltinPipelineWESFamilyHG38ID, Name: "WES家系分析（hg38）",
+			ID: model.BuiltinPipelineWESFamilyHG38ID, Name: "WES家系分析_hg38",
 			BasePipelineID: model.BuiltinPipelineWESFamilyHG38ID,
 			BaseType:       model.PipelineBaseWESFamily, Version: "builtin-v1",
-			Description: "系统内置 hg38 家系 WES 分析流程", BEDFile: "内置 WES BED（hg38）",
+			Description: "系统内置 hg38 家系 WES 分析流程", BEDFile: "WES BED_hg38",
 			BEDAssetID: model.BuiltinBEDHG38ID, ReferenceGenome: "hg38",
-			CNVBaseline: "内置 WES CNV 基线（hg38）", CNVBaselineID: model.BuiltinCNVBaselineHG38ID,
+			CNVBaseline: "WES CNV基线_hg38", CNVBaselineID: model.BuiltinCNVBaselineHG38ID,
 			Template: "trio", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive,
 		},
-		{ID: model.BuiltinPipelineVCFHG19ID, BasePipelineID: model.BuiltinPipelineVCFHG19ID, Name: "VCF SNP/InDel 注释（hg19）", BaseType: model.PipelineBaseVCFAnnotation, Version: "builtin-v1", ReferenceGenome: "hg19", Template: "vcf2anno", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive},
-		{ID: model.BuiltinPipelineVCFHG38ID, BasePipelineID: model.BuiltinPipelineVCFHG38ID, Name: "VCF SNP/InDel 注释（hg38）", BaseType: model.PipelineBaseVCFAnnotation, Version: "builtin-v1", ReferenceGenome: "hg38", Template: "vcf2anno", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive},
+		{ID: model.BuiltinPipelineVCFHG19ID, BasePipelineID: model.BuiltinPipelineVCFHG19ID, Name: "VCF SNP/InDel 注释_hg19", BaseType: model.PipelineBaseVCFAnnotation, Version: "builtin-v1", ReferenceGenome: "hg19", Template: "vcf2anno", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive},
+		{ID: model.BuiltinPipelineVCFHG38ID, BasePipelineID: model.BuiltinPipelineVCFHG38ID, Name: "VCF SNP/InDel 注释_hg38", BaseType: model.PipelineBaseVCFAnnotation, Version: "builtin-v1", ReferenceGenome: "hg38", Template: "vcf2anno", ResourceAvailable: true, IsBuiltin: true, Status: model.PipelineStatusActive},
 	}
 	for i := range items {
 		if requireAnalysisAvailable(items[i].Template) != nil {
@@ -88,7 +88,7 @@ func isAllowedPipelineBase(value model.PipelineBaseType) bool {
 }
 
 func resolvePipelineBase(basePipelineID string, legacyBase model.PipelineBaseType, legacyGenome string) (model.PipelineBaseType, string, error) {
-	switch strings.TrimSpace(basePipelineID) {
+	switch model.CanonicalBuiltinPipelineID(basePipelineID) {
 	case model.BuiltinPipelineVCFHG19ID:
 		return model.PipelineBaseVCFAnnotation, "hg19", nil
 	case model.BuiltinPipelineVCFHG38ID:
@@ -218,6 +218,7 @@ func (s *PipelineService) CreatePipeline(_ context.Context, req *model.PipelineC
 }
 
 func (s *PipelineService) GetPipeline(_ context.Context, id string, actor model.OverlayActor) (*model.PipelineResponse, error) {
+	id = model.CanonicalBuiltinPipelineID(id)
 	for _, item := range builtinPipelineResponses() {
 		if item.ID == id {
 			return &item, nil
@@ -367,7 +368,7 @@ func (s *PipelineService) toResponse(pipeline *model.Pipeline, bed *model.DataAs
 	}
 	if response.BEDFile == "" {
 		response.BEDAssetID = model.BuiltinBEDResourceID(pipeline.ReferenceGenome)
-		response.BEDFile = fmt.Sprintf("内置 WES BED（%s）", pipeline.ReferenceGenome)
+		response.BEDFile = fmt.Sprintf("WES BED_%s", pipeline.ReferenceGenome)
 	}
 	if pipeline.CNVBaselineID != nil && (baseline == nil || baseline.OutputPath == "") {
 		response.ResourceAvailable = false
@@ -379,7 +380,7 @@ func (s *PipelineService) toResponse(pipeline *model.Pipeline, bed *model.DataAs
 	}
 	if response.CNVBaseline == "" {
 		response.CNVBaselineID = model.BuiltinCNVBaselineResourceID(pipeline.ReferenceGenome)
-		response.CNVBaseline = fmt.Sprintf("内置 WES CNV 基线（%s）", pipeline.ReferenceGenome)
+		response.CNVBaseline = fmt.Sprintf("WES CNV基线_%s", pipeline.ReferenceGenome)
 	}
 	return response
 }

@@ -95,6 +95,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := service.BackfillSampleParents(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to migrate sample parents: %v", err)
+		os.Exit(1)
+	}
+
 	if os.Getenv("CREATE_DEFAULT_ADMIN") == "true" {
 		adminEmail := os.Getenv("DEFAULT_ADMIN_EMAIL")
 		if adminEmail == "" {

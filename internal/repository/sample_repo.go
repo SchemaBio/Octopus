@@ -122,6 +122,9 @@ func (r *SampleRepository) PaginateByQuery(query *model.SampleListQuery) ([]mode
 			db = db.Where("1 = 0")
 		}
 	}
+	if query.AnalysisType == "trio" {
+		db = db.Where("(father_sample_internal_id <> '' OR father_sample_uuid <> '') AND (mother_sample_internal_id <> '' OR mother_sample_uuid <> '')")
+	}
 	if query.Search != "" {
 		search := "%" + query.Search + "%"
 		db = db.Where("internal_id ILIKE ? OR uuid ILIKE ?", search, search)

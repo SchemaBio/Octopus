@@ -58,6 +58,8 @@ const (
 
 // Sample represents a biological sample (germline)
 type Sample struct {
+	SampleParents
+
 	ID                           uint               `json:"-" gorm:"primaryKey"`
 	UUID                         string             `json:"id" gorm:"uniqueIndex;size:36;not null"`
 	InternalID                   string             `json:"internal_id" gorm:"index;size:100;not null"`
@@ -156,6 +158,8 @@ type AffectedMember struct {
 
 // SampleResponse is the API response for a sample list item
 type SampleResponse struct {
+	SampleParents
+
 	ExpiresAt         *time.Time         `json:"expires_at,omitempty"`
 	ID                string             `json:"id"`
 	InternalID        string             `json:"internal_id"`
@@ -177,6 +181,8 @@ type SampleResponse struct {
 
 // SampleDetailResponse is the API response for a sample detail
 type SampleDetailResponse struct {
+	SampleParents
+
 	ExpiresAt         *time.Time            `json:"expires_at,omitempty"`
 	ID                string                `json:"id"`
 	InternalID        string                `json:"internal_id"`
@@ -208,6 +214,8 @@ type AnalysisTaskBrief struct {
 
 // SampleCreateRequest is the request body for creating a sample
 type SampleCreateRequest struct {
+	SampleParentUpdate
+
 	IdentityPolicyAcknowledged bool               `json:"identity_policy_acknowledged"`
 	IdentityPolicyVersion      string             `json:"identity_policy_version"`
 	InternalID                 string             `json:"internal_id" binding:"required"`
@@ -224,6 +232,8 @@ type SampleCreateRequest struct {
 
 // SampleUpdateRequest is the request body for updating a sample
 type SampleUpdateRequest struct {
+	SampleParentUpdate
+
 	InternalID        string             `json:"internal_id"`
 	Gender            SampleGender       `json:"gender"`
 	Age               *int               `json:"age"`
@@ -249,6 +259,8 @@ type SampleDataLinkRequest struct {
 
 // SampleListQuery is the query parameters for listing samples
 type SampleListQuery struct {
+	AnalysisType string `form:"analysis_type"`
+
 	Page           int                `form:"page" binding:"omitempty,min=1"`
 	PageSize       int                `form:"page_size" binding:"omitempty,min=1,max=100"`
 	Search         string             `form:"search"`
@@ -423,7 +435,7 @@ func (s *Sample) SetFamilyHistory(info FamilyHistoryInfo) {
 
 // SampleToResponse converts Sample to SampleResponse
 func SampleToResponse(s *Sample) SampleResponse {
-	return SampleResponse{ExpiresAt: s.ExpiresAt,
+	return SampleResponse{ExpiresAt: s.ExpiresAt, SampleParents: s.SampleParents,
 		ID:                s.UUID,
 		InternalID:        s.InternalID,
 		Gender:            s.Gender,

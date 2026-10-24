@@ -11,12 +11,14 @@ import (
 )
 
 type SampleHandler struct {
-	svc *service.SampleService
+	svc   *service.SampleService
+	tasks *service.TaskService
 }
 
 func NewSampleHandler(cfg *config.Config) *SampleHandler {
 	return &SampleHandler{
-		svc: service.NewSampleService(cfg),
+		svc:   service.NewSampleService(cfg),
+		tasks: service.NewTaskService(cfg),
 	}
 }
 
@@ -209,4 +211,31 @@ func (h *SampleHandler) DeleteSample(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func (h *SampleHandler) ResolveParents(c *gin.Context) {
+	var req struct {
+		SampleID   string `json:"sample_id"`
+		InternalID string `json:"internal_id"`
+		Father     string `json:"father_sample_internal_id"`
+		Mother     string `json:"mother_sample_internal_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	result, err := h.svc.ResolveParents(req.SampleID, req.InternalID, req.Father, req.Mother, taskActorFromContext(c))
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, result)
+}
+func (h *SampleHandler) TrioContext(c *gin.Context) {
+	result, err := h.tasks.TrioContext(c.Param("id"), taskActorFromContext(c))
+	if err != nil {
+		ErrorNotFound(c, err.Error())
+		return
+	}
+	Success(c, result)
 }

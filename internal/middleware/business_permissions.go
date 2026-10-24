@@ -97,6 +97,9 @@ func requestPermission(c *gin.Context) (string, []string, error) {
 	if method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions {
 		return "", nil, nil
 	}
+	if path == "/samples/resolve-parents" {
+		return "", nil, nil
+	}
 	if path == "/data/local-import" {
 		return "data.manage", []string{"samples.write"}, nil
 	}

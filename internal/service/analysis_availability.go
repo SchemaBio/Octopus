@@ -1,17 +1,8 @@
 package service
 
-import (
-	"errors"
-	"strings"
-)
+import "errors"
 
-// Keep family workflows and historical executions intact until public release.
+// Retained for compatibility with callers matching the historical error.
 var ErrFamilyAnalysisUnavailable = errors.New("family analysis is not available yet")
 
-func requireAnalysisAvailable(template string) error {
-	switch strings.ToLower(strings.TrimSpace(template)) {
-	case "trio", "germline_trio":
-		return ErrFamilyAnalysisUnavailable
-	}
-	return nil
-}
+func requireAnalysisAvailable(template string) error { return nil }

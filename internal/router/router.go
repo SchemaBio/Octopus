@@ -296,6 +296,8 @@ func New(cfg *config.Config) *gin.Engine {
 		{
 			samples.POST("", sampleHandler.CreateSample)
 			samples.GET("", sampleHandler.ListSamples)
+			samples.POST("/resolve-parents", sampleHandler.ResolveParents)
+			samples.GET("/:id/trio-context", sampleHandler.TrioContext)
 			samples.GET("/:id", sampleHandler.GetSample)
 			samples.PUT("/:id", sampleHandler.UpdateSample)
 			samples.POST("/:id/matched-pair/upload-job", sampleHandler.MatchFromUploadJob)
