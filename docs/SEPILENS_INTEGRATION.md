@@ -34,7 +34,7 @@ SepiLens 固定监听 `127.0.0.1:18081`，不发布到公网；由 Octopus 管�
 | `AI_ASSISTANCE_INSTANCE_ID` | 托管模式必填，随唯一数据卷保留的稳定身份；Compose 示例使用 SEPILENS_INSTANCE_ID |
 | `AI_ASSISTANCE_BUNDLE_DIR` / `AI_ASSISTANCE_RULES_DIR` | 可选只读知识包及批准材料目录，平台不生成批准材料 |
 | `AI_ASSISTANCE_ALLOW_PRIVATE_ENDPOINTS` | 默认关闭，仅显式 true 放行私有模型端点 |
-| `AI_ASSISTANCE_BILLING_ENABLED` | Octopus 与 Squid 均默认关闭，结算约定对齐后才可同时设为 true |
+| `AI_ASSISTANCE_BILLING_ENABLED` | 仅控制其他正式 AI 判读功能的收费，默认关闭；SaaS HPO 候选提取独立按每次 1 积分收费 |
 
 Token/主密钥也支持无 `_FILE` 的环境变量，文件优先。生产使用 secret 文件，不编入镜像。外部 SepiLens 的 principal 需要提交请求及管理 provider 权限；用户与机构隔离仍由 Octopus 实施，浏览器不可直接使用其任务 ID 访问上游。
 
@@ -97,16 +97,18 @@ HPO 队列最多 128 条内存输入，只由原进程执行；浏览器断开�
 
 发布包原样打包并核对架构及归档/二进制散列；规则和批准材料只读挂载，由 SepiLens 校验与实际二进制、规则和数据的绑定。更换发布包、架构或重新编译后必须重新验证批准材料，不能复用其他二进制的批准结论。
 
-**本轮真实收费关闭**，SaaS 显示“联调期间不扣费”。有效模型建议计费策略与 SepiLens 当前 settlement_eligible 约定存在差异，需对齐后才启用。
+**2026-10-25 HPO 生产计费调整**：SaaS 临床信息中的 HPO 候选提取每次预扣 1 积分，独立于 `AI_ASSISTANCE_BILLING_ENABLED`。服务端要求确认扣费；YiJian 操作前弹窗提示，可按当前用户、机构在 sessionStorage 中记住“本次浏览器会话不再提示”，后续请求仍携带扣费确认。恢复已保存的候选结果及本地术语匹配不调用模型、不收费。自部署模式不收平台积分；历史免费请求不会被重新计价。
 
-未来收费通过共享密钥保护的 Squid `/api/v1/overlay/ai/reserve|settle|refund` 预扣 1 分并结算/退还。同时满足 production、delivered、settlement_eligible=true 和有效模型建议才按平台策略结算；HPO、SVC 实验、insufficient_data 及 evidence_only 收费暂不启用，模拟、失败、取消、降级、空建议和 uncertain 退还。取消竞争以持久化终态为准。
+收费通过共享密钥保护的 Squid `/api/v1/overlay/ai/reserve|settle|refund` 预扣 1 分并结算/退还。HPO 仅对非降级、真实模型生成的有效候选结果结算；失败、取消、降级、空建议和 uncertain 退还。其他正式判读仍受原收费开关控制，需同时满足 production、delivered、settlement_eligible=true 和有效模型建议；SVC 实验、insufficient_data 及 evidence_only 不启用收费。取消竞争以持久化终态为准。
+
+HPO 升级顺序为 Squid → Octopus → YiJian（Cuttlefish 同步更新说明），无需新增数据库迁移或环境变量。新前端发现 HPO 计费未就绪时禁用该操作；新后端拒绝未确认扣费的新请求，避免升级期间无提示扣费或免费调用。其他 AI 的收费开关不变。
 
 Squid 使用独立 ai_billing_requests 状态和原子幂等账本；billing_basis=ai_assistance，reference_id=ai:{请求ID}，related_task_id 单独关联任务。分析任务重试/失败退款不会包含 AI 费用。退款墓碑拒绝迟到预扣，后台恢复结算不依赖浏览器。
 
 ## 验证方式
 
 - 两前端生产构建、相关 Go 包回归、轮询和管理路由测试。
-- 设置专用临时 PostgreSQL 的 `AI_ASSISTANCE_TEST_DSN`，运行 Octopus `go test ./internal/assistance` 与 Squid `go test ./internal/service -run TestAIBilling`，用例创建并清理独立 schema。
+- 设置专用临时 PostgreSQL 的 `AI_ASSISTANCE_TEST_DSN`，运行 Octopus `go test ./internal/assistance` 与 Squid `go test ./internal/service -run 'TestAIBilling|TestHPOBilling'`，用例创建并清理独立 schema。HPO 覆盖确认、重复请求、成功扣费、失败/降级/取消退款、扣费失败不调用模型和缓存读取；账务覆盖并发幂等与退款墓碑。
 - Linux 交叉编译 `go test -c ./internal/assistance`，在组合镜像设置 `AI_RUNTIME_SMOKE=true` 执行 TestManagedSepiLensRuntime，验证实际二进制、能力门禁、目录锁、重启、退出及持久化。
 - 本轮已在本地 amd64 组合镜像通过上述运行验证，并以缺失 SepiLens 二进制启动完整 Octopus，确认普通 `/health` 仍返回 healthy。临时 PostgreSQL 和验证容器已清理，未使用线上数据。
 - 真实厂商模型联调、结算约定对齐和医学引擎批准继续由后续独立验收完成。

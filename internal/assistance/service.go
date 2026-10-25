@@ -24,17 +24,27 @@ var ErrConflict = errors.New("AI request idempotency conflict")
 var ErrUnavailable = errors.New("AI service unavailable")
 
 type Service struct {
-	DB      *gorm.DB
-	Client  *Client
-	Cipher  cipher.AEAD
-	SaaS    bool
-	Billing bool
-	Overlay *Client
+	DB         *gorm.DB
+	Client     *Client
+	Cipher     cipher.AEAD
+	SaaS       bool
+	Billing    bool
+	HPOBilling bool
+	Overlay    *Client
 }
 
 func New(db *gorm.DB, saas bool, overlayURL, overlayToken string) *Service {
 	c, _ := newCipher()
-	return &Service{DB: db, Client: newClient(), Cipher: c, SaaS: saas, Billing: saas && os.Getenv("AI_ASSISTANCE_BILLING_ENABLED") == "true", Overlay: &Client{overlayURL, overlayToken, &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}}
+	return &Service{DB: db, Client: newClient(), Cipher: c, SaaS: saas, HPOBilling: saas, Billing: saas && os.Getenv("AI_ASSISTANCE_BILLING_ENABLED") == "true", Overlay: &Client{overlayURL, overlayToken, &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}}
+}
+
+// HPO production billing is independent of experimental assessment billing.
+// Each request snapshots this decision; old requests are never repriced.
+func (s *Service) billsFeature(feature string) bool {
+	if feature == "hpo" {
+		return s.SaaS && s.HPOBilling
+	}
+	return s.Billing && feature != "svcv4"
 }
 func (s *Service) configuredRecord() (Settings, Draft, error) {
 	row := Settings{ID: 1, Enabled: s.SaaS}
@@ -150,7 +160,7 @@ func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, err
 		if enabled && mode == "experimental" {
 			reason = "草案实验 · 输入未核验 · 禁止临床用途"
 		}
-		out.Capabilities[feature] = Capability{Enabled: enabled, Reason: reason, Mode: mode, BillingEnabled: s.Billing && mode == "formal", RulesetHash: rulesetHash}
+		out.Capabilities[feature] = Capability{Enabled: enabled, Reason: reason, Mode: mode, BillingEnabled: s.billsFeature(feature) && (feature == "hpo" || mode == "formal"), RulesetHash: rulesetHash}
 	}
 	return out, nil
 }
@@ -278,7 +288,7 @@ func (s *Service) Submit(ctx context.Context, scope, org string, user uint, key 
 	if in.Feature == "svcv4" && in.Mode != "experimental" {
 		return nil, errors.New("SVC requires explicit experimental mode")
 	}
-	if s.Billing && in.Feature != "svcv4" && in.Feature != "hpo" && !in.ConfirmedCharge {
+	if s.billsFeature(in.Feature) && !in.ConfirmedCharge {
 		return nil, errors.New("credit charge confirmation required")
 	}
 	var memoryID string
@@ -317,7 +327,7 @@ func (s *Service) Submit(ctx context.Context, scope, org string, user uint, key 
 			return e
 		}
 		sum := sha256.Sum256([]byte(key))
-		r := Request{ID: id, Scope: scope, OrgID: org, UserID: user, Key: hex.EncodeToString(sum[:]), Hash: inputHash(in), TaskID: in.TaskID, Feature: in.Feature, State: "queued", Ciphertext: encoded, BillingEnabled: s.Billing && in.Feature != "svcv4" && in.Feature != "hpo", ProfileVersion: row.Version, UpstreamID: s.upstreamID()}
+		r := Request{ID: id, Scope: scope, OrgID: org, UserID: user, Key: hex.EncodeToString(sum[:]), Hash: inputHash(in), TaskID: in.TaskID, Feature: in.Feature, State: "queued", Ciphertext: encoded, BillingEnabled: s.billsFeature(in.Feature), ProfileVersion: row.Version, UpstreamID: s.upstreamID()}
 		if in.Feature == "hpo" {
 			r.ExecutionOwner = memoryOwner
 		}

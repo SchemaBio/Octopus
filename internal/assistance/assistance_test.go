@@ -114,6 +114,10 @@ func TestClientStructuredErrorsAndSubmission(t *testing.T) {
 	}
 }
 func integrationService(t *testing.T) (*Service, *atomic.Int32) {
+	return integrationServiceWithHPO(t, nil)
+}
+
+func integrationServiceWithHPO(t *testing.T, hpo http.HandlerFunc) (*Service, *atomic.Int32) {
 	t.Helper()
 	dsn := os.Getenv("AI_ASSISTANCE_TEST_DSN")
 	if dsn == "" {
@@ -152,6 +156,10 @@ func integrationService(t *testing.T) (*Service, *atomic.Int32) {
 			_, _ = w.Write([]byte(`{"version":1}`))
 		case r.URL.Path == "/v2/hpo/extract":
 			calls.Add(1)
+			if hpo != nil {
+				hpo(w, r)
+				return
+			}
 			_, _ = w.Write([]byte(`{"execution_mode":"model","degraded":false,"terms":[{"hpo":"HP:0001250","name":"Seizure","polarity":"present"}]}`))
 		case r.URL.Path == "/v2/evaluations":
 			calls.Add(1)
@@ -172,6 +180,9 @@ func integrationService(t *testing.T) (*Service, *atomic.Int32) {
 	t.Setenv("AI_ASSISTANCE_TOKEN_FILE", "")
 	t.Setenv("AI_ASSISTANCE_BILLING_ENABLED", "false")
 	s := New(db, true, "", "")
+	// Most lifecycle tests exercise the unbilled legacy path. Paid HPO tests
+	// explicitly enable production billing and provide an isolated overlay.
+	s.HPOBilling = false
 	if _, e = s.SaveSettings(context.Background(), Draft{Enabled: true, BaseURL: "https://provider.example/v1", APIKey: "secret-key", Model: "model", Protocol: "openai_responses"}); e != nil {
 		t.Fatal(e)
 	}
