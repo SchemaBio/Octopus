@@ -164,6 +164,10 @@ func sanitizeDraft(v any) any {
 	}
 }
 func NormalizeResult(feature, model string, raw map[string]any) (Result, bool, error) {
+	return normalizeResult(feature, model, raw, false)
+}
+
+func normalizeResult(feature, model string, raw map[string]any, paidDelivery bool) (Result, bool, error) {
 	r := Result{Feature: feature, Model: model, GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
 	if feature == "hpo" {
 		degraded, _ := raw["degraded"].(bool)
@@ -215,7 +219,7 @@ func NormalizeResult(feature, model string, raw map[string]any) (Result, bool, e
 		}
 		r.ExperimentalResult = experimental
 		r.ResultKind = "experimental"
-		r.Warnings = []string{"输入未经核验；禁止临床用途、人工审核采纳和积分结算。"}
+		r.Warnings = []string{"输入未经核验；禁止临床用途和人工审核采纳。"}
 	}
 	if ai, ok := proposal["ai_assessment"].(map[string]any); ok {
 		if text(raw["schema_version"]) != "sepilens-evaluation-2.0" || text(raw["failure_code"]) != "" {
@@ -263,11 +267,12 @@ func NormalizeResult(feature, model string, raw map[string]any) (Result, bool, e
 		if r.ResultKind == "experimental" {
 			r.RuleEngineResult = nil
 			r.Classification = ""
-			return r, false, nil
+			eligible, _ := raw["settlement_eligible"].(bool)
+			return r, eligible && paidDelivery && feature == "svcv4", nil
 		}
 		r.Warnings = append(r.Warnings, "模型建议、规则结果与人工判定分别保存；本结果尚未由人工采纳。")
 		eligible, _ := raw["settlement_eligible"].(bool)
-		return r, eligible && suggestionBillingPolicy(r.ResultKind, false), nil
+		return r, eligible && suggestionBillingPolicy(r.ResultKind, paidDelivery && feature == "acmg"), nil
 	}
 	if text(raw["schema_version"]) == "sepilens-evaluation-2.0" {
 		return r, false, errors.New("missing v2 AI proposal")
@@ -314,9 +319,9 @@ func NormalizeResult(feature, model string, raw map[string]any) (Result, bool, e
 		r.Summary = "AI 材料整理完成，请人工复核。"
 	}
 	r.Warnings = append(r.Warnings, "模型建议、规则结果与人工判定分别保存；本结果尚未由人工采纳。")
-	// Evidence-only billing is reserved for a future settlement agreement.
+	// Commercial AI evidence billing is explicitly snapshotted per ACMG request.
 	eligible, _ := raw["settlement_eligible"].(bool)
-	return r, valid && eligible && suggestionBillingPolicy(r.ResultKind, false), nil
+	return r, valid && eligible && suggestionBillingPolicy(r.ResultKind, paidDelivery && feature == "acmg"), nil
 }
 
 func suggestionBillingPolicy(kind string, evidenceOnlyEnabled bool) bool {

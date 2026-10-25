@@ -141,7 +141,7 @@ func (h *AIAssistanceHandler) Generate(c *gin.Context) {
 				ErrorNotFound(c, "关联样本不可用")
 				return
 			}
-			in.SampleContext = acmgSampleContext(sample)
+			in.SampleContext = acmgTaskSampleContext(sample, task)
 		}
 	}
 	scope, org, user := aiIdentity(c)

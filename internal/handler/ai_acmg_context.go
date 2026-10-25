@@ -31,3 +31,24 @@ func acmgSampleContext(sample *model.Sample) map[string]any {
 	_ = json.Unmarshal(raw, &context)
 	return context
 }
+
+// Use the executed task design, never the current sample's parent links.
+func acmgTaskSampleContext(sample *model.Sample, task *model.Task) map[string]any {
+	out := acmgSampleContext(sample)
+	mode := "unknown"
+	if task != nil {
+		switch task.Template {
+		case "single", "trio":
+			mode = task.Template
+		}
+	}
+	out["analysis_mode"] = mode
+	if mode == "trio" {
+		for _, member := range task.ToResponse().TrioMembers {
+			if member.Role == "father" || member.Role == "mother" {
+				out[member.Role+"_affected_status"] = member.AffectedStatus
+			}
+		}
+	}
+	return out
+}

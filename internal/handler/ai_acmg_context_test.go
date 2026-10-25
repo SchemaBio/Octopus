@@ -23,3 +23,30 @@ func TestACMGSampleContextUsesClinicalAllowlist(t *testing.T) {
 		}
 	}
 }
+
+func TestACMGAnalysisDesignUsesTaskNotCurrentParentLinks(t *testing.T) {
+	sample := &model.Sample{}
+	sample.FatherAffectedStatus = "unaffected"
+	sample.MotherAffectedStatus = "unknown"
+	sample.FatherSampleInternalID = "private-father"
+	task := &model.Task{Template: "trio", InputJSON: `{"trio_members":[{"role":"father","affected_status":"affected","internal_id":"private-father"},{"role":"mother","affected_status":"unaffected"}]}`}
+	ctx := acmgTaskSampleContext(sample, task)
+	if ctx["analysis_mode"] != "trio" || ctx["father_affected_status"] != "affected" || ctx["mother_affected_status"] != "unaffected" {
+		t.Fatal("task trio snapshot lost", ctx)
+	}
+	raw, _ := json.Marshal(ctx)
+	if strings.Contains(string(raw), "private-father") {
+		t.Fatal("sample identifier sent")
+	}
+	for _, mode := range []string{"single", "", "baseline_fix"} {
+		task.Template = mode
+		ctx = acmgTaskSampleContext(sample, task)
+		want := "unknown"
+		if mode == "single" {
+			want = "single"
+		}
+		if ctx["analysis_mode"] != want {
+			t.Fatal("parent links inferred trio", ctx)
+		}
+	}
+}
