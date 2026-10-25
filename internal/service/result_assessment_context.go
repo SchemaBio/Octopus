@@ -22,7 +22,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const browserAssessmentProfile = "germline-browser-assessment-v3-hpo-priority"
+const browserAssessmentProfile = "germline-browser-assessment-v4-hpo-gene-ranking"
 
 var validHPO = regexp.MustCompile(`^HP:\d{7}$`)
 

@@ -663,6 +663,10 @@ func (s *Service) process(ctx context.Context, r Request) {
 		_ = s.finish(r, "failed", "invalid_result", nil, false)
 		return
 	}
+	if code := evaluationFailureCode(raw); code != "" {
+		_ = s.finish(r, "failed", code, nil, false)
+		return
+	}
 	result, bill, e := NormalizeResult(r.Feature, stored.Model, raw)
 	if e != nil {
 		_ = s.finish(r, "failed", "invalid_result", nil, false)
