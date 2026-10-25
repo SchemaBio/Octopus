@@ -21,6 +21,7 @@ func TestRC2SettlementAndExperimentalLayers(t *testing.T) {
 		t.Fatal("eligible suggestion rejected")
 	}
 	raw["result_kind"] = "experimental"
+	raw["schema_version"] = "sepilens-evaluation-2.0"
 	raw["agent_proposal"] = map[string]any{"ai_assessment": map[string]any{}, "experimental_result": map[string]any{"version": "locked", "inputs_verified": false, "clinical_use": "forbidden", "total_points": "8", "classification": "likely_pathogenic"}}
 	result, bill, err := NormalizeResult("svcv4", "m", raw)
 	if err != nil || bill || result.Classification != "" || result.ExperimentalResult == nil {
@@ -28,7 +29,7 @@ func TestRC2SettlementAndExperimentalLayers(t *testing.T) {
 	}
 }
 
-func TestRC2ExperimentalCapabilityAndExplicitOrigin(t *testing.T) {
+func TestRC2ExperimentalCapabilityAndAutomaticContext(t *testing.T) {
 	s, _ := integrationService(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v2/capabilities" {
@@ -45,14 +46,20 @@ func TestRC2ExperimentalCapabilityAndExplicitOrigin(t *testing.T) {
 		t.Fatal(settings, err)
 	}
 	input := Input{Feature: "svcv4", Mode: "experimental", Reference: "hg38", Variant: map[string]any{"gene": "TEST", "chromosome": "1", "position": float64(1), "ref": "A", "alt": "G"}, ClinicalContext: Context{DiseaseID: "MONDO:1", Inheritance: "AD", SampleType: "blood", VariantOrigin: "unknown"}, DraftAssessment: json.RawMessage(`{"upstream_commit":"ef66faff51a265fef7b5c4e6439905f3aa540c46","moi":"AD"}`)}
-	if _, _, err = BuildPayload(input, "profile"); err == nil {
-		t.Fatal("unknown origin was silently scored")
-	}
-	input.ClinicalContext.VariantOrigin = "germline_confirmed"
 	_, body, err := BuildPayload(input, "profile")
-	if err != nil || body["options"].(map[string]any)["allow_experimental"] != true || body["evidence_package"].(map[string]any)["draft_assessment"] == nil {
-		t.Fatal(body, err)
+	if err != nil {
+		t.Fatal(err)
 	}
+	ctx := body["clinical_context"].(map[string]any)
+	pkg := body["evidence_package"].(map[string]any)
+	if ctx["variant_origin"] != "unknown" || ctx["inheritance"] != "unknown" || body["options"].(map[string]any)["allow_experimental"] != true || pkg["ai_context"] == nil || pkg["draft_assessment"] != nil {
+		t.Fatal("unverified context became confirmed draft inputs")
+	}
+	input.Mode = "production"
+	if _, _, err = BuildPayload(input, "profile"); err == nil {
+		t.Fatal("experimental guard bypassed")
+	}
+
 }
 
 func TestOwnerRoutingAndUnknownProbe(t *testing.T) {

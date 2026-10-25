@@ -1,7 +1,6 @@
 package assistance
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -37,10 +36,11 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 		return "", nil, errors.New("AI provider profile required")
 	}
 	c, v := in.ClinicalContext, in.Variant
-	if in.Feature == "acmg" {
+	autoContext := in.Feature == "acmg" || in.Feature == "svcv4"
+	if autoContext {
 		c = Context{Inheritance: "unknown", SampleType: "unknown", VariantOrigin: "unknown"}
 	}
-	if in.Feature != "acmg" && (c.DiseaseID == "" || c.Inheritance == "") {
+	if !autoContext && (c.DiseaseID == "" || c.Inheritance == "") {
 		return "", nil, errors.New("disease and inheritance required")
 	}
 	if c.SampleType == "" {
@@ -67,24 +67,18 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 	}
 	opts := map[string]any{"provider_profile_id": profile}
 	pkg := map[string]any{"sources": []any{}}
-	if in.Feature == "acmg" {
+	if autoContext {
 		pkg["ai_context"] = map[string]any{"variant_annotations": acmgVariantAnnotations(v), "sample": in.SampleContext}
 	}
 	body := map[string]any{"schema_version": "sepilens-evaluation-2.0", "mode": "ai_assisted", "engine_id": eng, "options": opts, "clinical_context": ctx, "evidence_package": pkg}
-	if in.Feature == "acmg" || in.Feature == "svcv4" {
-		if in.Feature != "acmg" && (c.DiseaseID == "" || c.Inheritance == "") {
-			return "", nil, errors.New("disease and inheritance required")
-		}
-		if in.Feature != "acmg" && text(v["gene"]) == "" {
-			return "", nil, errors.New("gene required")
-		}
+	if autoContext {
 		variant := map[string]any{"assembly": asm, "chrom": chrom, "pos": number(v["position"]), "ref": strings.ToUpper(text(v["ref"])), "alt": strings.ToUpper(text(v["alt"])), "gene": text(v["gene"])}
-		if in.Feature == "acmg" && !canonicalAIGene.MatchString(text(v["gene"])) {
+		if autoContext && !canonicalAIGene.MatchString(text(v["gene"])) {
 			variant["gene"] = ""
 		}
 		for from, to := range map[string]string{"transcript": "transcript", "hgvsc": "hgvs_c", "hgvsp": "hgvs_p", "consequence": "consequence"} {
 			if value := text(v[from]); value != "" {
-				if in.Feature == "acmg" && (len(value) > 512 || strings.ContainsAny(value, " \t\r\n\"<>{}")) {
+				if autoContext && (len(value) > 512 || strings.ContainsAny(value, " \t\r\n\"<>{}")) {
 					continue
 				}
 				variant[to] = value
@@ -96,14 +90,12 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 			variant["allele_frequency"] = af
 		}
 		if in.Feature == "svcv4" {
-			if in.Mode != "experimental" || c.VariantOrigin != "germline_confirmed" {
-				return "", nil, errors.New("SVC draft requires experimental mode and explicitly confirmed germline origin")
+			if in.Mode != "experimental" {
+				return "", nil, errors.New("SVC draft requires experimental mode")
 			}
-			var method map[string]any
-			if json.Unmarshal(in.DraftAssessment, &method) != nil || method["upstream_commit"] == nil || method["moi"] != c.Inheritance {
-				return "", nil, errors.New("SVC structured draft and matching inheritance required")
-			}
-			pkg["draft_assessment"] = method
+			// Imported clinical context is unverified. The browser draft is not a
+			// verified method package and cannot establish MOI or germline origin.
+			// AI organizes evidence; the manual draft calculator remains separate.
 			opts["allow_experimental"] = true
 		}
 	} else {
@@ -223,9 +215,7 @@ func NormalizeResult(feature, model string, raw map[string]any) (Result, bool, e
 		}
 		r.ExperimentalResult = experimental
 		r.ResultKind = "experimental"
-		r.Summary = "SVC 锁定草案实验评分，仅供研究与工程对照。"
 		r.Warnings = []string{"输入未经核验；禁止临床用途、人工审核采纳和积分结算。"}
-		return r, false, nil
 	}
 	if ai, ok := proposal["ai_assessment"].(map[string]any); ok {
 		if text(raw["schema_version"]) != "sepilens-evaluation-2.0" || text(raw["failure_code"]) != "" {
@@ -269,6 +259,11 @@ func NormalizeResult(feature, model string, raw map[string]any) (Result, bool, e
 					}
 				}
 			}
+		}
+		if r.ResultKind == "experimental" {
+			r.RuleEngineResult = nil
+			r.Classification = ""
+			return r, false, nil
 		}
 		r.Warnings = append(r.Warnings, "模型建议、规则结果与人工判定分别保存；本结果尚未由人工采纳。")
 		eligible, _ := raw["settlement_eligible"].(bool)

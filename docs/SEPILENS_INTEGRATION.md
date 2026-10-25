@@ -48,7 +48,7 @@ Token/主密钥也支持无 `_FILE` 的环境变量，文件优先。生产使�
 
 RC2 验收目标为“五类入口完成接线；HPO 候选提取和 SVC 草案实验可验证调用；ACMG/Loss/Gain 验证批准门禁及开放后的调用链；真实收费保持关闭”。接口接线不等于正式医学启用。
 
-能力返回 mode=candidate/experimental/formal。HPO 使用独立候选可用标志；SVC 仅在 status=experimental 且 experimental_available=true 时开放草案入口，医学 enabled 仍为 false。提交明确 mode=experimental、options.allow_experimental=true、锁定 upstream_commit 的 draft_assessment；origin=unknown 不执行草案。方法材料按 population、variant_impact、cases、case_control、locus_case_id 映射；未提供字段不补零。结果只读取 agent_proposal.experimental_result，显示版本、精确分值、未核验和禁止临床用途，禁止填入人工判读或结算。
+能力返回 mode=candidate/experimental/formal。HPO 使用独立候选可用标志；SVC 仅在 status=experimental 且 experimental_available=true 时开放草案入口，医学 enabled 仍为 false。YiJian 的 SVC AI 与 ACMG AI 均由 Octopus 在任务及样本权限校验后补入临床字段白名单和位点注释，发送 evidence_package.ai_context；用户无需补充疾病、遗传模式、样本类型或变异来源。SVC 明确提交 mode=experimental、options.allow_experimental=true；未知信息保留 unknown，不推断为 germline_confirmed。浏览器手动草案不作为已核验的 draft_assessment 发送，独立的手动草案计算流程保持原样。AI 临床整理摘要及候选条款从 agent_proposal.ai_assessment 展示，实验结果保留在 agent_proposal.experimental_result；不提供正式规则分类、不写入人工判读、不结算。SepiLens 的独立结构化草案接口仍校验锁定版本、MOI 和材料适用性。
 
 增加管理员 POST `/settings/test`（Cuttlefish `/api/manage/ai-settings/test`），保留 CSRF 和测试原因审计。测试使用完整配置，空 Key 由服务端补全；必须由管理员明确点击费用确认，测试可能产生模型商费用，平台不扣积分。逐项解析 supported/unsupported/unknown；HTTP 200 不表示所有能力通过，supported_protocols 也不证明模型支持 Schema 或流式。不会在保存配置时自动调用模型。
 
