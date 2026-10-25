@@ -66,5 +66,13 @@ func (e *Engine) openSource(ctx context.Context, q Request) (*Reader, error) {
 	if identity.hash != q.ObjectHash {
 		return nil, fmt.Errorf("parquet fingerprint mismatch")
 	}
-	return Open(ctx, e.Root, path)
+	if err := ValidateSampleColumnRoles(q.SampleColumnRoles); err != nil {
+		return nil, err
+	}
+	reader, err := Open(ctx, e.Root, path)
+	if err != nil {
+		return nil, err
+	}
+	reader.sampleColumnRoles = q.SampleColumnRoles
+	return reader, nil
 }

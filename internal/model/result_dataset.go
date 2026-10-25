@@ -7,24 +7,25 @@ import (
 
 // ResultDataset describes one immutable Parquet object for one task attempt.
 type ResultDataset struct {
-	AdjustmentRevision         uint64    `json:"adjustmentRevision" gorm:"not null;default:0"`
-	ID                         string    `json:"id" gorm:"primaryKey;size:64"`
-	TenantID                   string    `json:"-" gorm:"size:160;index;uniqueIndex:idx_result_dataset_scope,priority:1"`
-	TaskUUID                   string    `json:"taskUuid" gorm:"size:36;index;uniqueIndex:idx_result_dataset_scope,priority:2"`
-	ExecutionAttemptID         string    `json:"executionAttemptId" gorm:"size:36;index;uniqueIndex:idx_result_dataset_scope,priority:3"`
-	Table                      string    `json:"table" gorm:"size:64;uniqueIndex:idx_result_dataset_scope,priority:4"`
-	ObjectKey                  string    `json:"-" gorm:"type:text;not null"`
-	ObjectSHA256               string    `json:"objectSha256" gorm:"size:64;not null"`
-	ManifestVersion            string    `json:"manifestVersion" gorm:"size:64;not null;default:''"`
-	SourceSize                 int64     `json:"-" gorm:"not null;default:0"`
-	SourceLastModified         time.Time `json:"-" gorm:"type:timestamptz"`
-	FieldsJSON                 string    `json:"-" gorm:"type:jsonb;not null"`
-	AutomaticAssessmentProfile string    `json:"automaticAssessmentProfile" gorm:"size:64;not null;default:''"`
-	AutomaticAssessmentReady   bool      `json:"automaticAssessmentReady" gorm:"not null;default:false"`
-	ExpectedRows               *int64    `json:"expectedRows,omitempty"`
-	Rows                       int64     `json:"rows"`
-	DataVersion                string    `json:"dataVersion" gorm:"size:64;not null"`
-	CreatedAt                  time.Time `json:"createdAt" gorm:"type:timestamptz"`
+	SampleColumnRoles          map[string]string `json:"sampleColumnRoles,omitempty" gorm:"-"`
+	AdjustmentRevision         uint64            `json:"adjustmentRevision" gorm:"not null;default:0"`
+	ID                         string            `json:"id" gorm:"primaryKey;size:64"`
+	TenantID                   string            `json:"-" gorm:"size:160;index;uniqueIndex:idx_result_dataset_scope,priority:1"`
+	TaskUUID                   string            `json:"taskUuid" gorm:"size:36;index;uniqueIndex:idx_result_dataset_scope,priority:2"`
+	ExecutionAttemptID         string            `json:"executionAttemptId" gorm:"size:36;index;uniqueIndex:idx_result_dataset_scope,priority:3"`
+	Table                      string            `json:"table" gorm:"size:64;uniqueIndex:idx_result_dataset_scope,priority:4"`
+	ObjectKey                  string            `json:"-" gorm:"type:text;not null"`
+	ObjectSHA256               string            `json:"objectSha256" gorm:"size:64;not null"`
+	ManifestVersion            string            `json:"manifestVersion" gorm:"size:64;not null;default:''"`
+	SourceSize                 int64             `json:"-" gorm:"not null;default:0"`
+	SourceLastModified         time.Time         `json:"-" gorm:"type:timestamptz"`
+	FieldsJSON                 string            `json:"-" gorm:"type:jsonb;not null"`
+	AutomaticAssessmentProfile string            `json:"automaticAssessmentProfile" gorm:"size:64;not null;default:''"`
+	AutomaticAssessmentReady   bool              `json:"automaticAssessmentReady" gorm:"not null;default:false"`
+	ExpectedRows               *int64            `json:"expectedRows,omitempty"`
+	Rows                       int64             `json:"rows"`
+	DataVersion                string            `json:"dataVersion" gorm:"size:64;not null"`
+	CreatedAt                  time.Time         `json:"createdAt" gorm:"type:timestamptz"`
 }
 
 func (ResultDataset) TableName() string { return "result_datasets" }

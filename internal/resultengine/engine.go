@@ -41,19 +41,20 @@ func (o *Overlay) UnmarshalJSON(data []byte) error {
 }
 
 type Request struct {
-	Table      string    `json:"table"`
-	FilePath   string    `json:"filePath"`
-	DatasetID  string    `json:"datasetId"`
-	ObjectHash string    `json:"objectSha256"`
-	RowID      string    `json:"rowId,omitempty"`
-	RowCount   int64     `json:"rowCount"`
-	Offset     int64     `json:"offset"`
-	Limit      int64     `json:"limit"`
-	Search     string    `json:"search"`
-	Sort       string    `json:"sort"`
-	Direction  string    `json:"direction"`
-	Filters    []Filter  `json:"filters"`
-	Overlays   []Overlay `json:"overlays"`
+	SampleColumnRoles map[string]string `json:"sampleColumnRoles,omitempty"`
+	Table             string            `json:"table"`
+	FilePath          string            `json:"filePath"`
+	DatasetID         string            `json:"datasetId"`
+	ObjectHash        string            `json:"objectSha256"`
+	RowID             string            `json:"rowId,omitempty"`
+	RowCount          int64             `json:"rowCount"`
+	Offset            int64             `json:"offset"`
+	Limit             int64             `json:"limit"`
+	Search            string            `json:"search"`
+	Sort              string            `json:"sort"`
+	Direction         string            `json:"direction"`
+	Filters           []Filter          `json:"filters"`
+	Overlays          []Overlay         `json:"overlays"`
 }
 type Response struct {
 	Items               []map[string]interface{} `json:"items"`

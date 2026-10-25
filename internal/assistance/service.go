@@ -378,7 +378,7 @@ func (s *Service) billing(ctx context.Context, r Request, action string) error {
 	if s.Overlay.BaseURL == "" || s.Overlay.Token == "" {
 		return errors.New("billing unavailable")
 	}
-	_, err := s.Overlay.Call(ctx, "POST", "/api/v1/overlay/ai/"+action, "", map[string]any{"request_id": r.ID, "org_id": r.OrgID, "user_id": r.UserID, "task_id": r.TaskID, "feature": r.Feature}, nil)
+	_, err := s.Overlay.CallOverlay(ctx, "POST", "/api/v1/overlay/ai/"+action, map[string]any{"request_id": r.ID, "org_id": r.OrgID, "user_id": r.UserID, "task_id": r.TaskID, "feature": r.Feature})
 	return err
 }
 func (s *Service) Start(ctx context.Context) func() {

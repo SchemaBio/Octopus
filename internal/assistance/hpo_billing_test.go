@@ -2,9 +2,14 @@ package assistance
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -50,8 +55,20 @@ func TestHPOProductionBillingLifecycle(t *testing.T) {
 			var mu sync.Mutex
 			actions := []string{}
 			overlay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				raw, err := io.ReadAll(r.Body)
+				timestamp := r.Header.Get("X-Overlay-Timestamp")
+				issued, parseErr := strconv.ParseInt(timestamp, 10, 64)
+				mac := hmac.New(sha256.New, []byte("isolated-overlay"))
+				mac.Write([]byte(timestamp + "."))
+				mac.Write(raw)
+				signature, decodeErr := hex.DecodeString(r.Header.Get("X-Overlay-Signature"))
+				if err != nil || parseErr != nil || decodeErr != nil || time.Since(time.Unix(issued, 0)).Abs() > 5*time.Minute || !hmac.Equal(signature, mac.Sum(nil)) {
+					t.Error("billing request rejected by Squid signature contract")
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
 				var payload map[string]any
-				_ = json.NewDecoder(r.Body).Decode(&payload)
+				_ = json.Unmarshal(raw, &payload)
 				if r.Header.Get("Authorization") != "Bearer isolated-overlay" || payload["feature"] != "hpo" || payload["task_id"] != "" {
 					t.Error("invalid HPO billing identity")
 				}

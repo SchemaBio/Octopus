@@ -34,19 +34,20 @@ var ErrParquetIncomplete = fmt.Errorf("PARQUET_SOURCE_ROW_COUNT_MISMATCH")
 const maxCachedParquetBytes = int64(20 << 30)
 
 type parquetQueryWireRequest struct {
-	Table      string                `json:"table"`
-	FilePath   string                `json:"filePath"`
-	DatasetID  string                `json:"datasetId"`
-	ObjectHash string                `json:"objectSha256"`
-	RowID      string                `json:"rowId,omitempty"`
-	RowCount   int64                 `json:"rowCount"`
-	Offset     int64                 `json:"offset"`
-	Limit      int64                 `json:"limit"`
-	Search     string                `json:"search"`
-	Sort       string                `json:"sort"`
-	Direction  string                `json:"direction"`
-	Filters    []model.ParquetFilter `json:"filters"`
-	Overlays   []parquetOverlayWire  `json:"overlays"`
+	SampleColumnRoles map[string]string     `json:"sampleColumnRoles,omitempty"`
+	Table             string                `json:"table"`
+	FilePath          string                `json:"filePath"`
+	DatasetID         string                `json:"datasetId"`
+	ObjectHash        string                `json:"objectSha256"`
+	RowID             string                `json:"rowId,omitempty"`
+	RowCount          int64                 `json:"rowCount"`
+	Offset            int64                 `json:"offset"`
+	Limit             int64                 `json:"limit"`
+	Search            string                `json:"search"`
+	Sort              string                `json:"sort"`
+	Direction         string                `json:"direction"`
+	Filters           []model.ParquetFilter `json:"filters"`
+	Overlays          []parquetOverlayWire  `json:"overlays"`
 }
 
 type parquetOverlayWire struct {
@@ -89,7 +90,7 @@ func (s *ResultService) QueryParquetTable(ctx context.Context, task *model.Task,
 	if err := database.DB.Where("tenant_id = ? AND task_uuid = ? AND execution_attempt_id = ? AND \"table\" = ?", tenant, task.UUID, attempt, table).Find(&overlays).Error; err != nil {
 		return nil, err
 	}
-	wire := parquetQueryWireRequest{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, dataset.ID+"-"+dataset.ObjectSHA256+".parquet"), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, RowCount: dataset.Rows, Offset: maxInt64(0, query.Offset), Limit: maxInt64(1, minInt64(200, query.Limit)), Search: query.Search, Sort: query.Sort, Direction: query.Direction, Filters: query.Filters, Overlays: make([]parquetOverlayWire, 0, len(overlays))}
+	wire := parquetQueryWireRequest{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, dataset.ID+"-"+dataset.ObjectSHA256+".parquet"), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, SampleColumnRoles: dataset.SampleColumnRoles, RowCount: dataset.Rows, Offset: maxInt64(0, query.Offset), Limit: maxInt64(1, minInt64(200, query.Limit)), Search: query.Search, Sort: query.Sort, Direction: query.Direction, Filters: query.Filters, Overlays: make([]parquetOverlayWire, 0, len(overlays))}
 	for _, overlay := range overlays {
 		var payload map[string]interface{}
 		if err := json.Unmarshal([]byte(overlay.PayloadJSON), &payload); err != nil {
@@ -105,7 +106,7 @@ func (s *ResultService) QueryParquetTable(ctx context.Context, task *model.Task,
 	if dataset.ExpectedRows != nil && result.RowCount != *dataset.ExpectedRows {
 		return nil, ErrParquetIncomplete
 	}
-	if table == "snv-indel" {
+	if table == "snv-indel" && len(dataset.SampleColumnRoles) == 0 {
 		if err := applyStoredAutomaticAssessments(ctx, task, dataset, &result); err != nil {
 			return nil, err
 		}
@@ -209,6 +210,9 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 				}
 			}
 
+			if err := attachSampleColumnRoles(&current, manifest); err != nil {
+				return nil, err
+			}
 			return &current, nil
 		}
 	}
@@ -262,6 +266,9 @@ func (s *ResultService) ensureParquetDataset(ctx context.Context, task *model.Ta
 		os.Remove(cachePath)
 		return nil, err
 	}
+	if err := attachSampleColumnRoles(&item, manifest); err != nil {
+		return nil, err
+	}
 	return &item, nil
 }
 
@@ -274,7 +281,7 @@ func (s *ResultService) ensureAutomaticAssessments(ctx context.Context, task *mo
 	if table != "snv-indel" || dataset.AutomaticAssessmentReady && dataset.AutomaticAssessmentProfile == automaticACMGProfile {
 		return nil
 	}
-	prepared, err := s.prepareResultEngine(ctx, resultengine.Request{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, dataset.ID+"-"+dataset.ObjectSHA256+".parquet"), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, RowCount: dataset.Rows})
+	prepared, err := s.prepareResultEngine(ctx, resultengine.Request{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, dataset.ID+"-"+dataset.ObjectSHA256+".parquet"), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, SampleColumnRoles: dataset.SampleColumnRoles, RowCount: dataset.Rows})
 	if err != nil {
 		return err
 	}
@@ -671,7 +678,7 @@ func (s *ResultService) verifyParquetRow(ctx context.Context, task *model.Task, 
 	if err != nil {
 		return nil, err
 	}
-	wire := parquetQueryWireRequest{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, currentCacheName(dataset.ID, dataset.ObjectSHA256)), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, RowID: rowID, Limit: 1}
+	wire := parquetQueryWireRequest{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, currentCacheName(dataset.ID, dataset.ObjectSHA256)), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, SampleColumnRoles: dataset.SampleColumnRoles, RowID: rowID, Limit: 1}
 	result, err := s.queryResultEngine(ctx, wire)
 	if err != nil {
 		return nil, err
@@ -715,7 +722,7 @@ func (s *ResultService) ExportParquetTable(ctx context.Context, task *model.Task
 	if err := database.DB.WithContext(ctx).Where("tenant_id=? AND task_uuid=? AND execution_attempt_id=? AND \"table\"=?", model.TenantIDForTask(task), task.UUID, executionAttempt(task), table).Find(&overlays).Error; err != nil {
 		return nil, err
 	}
-	wire := parquetQueryWireRequest{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, currentCacheName(dataset.ID, dataset.ObjectSHA256)), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, Search: query.Search, Sort: query.Sort, Direction: query.Direction, Filters: query.Filters}
+	wire := parquetQueryWireRequest{Table: table, FilePath: filepath.Join(s.cfg.ResultQuery.CacheDir, currentCacheName(dataset.ID, dataset.ObjectSHA256)), DatasetID: dataset.ID, ObjectHash: dataset.ObjectSHA256, SampleColumnRoles: dataset.SampleColumnRoles, Search: query.Search, Sort: query.Sort, Direction: query.Direction, Filters: query.Filters}
 	for _, row := range overlays {
 		var payload map[string]interface{}
 		if err := json.Unmarshal([]byte(row.PayloadJSON), &payload); err != nil {

@@ -22,13 +22,14 @@ type Column struct {
 	Type string `json:"type"`
 }
 type Reader struct {
-	ctx     context.Context
-	file    source.ParquetFile
-	reader  *reader.ParquetReader
-	columns []Column
-	names   map[string]string
-	ordinal int64
-	closed  bool
+	sampleColumnRoles map[string]string
+	ctx               context.Context
+	file              source.ParquetFile
+	reader            *reader.ParquetReader
+	columns           []Column
+	names             map[string]string
+	ordinal           int64
+	closed            bool
 }
 
 // Open uses the footer even when there are no rows. Names come from the external
@@ -160,6 +161,7 @@ func (r *Reader) ReadBatch(limit int) (rows []map[string]interface{}, err error)
 		if !ok {
 			return nil, fmt.Errorf("invalid parquet row")
 		}
+		RemapSampleColumns(row, r.sampleColumnRoles)
 		rows[i] = row
 	}
 	r.ordinal += int64(len(rows))

@@ -5,8 +5,11 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,6 +33,15 @@ type UpstreamError struct {
 
 func (e *UpstreamError) Error() string { return "SepiLens: " + e.Code }
 func (c *Client) Call(ctx context.Context, method, path, key string, body any, out any) (int, error) {
+	return c.call(ctx, method, path, key, body, out, false)
+}
+
+// CallOverlay authenticates billing requests using Squid's timestamped body MAC.
+func (c *Client) CallOverlay(ctx context.Context, method, path string, body any) (int, error) {
+	return c.call(ctx, method, path, "", body, nil, true)
+}
+
+func (c *Client) call(ctx context.Context, method, path, key string, body any, out any, overlay bool) (int, error) {
 	timeout := 15 * time.Second
 	if path == "/v2/hpo/extract" {
 		timeout = 330 * time.Second
@@ -52,6 +65,14 @@ func (c *Client) Call(ctx context.Context, method, path, key string, body any, o
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Content-Type", "application/json")
+	if overlay {
+		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+		mac := hmac.New(sha256.New, []byte(c.Token))
+		mac.Write([]byte(timestamp + "."))
+		mac.Write(data)
+		req.Header.Set("X-Overlay-Timestamp", timestamp)
+		req.Header.Set("X-Overlay-Signature", hex.EncodeToString(mac.Sum(nil)))
+	}
 	if key != "" {
 		req.Header.Set("Idempotency-Key", key)
 	}

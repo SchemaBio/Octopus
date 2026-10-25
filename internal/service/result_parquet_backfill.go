@@ -192,6 +192,9 @@ func (s *ResultService) BackfillArchivedParquet(ctx context.Context, task *model
 		sources[table] = map[string]interface{}{"source": key, "source_sha256": fingerprint, "source_bytes": size, "rows": rows, "columns": headers, "converter": "archived-tsv-strings-v1"}
 	}
 	catalog := map[string]interface{}{"version": "parquet-catalog-v1", "task_uuid": task.UUID, "attempt_id": executionAttempt(task), "datasets": references, "conversion_sources": sources}
+	if roles, exists := previous["sample_column_roles"]; exists {
+		catalog["sample_column_roles"] = roles
+	}
 	data, _ := json.Marshal(catalog)
 	priorData, _ := json.Marshal(previous)
 	if string(data) != string(priorData) {
