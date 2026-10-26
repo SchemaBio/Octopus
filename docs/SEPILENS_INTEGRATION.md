@@ -122,3 +122,5 @@ CNV 使用现有权限校验后的任务/样本上下文，无需必填疾病和
 候选交付复用预扣/结算/退款和幂等生命周期；失败、取消及未具备资格的交付退款。人工保存的 section4.aiReviewed 使用独立来源和整数百分位分值，禁止与手工病例数叠加；后端重新计算，不相信浏览器总分与分类。criteria.aiReview 保存原建议、来源、请求标识和采用记录。无 schema 迁移。
 
 CNV 评估快照允许最多 2 MiB，以容纳有界 AI 条款、引用及人工采用记录；超限仍拒绝，避免原 64 KiB 上限阻断合法 AI 结果保存。
+
+深度报告中的非负有限小数 copyNumber 作为连续估算值保留在 ai_context.variant_annotations.copyNumber / copyNumberEstimate，不写入整数 cnv.copy_number、不四舍五入。整数（含 0）继续传入 copy_number；负数、非有限或超出安全整数范围的值拒绝。估算值不证明嵌合、胚系或临床适用性。

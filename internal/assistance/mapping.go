@@ -127,10 +127,17 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 		}
 		cnv := map[string]any{"assembly": asm, "chrom": chrom, "start": start, "end": end, "coordinate_system": "1-based-inclusive", "type": typ}
 		if n, ok := v["copyNumber"].(float64); ok {
-			if n < 0 || n != math.Trunc(n) || math.IsNaN(n) || math.IsInf(n, 0) {
+			if n < 0 || n > 9007199254740991 || math.IsNaN(n) || math.IsInf(n, 0) {
 				return "", nil, errors.New("invalid CNV copy number")
 			}
-			cnv["copy_number"] = int(n)
+			if n == math.Trunc(n) {
+				cnv["copy_number"] = int(n)
+			} else {
+				// Depth-based reports contain continuous CN estimates. Never
+				// round them into a discrete or clinically confirmed copy count.
+				imported := pkg["ai_context"].(map[string]any)
+				imported["variant_annotations"].(map[string]any)["copyNumberEstimate"] = n
+			}
 		}
 		body["cnv"] = cnv
 	}
