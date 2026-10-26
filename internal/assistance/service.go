@@ -31,13 +31,14 @@ type Service struct {
 	Billing     bool
 	SVCBilling  bool
 	ACMGBilling bool
+	CNVBilling  bool
 	HPOBilling  bool
 	Overlay     *Client
 }
 
 func New(db *gorm.DB, saas bool, overlayURL, overlayToken string) *Service {
 	c, _ := newCipher()
-	return &Service{DB: db, Client: newClient(), Cipher: c, SaaS: saas, HPOBilling: saas, SVCBilling: saas && os.Getenv("AI_ASSISTANCE_SVC_BILLING_ENABLED") == "true", ACMGBilling: saas && os.Getenv("AI_ASSISTANCE_ACMG_BILLING_ENABLED") == "true", Billing: saas && os.Getenv("AI_ASSISTANCE_BILLING_ENABLED") == "true", Overlay: &Client{overlayURL, overlayToken, &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}}
+	return &Service{DB: db, Client: newClient(), Cipher: c, SaaS: saas, HPOBilling: saas, CNVBilling: saas && os.Getenv("AI_ASSISTANCE_CNV_BILLING_ENABLED") == "true", SVCBilling: saas && os.Getenv("AI_ASSISTANCE_SVC_BILLING_ENABLED") == "true", ACMGBilling: saas && os.Getenv("AI_ASSISTANCE_ACMG_BILLING_ENABLED") == "true", Billing: saas && os.Getenv("AI_ASSISTANCE_BILLING_ENABLED") == "true", Overlay: &Client{overlayURL, overlayToken, &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}}
 }
 
 // HPO production billing is independent of experimental assessment billing.
@@ -48,6 +49,9 @@ func (s *Service) billsFeature(feature string) bool {
 	}
 	if feature == "svcv4" {
 		return s.SaaS && s.SVCBilling
+	}
+	if feature == "cnv_gain" || feature == "cnv_loss" {
+		return s.SaaS && s.CNVBilling
 	}
 	if feature == "acmg" {
 		return s.SaaS && (s.ACMGBilling || s.Billing)
@@ -75,7 +79,7 @@ func (s *Service) configuredRecord() (Settings, Draft, error) {
 }
 func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, error) {
 	row, draft, err := s.configuredRecord()
-	out := PublicSettings{Enabled: row.Enabled, Configured: row.Configured, KeyConfigured: draft.APIKey != "", Protocol: draft.Protocol, BillingEnabled: s.Billing || s.ACMGBilling || s.SVCBilling, Capabilities: map[string]Capability{}}
+	out := PublicSettings{Enabled: row.Enabled, Configured: row.Configured, KeyConfigured: draft.APIKey != "", Protocol: draft.Protocol, BillingEnabled: s.Billing || s.ACMGBilling || s.SVCBilling || s.CNVBilling, Capabilities: map[string]Capability{}}
 	if out.Protocol == "" {
 		out.Protocol = "openai_responses"
 	}
@@ -150,6 +154,9 @@ func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, err
 				}
 				if e.Status != "" {
 					reason = "引擎状态：" + e.Status
+					if feature == "cnv_gain" || feature == "cnv_loss" {
+						reason = "cnv_ai_unavailable"
+					}
 				}
 			}
 		}
@@ -165,7 +172,7 @@ func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, err
 			enabled = false
 			reason = "AI 辅助功能未开启"
 		}
-		if ((feature == "acmg" && s.ACMGBilling) || (feature == "svcv4" && s.SVCBilling)) && !engineBilling {
+		if ((feature == "acmg" && s.ACMGBilling) || (feature == "svcv4" && s.SVCBilling) || ((feature == "cnv_gain" || feature == "cnv_loss") && s.CNVBilling)) && !engineBilling {
 			enabled = false
 			reason = "AI 计费服务尚未就绪"
 		}
@@ -175,7 +182,7 @@ func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, err
 		if enabled && mode == "experimental" {
 			reason = "草案实验 · 输入未核验 · 禁止临床用途"
 		}
-		out.Capabilities[feature] = Capability{Enabled: enabled, Reason: reason, Mode: mode, BillingEnabled: s.billsFeature(feature) && (feature == "hpo" || mode == "formal" || feature == "acmg" && s.ACMGBilling && engineBilling || feature == "svcv4" && s.SVCBilling && engineBilling), RulesetHash: rulesetHash}
+		out.Capabilities[feature] = Capability{Enabled: enabled, Reason: reason, Mode: mode, BillingEnabled: s.billsFeature(feature) && (feature == "hpo" || mode == "formal" || feature == "acmg" && s.ACMGBilling && engineBilling || feature == "svcv4" && s.SVCBilling && engineBilling || (feature == "cnv_gain" || feature == "cnv_loss") && s.CNVBilling && engineBilling), RulesetHash: rulesetHash}
 	}
 	return out, nil
 }
@@ -494,7 +501,7 @@ func (s *Service) finish(r Request, state, code string, result *Result, billable
 	var encoded string
 	var err error
 	if result != nil {
-		if r.Feature == "svcv4" && result.VariantID == "" {
+		if (r.Feature == "svcv4" || r.Feature == "cnv_gain" || r.Feature == "cnv_loss") && result.VariantID == "" {
 			var stored StoredInput
 			if open(s.Cipher, r.ID, r.Ciphertext, &stored) == nil && stored.Input.TaskID == r.TaskID && stored.Input.Feature == r.Feature {
 				result.VariantID = text(stored.Input.Variant["id"])
@@ -634,7 +641,7 @@ func (s *Service) process(ctx context.Context, r Request) {
 			return
 		}
 		if r.Feature == "hpo" {
-			result, bill, e := normalizeResult(r.Feature, stored.Model, raw, (r.Feature == "acmg" || r.Feature == "svcv4") && r.BillingEnabled)
+			result, bill, e := normalizeResult(r.Feature, stored.Model, raw, (r.Feature == "acmg" || r.Feature == "svcv4" || r.Feature == "cnv_gain" || r.Feature == "cnv_loss") && r.BillingEnabled)
 			if e != nil {
 				_ = s.finish(r, "failed", "invalid_result", nil, false)
 			} else {
@@ -698,7 +705,7 @@ func (s *Service) process(ctx context.Context, r Request) {
 		_ = s.finish(r, "failed", code, nil, false)
 		return
 	}
-	result, bill, e := normalizeResult(r.Feature, stored.Model, raw, (r.Feature == "acmg" || r.Feature == "svcv4") && r.BillingEnabled)
+	result, bill, e := normalizeResult(r.Feature, stored.Model, raw, (r.Feature == "acmg" || r.Feature == "svcv4" || r.Feature == "cnv_gain" || r.Feature == "cnv_loss") && r.BillingEnabled)
 	if e != nil {
 		_ = s.finish(r, "failed", "invalid_result", nil, false)
 	} else {

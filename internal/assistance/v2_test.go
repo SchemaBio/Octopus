@@ -9,7 +9,7 @@ import (
 
 func TestV2AIOnlyPayloadAndUntrustedAnnotations(t *testing.T) {
 	for _, feature := range []string{"acmg", "cnv_gain", "cnv_loss"} {
-		input := Input{Feature: feature, Reference: "hg38", Variant: map[string]any{"chromosome": "chr1", "position": float64(100), "ref": "A", "alt": "G", "gene": "TEST", "startPosition": float64(100), "endPosition": float64(200), "gnomadAF": 0.001, "sample_id": "private"}, ClinicalContext: Context{DiseaseID: "MONDO:1", Inheritance: "AD", SampleType: "blood", VariantOrigin: "germline_confirmed"}}
+		input := Input{Feature: feature, Reference: "hg38", Variant: map[string]any{"chromosome": "chr1", "position": float64(100), "ref": "A", "alt": "G", "gene": "TEST", "coordinateSystem": "1-based-inclusive", "startPosition": float64(100), "endPosition": float64(200), "gnomadAF": 0.001, "sample_id": "private"}, ClinicalContext: Context{DiseaseID: "MONDO:1", Inheritance: "AD", SampleType: "blood", VariantOrigin: "germline_confirmed"}}
 		path, p, err := BuildPayload(input, "profile")
 		if err != nil || path != "/v2/evaluations" || p["mode"] != "ai_assisted" || p["schema_version"] != "sepilens-evaluation-2.0" {
 			t.Fatal(path, p, err)

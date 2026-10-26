@@ -3,6 +3,7 @@ package assistance
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -36,7 +37,8 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 		return "", nil, errors.New("AI provider profile required")
 	}
 	c, v := in.ClinicalContext, in.Variant
-	autoContext := in.Feature == "acmg" || in.Feature == "svcv4"
+	isCNV := in.Feature == "cnv_gain" || in.Feature == "cnv_loss"
+	autoContext := in.Feature == "acmg" || in.Feature == "svcv4" || isCNV
 	if autoContext {
 		c = Context{Inheritance: "unknown", SampleType: "unknown", VariantOrigin: "unknown"}
 	}
@@ -71,7 +73,7 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 		pkg["ai_context"] = map[string]any{"variant_annotations": acmgVariantAnnotations(v), "sample": in.SampleContext}
 	}
 	body := map[string]any{"schema_version": "sepilens-evaluation-2.0", "mode": "ai_assisted", "engine_id": eng, "options": opts, "clinical_context": ctx, "evidence_package": pkg}
-	if autoContext {
+	if !isCNV {
 		variant := map[string]any{"assembly": asm, "chrom": chrom, "pos": number(v["position"]), "ref": strings.ToUpper(text(v["ref"])), "alt": strings.ToUpper(text(v["alt"])), "gene": text(v["gene"])}
 		if autoContext && !canonicalAIGene.MatchString(text(v["gene"])) {
 			variant["gene"] = ""
@@ -99,12 +101,35 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 			opts["allow_experimental"] = true
 		}
 	} else {
+		if typ := text(v["type"]); typ != "" && ((in.Feature == "cnv_loss" && typ != "Deletion") || (in.Feature == "cnv_gain" && typ != "Amplification")) {
+			return "", nil, errors.New("CNV event and engine mismatch")
+		}
 		typ := "gain"
 		if in.Feature == "cnv_loss" {
 			typ = "loss"
 		}
-		cnv := map[string]any{"assembly": asm, "chrom": chrom, "start": number(v["startPosition"]), "end": number(v["endPosition"]), "coordinate_system": "1-based-inclusive", "type": typ}
-		if n := number(v["copyNumber"]); n > 0 {
+		start, end := number(v["startPosition"]), number(v["endPosition"])
+		if math.IsNaN(start) || math.IsInf(start, 0) || math.IsNaN(end) || math.IsInf(end, 0) || start != math.Trunc(start) || end != math.Trunc(end) || start < 0 || end < start || end > 9007199254740991 {
+			return "", nil, errors.New("invalid CNV interval")
+		}
+		switch text(v["coordinateSystem"]) {
+		case "0-based-half-open", "cnr-bed-zero-based-half-open":
+			if end <= start {
+				return "", nil, errors.New("empty CNV interval")
+			}
+			start++
+		case "1-based-inclusive":
+			if start < 1 {
+				return "", nil, errors.New("invalid CNV start")
+			}
+		default:
+			return "", nil, errors.New("explicit CNV coordinate system required")
+		}
+		cnv := map[string]any{"assembly": asm, "chrom": chrom, "start": start, "end": end, "coordinate_system": "1-based-inclusive", "type": typ}
+		if n, ok := v["copyNumber"].(float64); ok {
+			if n < 0 || n != math.Trunc(n) || math.IsNaN(n) || math.IsInf(n, 0) {
+				return "", nil, errors.New("invalid CNV copy number")
+			}
 			cnv["copy_number"] = int(n)
 		}
 		body["cnv"] = cnv
@@ -275,7 +300,7 @@ func normalizeResult(feature, model string, raw map[string]any, paidDelivery boo
 		}
 		r.Warnings = append(r.Warnings, "模型建议、规则结果与人工判定分别保存；本结果尚未由人工采纳。")
 		eligible, _ := raw["settlement_eligible"].(bool)
-		return r, eligible && suggestionBillingPolicy(r.ResultKind, paidDelivery && feature == "acmg"), nil
+		return r, eligible && suggestionBillingPolicy(r.ResultKind, paidDelivery && (feature == "acmg" || feature == "cnv_gain" || feature == "cnv_loss")), nil
 	}
 	if text(raw["schema_version"]) == "sepilens-evaluation-2.0" {
 		return r, false, errors.New("missing v2 AI proposal")
@@ -324,7 +349,7 @@ func normalizeResult(feature, model string, raw map[string]any, paidDelivery boo
 	r.Warnings = append(r.Warnings, "模型建议、规则结果与人工判定分别保存；本结果尚未由人工采纳。")
 	// Commercial AI evidence billing is explicitly snapshotted per ACMG request.
 	eligible, _ := raw["settlement_eligible"].(bool)
-	return r, valid && eligible && suggestionBillingPolicy(r.ResultKind, paidDelivery && feature == "acmg"), nil
+	return r, valid && eligible && suggestionBillingPolicy(r.ResultKind, paidDelivery && (feature == "acmg" || feature == "cnv_gain" || feature == "cnv_loss")), nil
 }
 
 func suggestionBillingPolicy(kind string, evidenceOnlyEnabled bool) bool {

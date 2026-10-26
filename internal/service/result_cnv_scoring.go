@@ -96,7 +96,7 @@ func normalizeCNVScoring(payload map[string]interface{}) error {
 			return fmt.Errorf("invalid dosage group")
 		}
 		value := v.Score
-		if value == 0 && b.def != 0 {
+		if value == 0 && b.min == b.max && b.def != 0 {
 			value = b.def
 		}
 		if !finiteRange(value, b.min, b.max) {
@@ -190,6 +190,12 @@ func normalizeCNVScoring(payload map[string]interface{}) error {
 			return fmt.Errorf("case score outside official bounds")
 		}
 		sections["section4"] += score
+	}
+	if value, ok, err := reviewedCNVSection4(p.Criteria["section4"], p.CNVType); err != nil {
+		return err
+	} else if ok {
+		sections["section4"] = value
+		evidence = true
 	}
 	if sections["section4"] != 0 {
 		evidence = true

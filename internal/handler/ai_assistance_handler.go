@@ -127,7 +127,7 @@ func (h *AIAssistanceHandler) Generate(c *gin.Context) {
 		return
 	}
 	in := value.(assistance.Input)
-	if in.Feature == "acmg" || in.Feature == "svcv4" {
+	if in.Feature == "acmg" || in.Feature == "svcv4" || in.Feature == "cnv_gain" || in.Feature == "cnv_loss" {
 		task, allowed := requireTaskAccess(c, h.tasks, in.TaskID)
 		if !allowed {
 			return

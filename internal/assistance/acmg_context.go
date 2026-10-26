@@ -12,7 +12,7 @@ var canonicalAIGene = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,80}$`)
 // Keep all annotation columns, while excluding operational and identity data.
 func acmgVariantAnnotations(v map[string]any) map[string]any {
 	out := map[string]any{}
-	for _, key := range strings.Fields("gene genes chromosome position ref alt variantType zygosity transcript hgvsc hgvsp consequence clinvarId clinvarSignificance clinvarReviewStatus clinvarStars clinvarDisease gnomadAF gnomadEasAF alphaMissenseScore pangolinGain pangolinLoss evoScore diseaseAssociation inheritanceMode rsId depth alleleFrequency maxAF gnomadNhomaltXX gnomadNhomaltXY pangolinAnnotation evoAnnotation alphaMissenseClass pubmedIds omimId") {
+	for _, key := range strings.Fields("gene genes chromosome position startPosition endPosition coordinateSystem type copyNumber copyRatio confidence exon ref alt variantType zygosity transcript hgvsc hgvsp consequence clinvarId clinvarSignificance clinvarReviewStatus clinvarStars clinvarDisease gnomadAF gnomadEasAF alphaMissenseScore pangolinGain pangolinLoss evoScore diseaseAssociation inheritanceMode rsId depth alleleFrequency maxAF gnomadNhomaltXX gnomadNhomaltXY pangolinAnnotation evoAnnotation alphaMissenseClass pubmedIds omimId") {
 		if value, ok := v[key]; ok {
 			out[key] = value
 		}

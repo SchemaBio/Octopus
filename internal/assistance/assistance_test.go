@@ -46,7 +46,7 @@ func TestEncryptionRejectsOtherRequestAndTampering(t *testing.T) {
 	}
 }
 func TestMappingPreservesCoordinatesAndUnverifiedDraft(t *testing.T) {
-	in := Input{Feature: "cnv_loss", Reference: "hg19", Variant: map[string]any{"chromosome": "chr1", "startPosition": float64(101), "endPosition": float64(200), "sample_id": "omit", "gnomadAF": 0.01}, ClinicalContext: Context{SampleType: "blood", DiseaseID: "MONDO:1", Inheritance: "unknown"}, Calculator: json.RawMessage(`{"evidence":[{"code":"1A","reason":"draft","verified":true}],"bam":"https://signed.example"}`)}
+	in := Input{Feature: "cnv_loss", Reference: "hg19", Variant: map[string]any{"chromosome": "chr1", "coordinateSystem": "1-based-inclusive", "startPosition": float64(101), "endPosition": float64(200), "sample_id": "omit", "gnomadAF": 0.01}, ClinicalContext: Context{SampleType: "blood", DiseaseID: "MONDO:1", Inheritance: "unknown"}, Calculator: json.RawMessage(`{"evidence":[{"code":"1A","reason":"draft","verified":true}],"bam":"https://signed.example"}`)}
 	path, p, e := BuildPayload(in, "platform-v1")
 	if e != nil {
 		t.Fatal(e)

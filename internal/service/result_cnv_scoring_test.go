@@ -100,3 +100,27 @@ func TestCNVOfficialSegregationBuckets(t *testing.T) {
 		t.Fatal("gain HI was scored as TS")
 	}
 }
+
+func TestCNVReviewedLiteratureRecomputeAndBounds(t *testing.T) {
+	for _, kind := range []string{"Deletion", "Amplification"} {
+		p := cnvScoreFixture(t, kind)
+		four := p["criteria"].(map[string]interface{})["section4"].(map[string]interface{})
+		item := map[string]interface{}{"code": "4A", "scoreHundredths": 45, "sourceIds": []string{"PMID-1"}, "reason": "human reviewed synthetic"}
+		four["aiReviewed"] = []interface{}{item}
+		if e := normalizeCNVScoring(p); e != nil {
+			t.Fatal(e)
+		}
+		if p["totalScore"] != .45 || p["classification"] != "VUS" {
+			t.Fatal(p)
+		}
+		item["scoreHundredths"] = 46
+		if normalizeCNVScoring(p) == nil {
+			t.Fatal("bad reviewed score")
+		}
+		item["scoreHundredths"] = 45
+		four["deNovo"] = map[string]interface{}{"4A": map[string]interface{}{"confirmedCount": 1}}
+		if normalizeCNVScoring(p) == nil {
+			t.Fatal("duplicate manual case count accepted")
+		}
+	}
+}

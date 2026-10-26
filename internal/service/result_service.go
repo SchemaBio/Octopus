@@ -177,7 +177,8 @@ func (s *ResultService) FocusVariant(ctx context.Context, variantType string, ta
 
 // ========== CNV assessment persistence ==========
 
-const maxCNVAssessmentPayloadBytes = 64 * 1024
+// CNV AI snapshots include bounded criteria, citations and the human adoption audit.
+const maxCNVAssessmentPayloadBytes = 2 * 1024 * 1024
 
 func isCNVAssessmentType(variantType string) bool {
 	return variantType == "cnv-segment" || variantType == "cnv-exon"

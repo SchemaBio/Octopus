@@ -112,3 +112,13 @@ Squid 使用独立 ai_billing_requests 状态和原子幂等账本；billing_bas
 - Linux 交叉编译 `go test -c ./internal/assistance`，在组合镜像设置 `AI_RUNTIME_SMOKE=true` 执行 TestManagedSepiLensRuntime，验证实际二进制、能力门禁、目录锁、重启、退出及持久化。
 - 本轮已在本地 amd64 组合镜像通过上述运行验证，并以缺失 SepiLens 二进制启动完整 Octopus，确认普通 `/health` 仍返回 healthy。临时 PostgreSQL 和验证容器已清理，未使用线上数据。
 - 真实厂商模型联调、结算约定对齐和医学引擎批准继续由后续独立验收完成。
+
+## CNV Gain/Loss AI
+
+`AI_ASSISTANCE_CNV_BILLING_ENABLED` 默认 false，独立控制 Gain/Loss 每次 1 积分；与 Squid 同名开关和 SepiLens `SEPILENS_CNV_BILLING_ENABLED` 一起启用。正式规则批准开关不变。能力以 `ai_available`、`billing_available` 映射，不用正式规则 disabled 状态阻止候选请求。
+
+CNV 使用现有权限校验后的任务/样本上下文，无需必填疾病和遗传模式。必须提供明确 coordinateSystem；BED 转一基闭区间，CN=0 保留；未知格式、负数、空区间和非整数拒绝。仅提交白名单变异信息，不将浏览器原报告分级、旧评分或 calculator 作为受信规则事实。
+
+候选交付复用预扣/结算/退款和幂等生命周期；失败、取消及未具备资格的交付退款。人工保存的 section4.aiReviewed 使用独立来源和整数百分位分值，禁止与手工病例数叠加；后端重新计算，不相信浏览器总分与分类。criteria.aiReview 保存原建议、来源、请求标识和采用记录。无 schema 迁移。
+
+CNV 评估快照允许最多 2 MiB，以容纳有界 AI 条款、引用及人工采用记录；超限仍拒绝，避免原 64 KiB 上限阻断合法 AI 结果保存。
