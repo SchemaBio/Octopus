@@ -116,7 +116,7 @@ func (s *ResultService) GetContext(ctx context.Context, task *model.Task) (*mode
 		}
 	}
 	return &model.ResultContextResponse{
-		Capabilities: task.ResultCapabilities(), VCFAnnotation: annotation,
+		Capabilities: task.ResultCapabilities(), VCFAnnotation: annotation, Kinship: s.archivedKinship(ctx, task),
 		TaskUUID:           task.UUID,
 		ExecutionAttemptID: attemptID,
 		ImportBatchID:      importBatchID,

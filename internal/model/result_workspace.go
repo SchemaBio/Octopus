@@ -4,6 +4,7 @@ package model
 // interpretation workspace. It intentionally carries IDs and availability
 // state, never archive paths or signed object URLs.
 type ResultContextResponse struct {
+	Kinship            *ResultKinship         `json:"kinship,omitempty"`
 	Capabilities       []string               `json:"capabilities"`
 	VCFAnnotation      map[string]interface{} `json:"vcfAnnotation,omitempty"`
 	TaskUUID           string                 `json:"taskUuid"`
@@ -128,4 +129,24 @@ type IGVURLResponse struct {
 	Transport string        `json:"transport,omitempty"`
 	Tracks    []IGVTrackURL `json:"tracks"`
 	ExpiresAt string        `json:"expiresAt"`
+}
+
+// ResultKinship exposes source QC without turning it into clinical evidence.
+type ResultKinship struct {
+	Status string        `json:"status"`
+	Source string        `json:"source"`
+	Pairs  []KinshipPair `json:"pairs"`
+}
+type KinshipPair struct {
+	SampleA                string  `json:"sampleA"`
+	SampleB                string  `json:"sampleB"`
+	Relatedness            float64 `json:"relatedness"`
+	PedigreeRelatedness    float64 `json:"pedigreeRelatedness"`
+	IBS0                   int64   `json:"ibs0"`
+	IBS2                   int64   `json:"ibs2"`
+	Sites                  int64   `json:"sites"`
+	PedigreeParents        bool    `json:"pedigreeParents"`
+	PredictedParents       bool    `json:"predictedParents"`
+	ParentError            bool    `json:"parentError"`
+	SampleDuplicationError bool    `json:"sampleDuplicationError"`
 }
