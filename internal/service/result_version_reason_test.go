@@ -42,3 +42,23 @@ func TestACMGAdjustmentReasonsAreOptional(t *testing.T) {
 		})
 	}
 }
+
+func TestSVCAISaveRejectsBrowserResultAndOtherTables(t *testing.T) {
+	svc := &ResultService{}
+	task := &model.Task{UUID: "task"}
+	row := strings.Repeat("a", 64)
+	for _, tc := range []struct {
+		table string
+		value interface{}
+		want  string
+	}{
+		{"snv-indel", map[string]interface{}{"classification": "Pathogenic"}, "SVC AI save accepts only a request ID"},
+		{"snv-indel", "bad", "invalid SVC AI request"},
+		{"cnv-exon", "11111111-1111-4111-8111-111111111111", "SVC AI result is only valid for SNP/InDel"},
+	} {
+		_, _, err := svc.SaveParquetRowAdjustment(context.Background(), task, tc.table, row, "actor", model.ResultRowAdjustmentRequest{Adjustments: map[string]interface{}{"svcv4AIResult": tc.value}})
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("unexpected validation: %v", err)
+		}
+	}
+}

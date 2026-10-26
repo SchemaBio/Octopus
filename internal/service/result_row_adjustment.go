@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SchemaBio/Octopus/internal/assistance"
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
 	"github.com/google/uuid"
@@ -172,7 +173,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if len(request.Adjustments) == 0 {
 		return nil, nil, fmt.Errorf("at least one adjustment is required")
 	}
-	allowed := map[string]bool{"svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "focused": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
+	allowed := map[string]bool{"svcv4AIResult": true, "svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "focused": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
 	if _, has := request.Adjustments["cnvAssessment"]; has && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("CNV evidence changes require an adjustment reason")
 	}
@@ -184,6 +185,17 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			return nil, nil, fmt.Errorf("unsupported adjustment field")
 		}
 		switch key {
+		case "svcv4AIResult":
+			if table != "snv-indel" {
+				return nil, nil, fmt.Errorf("SVC AI result is only valid for SNP/InDel")
+			}
+			id, ok := value.(string)
+			if !ok {
+				return nil, nil, fmt.Errorf("SVC AI save accepts only a request ID")
+			}
+			if _, err := uuid.Parse(id); err != nil {
+				return nil, nil, fmt.Errorf("invalid SVC AI request")
+			}
 		case "svcv4Assessment", "activeAcmgVersion":
 			if table != "snv-indel" {
 				return nil, nil, fmt.Errorf("SVCv4 is only valid for SNP/InDel")
@@ -251,6 +263,32 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	}
 	if request.AttemptID != "" && request.AttemptID != executionAttempt(task) || request.DatasetVersion != "" && request.DatasetVersion != dataset.DataVersion {
 		return nil, nil, ErrAdjustmentConflict
+	}
+	if id, ok := request.Adjustments["svcv4AIResult"].(string); ok {
+		ai := assistance.New(database.DB, s.cfg.IsSaaS(), s.cfg.Overlay.BaseURL, s.cfg.Overlay.SharedSecret)
+		saved, err := ai.SavedSVCResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, id)
+		if errors.Is(err, assistance.ErrLegacySVCBinding) && request.RowOrdinal != nil {
+			cache, readErr := s.historyDatasetCache(ctx, dataset)
+			if readErr != nil {
+				return nil, nil, readErr
+			}
+			page, readErr := NewParquetReader().ReadPage(cache, *request.RowOrdinal, 1)
+			if readErr != nil || len(page.Rows) != 1 {
+				return nil, nil, ErrParquetIncomplete
+			}
+			identity := normalizeParquetAPIItem(table, page.Rows[0])
+			identity["assembly"] = TaskReferenceGenome(task)
+			saved, err = ai.SavedLegacySVCResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, id, identity)
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		original := request.Adjustments
+		request.Adjustments = make(map[string]interface{}, len(original))
+		for key, value := range original {
+			request.Adjustments[key] = value
+		}
+		request.Adjustments["svcv4AIResult"] = saved
 	}
 	// Submitted totals are never trusted; recompute before acquiring database locks.
 	if input, ok := request.Adjustments["svcv4Assessment"].(map[string]interface{}); ok {

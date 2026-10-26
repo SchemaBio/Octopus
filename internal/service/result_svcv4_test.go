@@ -69,3 +69,17 @@ func TestReportContractRequiresVersionProvenance(t *testing.T) {
 		t.Fatal("legacy protocol must be rejected even without SVC variants")
 	}
 }
+
+func TestSVCv4MissingContextIsSaveableButCannotBeAdopted(t *testing.T) {
+	out, err := (&ResultService{}).SVCv4(context.Background(), map[string]interface{}{"inputs": map[string]interface{}{}, "confirmed": true})
+	if err != nil {
+		t.Fatal("incomplete context rejected", err)
+	}
+	r := out["result"].(map[string]interface{})
+	if r["state"] != "insufficient_context" || r["score"] != nil || r["classification"] != nil || out["confirmed"] != false {
+		t.Fatal("partial result became a final verdict")
+	}
+	if validateActiveACMG(map[string]interface{}{"activeAcmgVersion": "svcv4", "svcv4Assessment": out}) == nil {
+		t.Fatal("incomplete assessment adopted")
+	}
+}

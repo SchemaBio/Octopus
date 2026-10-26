@@ -494,6 +494,12 @@ func (s *Service) finish(r Request, state, code string, result *Result, billable
 	var encoded string
 	var err error
 	if result != nil {
+		if r.Feature == "svcv4" && result.VariantID == "" {
+			var stored StoredInput
+			if open(s.Cipher, r.ID, r.Ciphertext, &stored) == nil && stored.Input.TaskID == r.TaskID && stored.Input.Feature == r.Feature {
+				result.VariantID = text(stored.Input.Variant["id"])
+			}
+		}
 		encoded, err = seal(s.Cipher, r.ID+":result", result)
 		if err != nil {
 			return err

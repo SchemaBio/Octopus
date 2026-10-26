@@ -369,6 +369,10 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	}
 
 	task, err := h.svc.UpdateTask(c.Request.Context(), id, &req)
+	if errors.Is(err, service.ErrTaskNotEditable) || errors.Is(err, service.ErrInterpretationCompleted) {
+		ErrorConflict(c, err.Error())
+		return
+	}
 	if err != nil {
 		ErrorBadRequest(c, err.Error())
 		return

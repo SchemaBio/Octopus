@@ -222,6 +222,9 @@ func normalizeResult(feature, model string, raw map[string]any, paidDelivery boo
 		r.Warnings = []string{"输入未经核验；禁止临床用途和人工审核采纳。"}
 	}
 	if ai, ok := proposal["ai_assessment"].(map[string]any); ok {
+		if feature == "svcv4" {
+			r.SVCContext = ai["svc_context"]
+		}
 		if text(raw["schema_version"]) != "sepilens-evaluation-2.0" || text(raw["failure_code"]) != "" {
 			return r, false, errors.New("invalid v2 AI result")
 		}

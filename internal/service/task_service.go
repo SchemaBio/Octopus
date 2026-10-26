@@ -2175,38 +2175,56 @@ func taskCancellationNeedsOverlay(task *model.Task) bool {
 }
 
 // UpdateTask updates task fields
-func (s *TaskService) UpdateTask(ctx context.Context, id string, req *model.TaskUpdateRequest) (*model.Task, error) {
-	task, err := s.repo.FindByUUID(id)
-	if err != nil {
-		return nil, fmt.Errorf("task not found: %s", id)
-	}
+var ErrTaskNotEditable = errors.New("仅失败或待启动的任务允许编辑")
 
+func validateTaskEditState(task *model.Task) error {
 	if task.InterpretationCompletedAt != nil {
-		return nil, ErrInterpretationCompleted
+		return ErrInterpretationCompleted
 	}
-	if task.Status == model.TaskStatusRunning {
-		return nil, fmt.Errorf("cannot edit a running task")
+	if task.Status != model.TaskStatusFailed && task.Status != model.TaskStatusQueued {
+		return ErrTaskNotEditable
 	}
 	if task.Executor == model.ExecutorCVM && task.ExecutionPhase != "" && task.ExecutionPhase != "idle" && task.ExecutionPhase != "terminal" {
-		return nil, fmt.Errorf("cannot edit a CVM task while execution is %s", task.ExecutionPhase)
+		return ErrTaskNotEditable
 	}
+	return nil
+}
 
-	if req.InternalID != "" {
-		task.InternalID = req.InternalID
+func (s *TaskService) UpdateTask(ctx context.Context, id string, req *model.TaskUpdateRequest) (*model.Task, error) {
+	if req == nil {
+		return nil, fmt.Errorf("task update is required")
 	}
-	if req.Pipeline != "" {
-		task.Pipeline = req.Pipeline
-	}
-	if req.Remark != "" {
-		task.Remark = req.Remark
-	}
-	task.UpdatedAt = time.Now()
-
-	if err := s.repo.Update(task); err != nil {
+	var task model.Task
+	err := database.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid=?", id).First(&task).Error; err != nil {
+			return fmt.Errorf("task not found: %s", id)
+		}
+		if err := validateTaskEditState(&task); err != nil {
+			return err
+		}
+		changes := map[string]interface{}{"updated_at": time.Now(), "version": task.Version + 1}
+		if req.InternalID != "" {
+			task.InternalID = req.InternalID
+			changes["internal_id"] = req.InternalID
+		}
+		if req.Pipeline != "" {
+			task.Pipeline = req.Pipeline
+			changes["pipeline"] = req.Pipeline
+		}
+		if req.Remark != "" {
+			task.Remark = req.Remark
+			changes["remark"] = req.Remark
+		}
+		task.UpdatedAt = changes["updated_at"].(time.Time)
+		task.Version++
+		// The locked current state and a field-only update prevent stale edit forms
+		// from overwriting execution state when start/finish races with editing.
+		return tx.Model(&task).Updates(changes).Error
+	})
+	if err != nil {
 		return nil, err
 	}
-
-	return task, nil
+	return &task, nil
 }
 
 // GetTaskLogs retrieves task logs

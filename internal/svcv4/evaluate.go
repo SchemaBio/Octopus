@@ -9,7 +9,13 @@ import (
 // Evaluate ignores submitted derived fields and calculates only from raw input.
 // No implementation-version tag is added to the public response: rule revision
 // and existing stored assessments retain their established compatibility shape.
-func Evaluate(request object) (object, error) {
+func Evaluate(request object) (object, error) { return evaluate(request, false) }
+
+// EvaluatePartial is the application adapter for incomplete disease context.
+// Complete-context calculations retain the pinned reference implementation.
+func EvaluatePartial(request object) (object, error) { return evaluate(request, true) }
+
+func evaluate(request object, allowPartial bool) (object, error) {
 	if err := finite(request); err != nil {
 		return nil, err
 	}
@@ -53,10 +59,25 @@ func Evaluate(request object) (object, error) {
 	if gdv != "" && !validEnum("geneDiseaseValidity", gdv) {
 		return nil, fmt.Errorf("invalid gene disease validity")
 	}
-	if disease == "" || utf8.RuneCountInString(disease) > 500 || moi == "" {
+	if utf8.RuneCountInString(disease) > 500 {
+		return nil, fmt.Errorf("疾病名称不能超过500字")
+	}
+	partial := disease == "" || moi == ""
+	if partial && !allowPartial {
 		return nil, fmt.Errorf("请确认疾病及遗传模式")
 	}
+	missing := []string{}
+	if disease == "" {
+		missing = append(missing, "disease")
+	}
+	if moi == "" {
+		missing = append(missing, "moi")
+	}
+
 	warnings := []string{"草案／非权威参考实现；ClinGen CSpec 为权威计分来源。", "上游尚未完整强制执行病例适用性及基因疾病有效性规则，请人工核验。"}
+	if partial {
+		warnings = append(warnings, "疾病或遗传模式未明确：仅返回可用证据的部分评估；依赖缺失上下文的条目暂不计分，不生成总分或最终分类。")
+	}
 	details := object{}
 	families := []familyTotal{}
 	add := func(r *ScoreResult) { families = append(families, familyTotal{r.ParentCode, r.Total}) }
@@ -71,17 +92,21 @@ func Evaluate(request object) (object, error) {
 		if err != nil {
 			return nil, err
 		}
-		r, missense := Impact(workflow, a, gdv)
-		if missense != nil {
-			families = append(families, familyTotal{&missense.Code, missense.Total})
-			details["impact"] = missense
-			provenance(missense.Amino)
-			provenance(missense.Splice)
-			warnings = append(warnings, missense.Provenance...)
+		if partial {
+			details["impact"] = object{"state": "not_scored", "reason": "疾病或遗传模式未明确，变异影响证据尚未确认疾病适用性。", "validatedInput": a}
 		} else {
-			add(r)
-			details["impact"] = r
-			provenance(r)
+			r, missense := Impact(workflow, a, gdv)
+			if missense != nil {
+				families = append(families, familyTotal{&missense.Code, missense.Total})
+				details["impact"] = missense
+				provenance(missense.Amino)
+				provenance(missense.Splice)
+				warnings = append(warnings, missense.Provenance...)
+			} else {
+				add(r)
+				details["impact"] = r
+				provenance(r)
+			}
 		}
 	}
 	population := inputs["population"]
@@ -103,7 +128,14 @@ func Evaluate(request object) (object, error) {
 			return nil, fmt.Errorf("出现次数不能为负数")
 		}
 	}
+	if partial {
+		p["hmz_eligible"] = nil
+	}
 	pop := Population(p, moi)
+	if partial {
+		pop.Provenance = append(pop.Provenance, "分项仅按已提供 FAF/DAFT 暂算，尚未确认疾病适用性；疾病或遗传模式未知时不计算 POP_HMZ。")
+	}
+
 	popTotal, err := Aggregate([]*ScoreResult{pop}, "POP", nil)
 	if err != nil {
 		return nil, err
@@ -131,7 +163,10 @@ func Evaluate(request object) (object, error) {
 			return nil, fmt.Errorf("临床病例须填写唯一病例和家系编号，每个无关家系仅一个先证者")
 		}
 		ids[id], familyIDs[family] = true, true
-		clinical = append(clinical, ClinicalProband(c, moi))
+		if !partial {
+			clinical = append(clinical, ClinicalProband(c, moi))
+		}
+
 	}
 	var ccs *ScoreResult
 	if truthy(inputs["caseControl"]) {
@@ -139,7 +174,12 @@ func Evaluate(request object) (object, error) {
 		if err != nil {
 			return nil, err
 		}
-		ccs = CaseControl(c)
+		if !partial {
+			ccs = CaseControl(c)
+		} else {
+			details["caseControl"] = object{"state": "not_scored", "reason": "疾病或遗传模式未明确。", "validatedInput": c}
+		}
+
 	}
 	var frq *float64
 	if n, ok := pop.Sub.Values["POP_FRQ"]; ok {
@@ -161,26 +201,40 @@ func Evaluate(request object) (object, error) {
 		if err != nil {
 			return nil, err
 		}
-		phe, seg := LocusPhenotype(c, moi), LocusSegregation(c, moi)
-		loc, err := Aggregate([]*ScoreResult{phe, seg}, "LOC", num(4))
+		if partial {
+			details["family"] = object{"state": "not_scored", "reason": "疾病或遗传模式未明确。", "validatedInput": c}
+		} else {
+			phe, seg := LocusPhenotype(c, moi), LocusSegregation(c, moi)
+			loc, err := Aggregate([]*ScoreResult{phe, seg}, "LOC", num(4))
+			if err != nil {
+				return nil, err
+			}
+			add(loc)
+			details["family"] = object{"phenotype": phe, "segregation": seg, "subtotal": loc}
+			provenance(phe)
+			provenance(seg)
+			provenance(loc)
+		}
+	}
+	combined := score("")
+	if partial {
+		for _, family := range families {
+			if family.Code != nil && family.Total != nil {
+				combined.Sub.Set(*family.Code, *family.Total)
+			}
+		}
+		combined.Provenance = []string{"疾病上下文不完整：仅保留可计算分项，不汇总总分。"}
+	} else {
+		combined, err = Combine(families)
 		if err != nil {
 			return nil, err
 		}
-		add(loc)
-		details["family"] = object{"phenotype": phe, "segregation": seg, "subtotal": loc}
-		provenance(phe)
-		provenance(seg)
-		provenance(loc)
-	}
-	combined, err := Combine(families)
-	if err != nil {
-		return nil, err
 	}
 	provenance(combined)
 	var category interface{}
 	var vus *string
 	state := "insufficient_evidence"
-	if combined.Total != nil {
+	if !partial && combined.Total != nil {
 		c, s := Classify(*combined.Total)
 		vus = s
 		category = map[string]string{"PATHOGENIC": "Pathogenic", "LIKELY_PATHOGENIC": "Likely_Pathogenic", "VUS": "VUS", "LIKELY_BENIGN": "Likely_Benign", "BENIGN": "Benign"}[c]
@@ -198,5 +252,17 @@ func Evaluate(request object) (object, error) {
 	if gdv != "" {
 		gdvValue = gdv
 	}
-	return object{"disease": disease, "moi": moi, "geneDiseaseValidity": gdvValue, "inputs": inputs, "revision": Revision, "source": Source, "authoritative": false, "confirmed": request["confirmed"] == true, "result": object{"score": combined.Total, "classification": category, "vusSubclass": vus, "state": state, "breakdown": combined.Sub, "details": details, "warnings": unique}}, nil
+	response := object{"disease": disease, "moi": moi, "geneDiseaseValidity": gdvValue, "inputs": inputs, "revision": Revision, "source": Source, "authoritative": false, "confirmed": request["confirmed"] == true, "result": object{"score": combined.Total, "classification": category, "vusSubclass": vus, "state": state, "breakdown": combined.Sub, "details": details, "warnings": unique}}
+	if partial {
+		response["confirmed"] = false
+		result := response["result"].(object)
+		result["state"] = "insufficient_context"
+		result["score"] = nil
+		result["classification"] = nil
+		result["vusSubclass"] = nil
+		result["missingFields"] = missing
+		result["partial"] = true
+		result["details"].(object)["contextAdapter"] = "yijian-svc-partial-context-v1"
+	}
+	return response, nil
 }

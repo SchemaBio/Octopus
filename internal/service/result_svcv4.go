@@ -22,7 +22,7 @@ func (s *ResultService) SVCv4(ctx context.Context, input map[string]interface{})
 	if err != nil || len(encoded) > 250000 {
 		return nil, fmt.Errorf("SVCv4 evidence is invalid or too large")
 	}
-	result, err := svcv4.Evaluate(input)
+	result, err := svcv4.EvaluatePartial(input)
 	if err != nil {
 		return nil, fmt.Errorf("SVCv4: %w", err)
 	}

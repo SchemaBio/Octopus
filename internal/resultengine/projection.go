@@ -14,7 +14,7 @@ import (
 const ACMGProfile = "acmg-snv-points-v2"
 const FieldProfile = "parquet-fields-v2"
 
-var overlayFields = strings.Fields("activeAcmgVersion svcv4Assessment acmgVusSubclass acmgTrial reviewed focused interpretation acmgClassification acmgEvidence cnvAssessment cnvClassification cnvScore acmgScore acmgProfile acmgState acmgOverride acmgOverrideReason")
+var overlayFields = strings.Fields("activeAcmgVersion svcv4Assessment svcv4AIResult acmgVusSubclass acmgTrial reviewed focused interpretation acmgClassification acmgEvidence cnvAssessment cnvClassification cnvScore acmgScore acmgProfile acmgState acmgOverride acmgOverrideReason")
 var numericFields = strings.Fields("acmgScore cnvScore Position Start End Quality Depth VAF GnomAD_AF GnomAD_AF_EAS GnomAD_nhomalt_XX GnomAD_nhomalt_XY Pangolin_Gain Pangolin_Loss EVOScore AlphaMissense_AM copy_number score size Repeat_Count RepeatCount Heteroplasmy Heteroplasmy_Level NbVariants Percentage_Homozygosity Average_Depth Log2_Ratio Copy_Ratio Start_Position End_Position")
 var numericName = regexp.MustCompile(`(?i)(^|_)(af|vaf|depth|score|count|size|start|end|position|ratio|length|fraction|percent|heteroplasmy)(_|$)`)
 var transcriptName = regexp.MustCompile(`^ENST[0-9]+(?:\.[0-9]+)?$`)

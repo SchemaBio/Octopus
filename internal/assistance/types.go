@@ -130,6 +130,8 @@ type PublicSettings struct {
 	ServiceVersion string                `json:"serviceVersion,omitempty"`
 }
 type Result struct {
+	VariantID               string              `json:"variantId,omitempty"`
+	SVCContext              any                 `json:"svcContext,omitempty"`
 	Feature                 string              `json:"feature"`
 	Model                   string              `json:"model,omitempty"`
 	GeneratedAt             string              `json:"generatedAt"`
