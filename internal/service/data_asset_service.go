@@ -318,7 +318,7 @@ func (s *DataAssetService) deleteStoredObject(ctx context.Context, asset *model.
 		if err != nil {
 			return err
 		}
-		if s.cfg.IsSaaS() && asset.ReadType == model.ReadTypeVCF {
+		if s.cfg.IsSaaS() && (asset.ReadType == model.ReadTypeVCF || asset.Source == "example") {
 			return storage.purgeExactObject(ctx, asset.StorageKey)
 		}
 		return storage.delete(ctx, asset.StorageKey)

@@ -4,6 +4,7 @@ import "time"
 
 // A completion snapshot survives retries, task deletion and result reimports.
 type BAMRetentionJob struct {
+	PurgeVersions  bool       `gorm:"not null;default:false" json:"-"`
 	ID             string     `gorm:"primaryKey;size:36" json:"id"`
 	TaskUUID       string     `gorm:"uniqueIndex:bam_attempt;size:36" json:"task_uuid"`
 	OrgID          string     `gorm:"uniqueIndex:bam_attempt;size:36" json:"org_id"`

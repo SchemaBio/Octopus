@@ -1,4 +1,8 @@
 services:
+  squid:
+    environment:
+      DEPLOYMENT_EDITION: saas
+
   octopus:
     image: ${OCTOPUS_IMAGE:-schemabio/octopus:browser-results-3}
     environment:

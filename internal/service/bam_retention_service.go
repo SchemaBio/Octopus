@@ -112,7 +112,11 @@ func (s *BAMRetentionService) backfill(ctx context.Context) error {
 	cursor := ""
 	for {
 		var tasks []model.Task
-		if err := database.DB.WithContext(ctx).Unscoped().Where("id > ? AND status = ? AND executor = ? AND finished_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM bam_retention_jobs j WHERE j.task_uuid=tasks.uuid AND j.org_id=tasks.external_org_id AND j.attempt_id=tasks.execution_attempt_id)", cursor, model.TaskStatusCompleted, model.ExecutorCVM).Order("id").Limit(100).Find(&tasks).Error; err != nil {
+		executors := []model.ExecutorType{model.ExecutorCVM}
+		if s.cfg.IsSaaS() {
+			executors = append(executors, model.ExecutorExample)
+		}
+		if err := database.DB.WithContext(ctx).Unscoped().Where("id > ? AND status = ? AND executor IN ? AND finished_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM bam_retention_jobs j WHERE j.task_uuid=tasks.uuid AND j.org_id=tasks.external_org_id AND j.attempt_id=tasks.execution_attempt_id)", cursor, model.TaskStatusCompleted, executors).Order("id").Limit(100).Find(&tasks).Error; err != nil {
 			return err
 		}
 		if len(tasks) == 0 {
@@ -335,7 +339,13 @@ func (s *BAMRetentionService) Execute(ctx context.Context, id string) error {
 							runErr = fmt.Errorf("OBJECT_CHANGED")
 							break
 						}
-						if storage.delete(ctx, obj.Key) != nil {
+						if !job.PurgeVersions && storage.delete(ctx, obj.Key) != nil {
+							runErr = fmt.Errorf("OBJECT_DELETE_FAILED")
+							break
+						}
+					}
+					if job.PurgeVersions {
+						if !s.cfg.IsSaaS() || storage.purgeExactObject(ctx, obj.Key) != nil {
 							runErr = fmt.Errorf("OBJECT_DELETE_FAILED")
 							break
 						}

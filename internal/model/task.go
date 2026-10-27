@@ -34,14 +34,16 @@ const (
 type ExecutorType string
 
 const (
-	ExecutorLocal ExecutorType = "local"    // miniwdl + local.cfg
-	ExecutorSlurm ExecutorType = "slurm"    // miniwdl-slurm + slurm.cfg
-	ExecutorLSF   ExecutorType = "lsf"      // miniwdl-lsf + lsf.cfg
-	ExecutorCVM   ExecutorType = "cvm_spot" // Squid-provisioned Tencent Cloud CVM
+	ExecutorLocal   ExecutorType = "local"    // miniwdl + local.cfg
+	ExecutorExample ExecutorType = "example"  // SaaS precomputed example; never scheduled
+	ExecutorSlurm   ExecutorType = "slurm"    // miniwdl-slurm + slurm.cfg
+	ExecutorLSF     ExecutorType = "lsf"      // miniwdl-lsf + lsf.cfg
+	ExecutorCVM     ExecutorType = "cvm_spot" // Squid-provisioned Tencent Cloud CVM
 )
 
 // Task represents a workflow task
 type Task struct {
+	Origin                       string     `json:"origin,omitempty" gorm:"size:20"`
 	RetryStartedAt               *time.Time `json:"retryStartedAt,omitempty" gorm:"type:timestamptz"`
 	InterpretationCompletedAt    *time.Time `json:"interpretationCompletedAt,omitempty" gorm:"type:timestamptz;index"`
 	InterpretationCompletedBy    string     `json:"interpretationCompletedBy,omitempty" gorm:"size:200"`
@@ -234,6 +236,7 @@ type TaskListQuery struct {
 
 // TaskResponse matches frontend AnalysisTask type
 type TaskResponse struct {
+	Origin      string               `json:"origin,omitempty"`
 	TrioMembers []TrioMemberSnapshot `json:"trio_members,omitempty"`
 
 	ResultImportStatus        ResultImportStatus `json:"result_import_status"`
@@ -271,6 +274,7 @@ type TaskResponse struct {
 
 // TaskDetailResponse matches frontend AnalysisTaskDetail type
 type TaskDetailResponse struct {
+	Origin                    string             `json:"origin,omitempty"`
 	ResultImportStatus        ResultImportStatus `json:"result_import_status"`
 	ResultCapabilities        []string           `json:"result_capabilities"`
 	Template                  string             `json:"template"`
@@ -489,7 +493,7 @@ func (t *Task) ToResponse() TaskResponse {
 		Members []TrioMemberSnapshot `json:"trio_members"`
 	}
 	_ = json.Unmarshal([]byte(t.InputJSON), &saved)
-	resp := TaskResponse{TrioMembers: saved.Members,
+	resp := TaskResponse{Origin: t.Origin, TrioMembers: saved.Members,
 		ResultImportStatus:        t.ResultImportStatus,
 		ResultCapabilities:        t.ResultCapabilities(),
 		Template:                  t.Template,
@@ -527,6 +531,7 @@ func (t *Task) ToResponse() TaskResponse {
 // ToDetailResponse converts Task to TaskDetailResponse
 func (t *Task) ToDetailResponse() TaskDetailResponse {
 	resp := TaskDetailResponse{
+		Origin:                    t.Origin,
 		ResultImportStatus:        t.ResultImportStatus,
 		ResultCapabilities:        t.ResultCapabilities(),
 		Template:                  t.Template,

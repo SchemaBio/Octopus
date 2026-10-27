@@ -1182,6 +1182,9 @@ func (s *TaskService) StartTask(ctx context.Context, id string, actor model.Over
 	if peek.Executor == model.ExecutorCVM {
 		return s.enqueueCVM(ctx, id, actor)
 	}
+	if peek.Executor == model.ExecutorExample {
+		return nil, fmt.Errorf("create a new analysis to use example FASTQs")
+	}
 
 	task, previousStatus, err := s.claimLocalStart(ctx, id)
 	if err != nil {
@@ -1356,6 +1359,9 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 	task, err := s.repo.FindByUUID(id)
 	if err != nil {
 		return nil, fmt.Errorf("task not found: %s", id)
+	}
+	if task.Executor == model.ExecutorExample {
+		return nil, fmt.Errorf("create a new analysis to use example FASTQs")
 	}
 	if err := requireAnalysisAvailable(task.Template); err != nil {
 		return nil, err

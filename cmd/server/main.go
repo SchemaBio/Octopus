@@ -29,6 +29,13 @@ const (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "example-template" {
+		if err := runExampleTemplateCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "example template command failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "research-retention-preflight" {
 		if err := runResearchRetentionPreflight(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "retention preflight failed:", err)
@@ -133,6 +140,9 @@ func main() {
 	waitAI := aiService.Start(ctx)
 
 	if cfg.IsSaaS() {
+		if err := service.MigrateExampleData(cfg); err != nil {
+			log.Fatalf("example data migration: %v", err)
+		}
 		if err := database.EnableSaaSRetention(); err != nil {
 			log.Fatalf("retention initialization: %v", err)
 		}
@@ -143,6 +153,7 @@ func main() {
 	retentionSvc.AI = aiService
 	retentionSvc.Start(ctx)
 	service.NewBAMRetentionService(cfg).Start(ctx)
+	service.NewExampleDataService(cfg).Start(ctx)
 	taskSvc.StartSepiidaSync(ctx, 30*time.Second)
 	taskSvc.StartExecutionDelivery(ctx)
 	fmt.Println("Sepiida status sync started (interval: 30s)")

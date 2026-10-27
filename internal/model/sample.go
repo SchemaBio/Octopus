@@ -58,6 +58,7 @@ const (
 
 // Sample represents a biological sample (germline)
 type Sample struct {
+	Origin string `json:"origin,omitempty" gorm:"size:20"`
 	SampleParents
 
 	ID                           uint               `json:"-" gorm:"primaryKey"`
@@ -158,6 +159,7 @@ type AffectedMember struct {
 
 // SampleResponse is the API response for a sample list item
 type SampleResponse struct {
+	Origin string `json:"origin,omitempty"`
 	SampleParents
 
 	ExpiresAt         *time.Time         `json:"expires_at,omitempty"`
@@ -435,7 +437,7 @@ func (s *Sample) SetFamilyHistory(info FamilyHistoryInfo) {
 
 // SampleToResponse converts Sample to SampleResponse
 func SampleToResponse(s *Sample) SampleResponse {
-	return SampleResponse{ExpiresAt: s.ExpiresAt, SampleParents: s.SampleParents,
+	return SampleResponse{Origin: s.Origin, ExpiresAt: s.ExpiresAt, SampleParents: s.SampleParents,
 		ID:                s.UUID,
 		InternalID:        s.InternalID,
 		Gender:            s.Gender,

@@ -22,7 +22,7 @@ func retentionScope(now time.Time, db *gorm.DB) {
 			return
 		}
 		switch table {
-		case "cnv_baselines", "c_vm_submissions", "c_vm_cancellations", "bam_retention_jobs", "bam_retention_events", "execution_outboxes", "ai_assistance_requests":
+		case "cnv_baselines", "c_vm_submissions", "c_vm_cancellations", "bam_retention_jobs", "bam_retention_events", "execution_outboxes", "ai_assistance_requests", "example_data_grants":
 			return
 		}
 		field := db.Statement.Schema.LookUpField("TaskUUID")

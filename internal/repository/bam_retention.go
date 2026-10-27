@@ -10,7 +10,7 @@ import (
 
 // Insert once: never move the deadline when a completion is replayed.
 func RegisterBAMRetention(tx *gorm.DB, task *model.Task, bucket string) error {
-	if task == nil || task.Executor != model.ExecutorCVM || task.Status != model.TaskStatusCompleted || task.FinishedAt == nil || task.FinishedAt.IsZero() {
+	if task == nil || (task.Executor != model.ExecutorCVM && task.Executor != model.ExecutorExample) || task.Status != model.TaskStatusCompleted || task.FinishedAt == nil || task.FinishedAt.IsZero() {
 		return nil
 	}
 	for _, id := range []string{task.UUID, task.ExternalOrgID, task.ExecutionAttemptID} {
@@ -23,6 +23,7 @@ func RegisterBAMRetention(tx *gorm.DB, task *model.Task, bucket string) error {
 		deadline = *task.ExpiresAt
 	}
 	job := model.BAMRetentionJob{ID: uuid.NewString(), TaskUUID: task.UUID, OrgID: task.ExternalOrgID, AttemptID: task.ExecutionAttemptID, Bucket: bucket, CompletedAt: task.FinishedAt.UTC(), ExpiresAt: deadline, Status: "pending", PlanJSON: "[]"}
+	job.PurgeVersions = task.Executor == model.ExecutorExample
 	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "task_uuid"}, {Name: "org_id"}, {Name: "attempt_id"}}, DoNothing: true}).Create(&job).Error
 }
 
