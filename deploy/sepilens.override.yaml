@@ -3,6 +3,7 @@
 services:
   octopus:
     environment:
+      AI_ASSISTANCE_EVIDENCE_CHAIN_ENABLED: ${AI_ASSISTANCE_EVIDENCE_CHAIN_ENABLED:-false}
       AI_ASSISTANCE_TOKEN_FILE: /run/secrets/sepilens-token
       AI_ASSISTANCE_MASTER_KEY_FILE: /run/secrets/sepilens-master-key
       AI_ASSISTANCE_BILLING_ENABLED: "false"

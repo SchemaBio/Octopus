@@ -69,6 +69,7 @@ services:
       args:
         NEXT_PUBLIC_PASSWORD_HASH_ENABLED: "false"
         NEXT_PUBLIC_PRIVACY_CONSENT_REQUIRED: "true"
+        NEXT_PUBLIC_ASSESSMENT_OPTIMIZED: ${NEXT_PUBLIC_ASSESSMENT_OPTIMIZED:-false}
     image: schemabio/yijian:self-hosted
     restart: unless-stopped
     environment:
