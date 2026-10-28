@@ -7,7 +7,7 @@ import (
 )
 
 func TestImportedFactPackKeepsZeroAndUnknown(t *testing.T) {
-	_, body, err := BuildPayload(Input{Feature: "cnv_loss", Reference: "hg38", Variant: map[string]any{"chromosome": "1", "startPosition": float64(0), "endPosition": float64(100), "coordinateSystem": "0-based-half-open", "copyNumber": float64(0), "privatePatientName": "secret"}}, "profile")
+	_, body, err := BuildPayload(Input{IncludeFactPack: true, Feature: "cnv_loss", Reference: "hg38", Variant: map[string]any{"chromosome": "1", "startPosition": float64(0), "endPosition": float64(100), "coordinateSystem": "0-based-half-open", "copyNumber": float64(0), "privatePatientName": "secret"}}, "profile")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestImportedFactPackEngineAndFamilyContract(t *testing.T) {
 	for _, feature := range []string{"acmg", "svcv4", "cnv_gain", "cnv_loss"} {
 		t.Run(feature, func(t *testing.T) {
 			variant := map[string]any{"chromosome": "1", "position": float64(100), "ref": "A", "alt": "G", "startPosition": float64(0), "endPosition": float64(100), "coordinateSystem": "0-based-half-open", "copyNumber": float64(1.25), "sampleGenotypes": map[string]any{"proband": map[string]any{"genotype": "1|0", "alleleDepth": "0,30", "depth": float64(30), "genotypeQuality": float64(0)}, "father": map[string]any{"genotype": "./.", "alleleFrequency": float64(0)}}}
-			_, body, err := BuildPayload(Input{Feature: feature, Mode: "experimental", Reference: "hg38", Variant: variant, SampleContext: map[string]any{"analysis_mode": "trio", "age": 0, "hpo_terms": []any{map[string]any{"id": "HP:0001250", "name": "synthetic"}}}}, "profile")
+			_, body, err := BuildPayload(Input{IncludeFactPack: true, Feature: feature, Mode: "experimental", Reference: "hg38", Variant: variant, SampleContext: map[string]any{"analysis_mode": "trio", "age": 0, "hpo_terms": []any{map[string]any{"id": "HP:0001250", "name": "synthetic"}}}}, "profile")
 			if err != nil {
 				t.Fatal(err)
 			}

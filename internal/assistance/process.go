@@ -55,6 +55,9 @@ func StartProcess(ctx context.Context) func() {
 		if os.Getenv("AI_ASSISTANCE_ALLOW_PRIVATE_ENDPOINTS") == "true" {
 			env = append(env, "SEPILENS_ALLOW_PRIVATE_ENDPOINTS=true")
 		}
+		if os.Getenv("AI_ASSISTANCE_EVIDENCE_CHAIN_ENABLED") == "true" {
+			env = append(env, "SEPILENS_AI_EVIDENCE_CHAIN_ENABLED=true")
+		}
 		for attempt := 0; attempt < 6 && ctx.Err() == nil; attempt++ {
 			args := []string{"serve", "-addr", "127.0.0.1:18081", "-data-dir", dir}
 			for name, flag := range map[string]string{"AI_ASSISTANCE_BUNDLE_DIR": "-bundle-dir", "AI_ASSISTANCE_RULES_DIR": "-rules-dir"} {

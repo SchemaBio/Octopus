@@ -98,6 +98,7 @@ type Input struct {
 	ClinicalContext Context         `json:"clinicalContext"`
 	// Clinical fields loaded under task/sample access checks, never browser input.
 	SampleContext   map[string]any `json:"-"`
+	IncludeFactPack bool           `json:"-"`
 	ConfirmedCharge bool           `json:"confirmedCharge"`
 }
 type StoredInput struct {

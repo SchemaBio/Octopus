@@ -24,21 +24,22 @@ var ErrConflict = errors.New("AI request idempotency conflict")
 var ErrUnavailable = errors.New("AI service unavailable")
 
 type Service struct {
-	DB          *gorm.DB
-	Client      *Client
-	Cipher      cipher.AEAD
-	SaaS        bool
-	Billing     bool
-	SVCBilling  bool
-	ACMGBilling bool
-	CNVBilling  bool
-	HPOBilling  bool
-	Overlay     *Client
+	DB            *gorm.DB
+	Client        *Client
+	Cipher        cipher.AEAD
+	SaaS          bool
+	Billing       bool
+	SVCBilling    bool
+	ACMGBilling   bool
+	CNVBilling    bool
+	HPOBilling    bool
+	EvidenceChain bool
+	Overlay       *Client
 }
 
 func New(db *gorm.DB, saas bool, overlayURL, overlayToken string) *Service {
 	c, _ := newCipher()
-	return &Service{DB: db, Client: newClient(), Cipher: c, SaaS: saas, HPOBilling: saas, CNVBilling: saas && os.Getenv("AI_ASSISTANCE_CNV_BILLING_ENABLED") == "true", SVCBilling: saas && os.Getenv("AI_ASSISTANCE_SVC_BILLING_ENABLED") == "true", ACMGBilling: saas && os.Getenv("AI_ASSISTANCE_ACMG_BILLING_ENABLED") == "true", Billing: saas && os.Getenv("AI_ASSISTANCE_BILLING_ENABLED") == "true", Overlay: &Client{overlayURL, overlayToken, &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}}
+	return &Service{DB: db, Client: newClient(), Cipher: c, SaaS: saas, EvidenceChain: os.Getenv("AI_ASSISTANCE_EVIDENCE_CHAIN_ENABLED") == "true", HPOBilling: saas, CNVBilling: saas && os.Getenv("AI_ASSISTANCE_CNV_BILLING_ENABLED") == "true", SVCBilling: saas && os.Getenv("AI_ASSISTANCE_SVC_BILLING_ENABLED") == "true", ACMGBilling: saas && os.Getenv("AI_ASSISTANCE_ACMG_BILLING_ENABLED") == "true", Billing: saas && os.Getenv("AI_ASSISTANCE_BILLING_ENABLED") == "true", Overlay: &Client{overlayURL, overlayToken, &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}}
 }
 
 // HPO production billing is independent of experimental assessment billing.
@@ -330,6 +331,7 @@ func (s *Service) Submit(ctx context.Context, scope, org string, user uint, key 
 			return ErrUnavailable
 		}
 		profile := settingsProfile(row)
+		in.IncludeFactPack = s.EvidenceChain
 		path, payload, e := BuildPayload(in, profile)
 		if e != nil {
 			return e
