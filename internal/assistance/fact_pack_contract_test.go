@@ -39,6 +39,16 @@ func TestFactPackWireContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Git may normalize line endings on Windows; whitespace is not a wire contract.
+	var golden any
+	if err := json.Unmarshal(expected, &golden); err != nil {
+		t.Fatal(err)
+	}
+	expected, err = json.MarshalIndent(golden, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected = append(expected, '\n')
 	if string(actual) != string(expected) {
 		t.Fatal("wire contract changed; update and verify the SepiLens receiver fixture together")
 	}
