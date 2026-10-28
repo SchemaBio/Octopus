@@ -167,6 +167,7 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 	if len(annotations) > 1 {
 		pkg["annotations"] = annotations
 	}
+	attachImportedFactPack(body, pkg)
 	return "/v2/evaluations", body, nil
 }
 func sanitizeDraft(v any) any {

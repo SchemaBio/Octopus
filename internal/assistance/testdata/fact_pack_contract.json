@@ -1,0 +1,2875 @@
+[
+  {
+    "feature": "acmg",
+    "request": {
+      "clinical_context": {
+        "disease_id": "",
+        "inheritance": "unknown",
+        "sample_type": "unknown",
+        "variant_origin": "unknown"
+      },
+      "engine_id": "acmg_amp_2015",
+      "evidence_package": {
+        "ai_context": {
+          "fact_pack": {
+            "engine_id": "acmg_amp_2015",
+            "facts": [
+              {
+                "field": "variant.assembly",
+                "path": "/variant/assembly",
+                "source": "request",
+                "status": "reported",
+                "value": "GRCh38",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.chrom",
+                "path": "/variant/chrom",
+                "source": "request",
+                "status": "reported",
+                "value": "1",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.pos",
+                "path": "/variant/pos",
+                "source": "request",
+                "status": "reported",
+                "value": 100,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.ref",
+                "path": "/variant/ref",
+                "source": "request",
+                "status": "reported",
+                "value": "A",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.alt",
+                "path": "/variant/alt",
+                "source": "request",
+                "status": "reported",
+                "value": "G",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.gene",
+                "path": "/variant/gene",
+                "source": "request",
+                "status": "reported",
+                "value": "SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.transcript",
+                "path": "/variant/transcript",
+                "source": "request",
+                "status": "reported",
+                "value": "ENST_SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.hgvs_c",
+                "path": "/variant/hgvs_c",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.hgvs_p",
+                "path": "/variant/hgvs_p",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.consequence",
+                "path": "/variant/consequence",
+                "source": "request",
+                "status": "reported",
+                "value": "missense_variant",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.allele_frequency",
+                "path": "/variant/allele_frequency",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.assembly",
+                "path": "/cnv/assembly",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.chrom",
+                "path": "/cnv/chrom",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.start",
+                "path": "/cnv/start",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.end",
+                "path": "/cnv/end",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.coordinate_system",
+                "path": "/cnv/coordinate_system",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.type",
+                "path": "/cnv/type",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.copy_number",
+                "path": "/cnv/copy_number",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.disease_id",
+                "path": "/clinical_context/disease_id",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.inheritance",
+                "path": "/clinical_context/inheritance",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.sample_type",
+                "path": "/clinical_context/sample_type",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.variant_origin",
+                "path": "/clinical_context/variant_origin",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.hpo_terms",
+                "path": "/clinical_context/hpo_terms",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gene",
+                "path": "/evidence_package/ai_context/variant_annotations/gene",
+                "source": "request",
+                "status": "reported",
+                "value": "SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.transcript",
+                "path": "/evidence_package/ai_context/variant_annotations/transcript",
+                "source": "request",
+                "status": "reported",
+                "value": "ENST_SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.consequence",
+                "path": "/evidence_package/ai_context/variant_annotations/consequence",
+                "source": "request",
+                "status": "reported",
+                "value": "missense_variant",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarId",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarId",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarSignificance",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarSignificance",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarReviewStatus",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarReviewStatus",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarStars",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarStars",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarDisease",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarDisease",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gnomadAF",
+                "path": "/evidence_package/ai_context/variant_annotations/gnomadAF",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gnomadEasAF",
+                "path": "/evidence_package/ai_context/variant_annotations/gnomadEasAF",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.maxAF",
+                "path": "/evidence_package/ai_context/variant_annotations/maxAF",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.alphaMissenseScore",
+                "path": "/evidence_package/ai_context/variant_annotations/alphaMissenseScore",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.pangolinGain",
+                "path": "/evidence_package/ai_context/variant_annotations/pangolinGain",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.pangolinLoss",
+                "path": "/evidence_package/ai_context/variant_annotations/pangolinLoss",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyNumber",
+                "path": "/evidence_package/ai_context/variant_annotations/copyNumber",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyNumberEstimate",
+                "path": "/evidence_package/ai_context/variant_annotations/copyNumberEstimate",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyRatio",
+                "path": "/evidence_package/ai_context/variant_annotations/copyRatio",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.confidence",
+                "path": "/evidence_package/ai_context/variant_annotations/confidence",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.analysis_mode",
+                "path": "/evidence_package/ai_context/sample/analysis_mode",
+                "source": "request",
+                "status": "reported",
+                "value": "trio",
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.gender",
+                "path": "/evidence_package/ai_context/sample/gender",
+                "source": "request",
+                "status": "reported",
+                "value": "female",
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.age",
+                "path": "/evidence_package/ai_context/sample/age",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.sample_type",
+                "path": "/evidence_package/ai_context/sample/sample_type",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.father_affected_status",
+                "path": "/evidence_package/ai_context/sample/father_affected_status",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.mother_affected_status",
+                "path": "/evidence_package/ai_context/sample/mother_affected_status",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.hpo_terms",
+                "path": "/evidence_package/ai_context/sample/hpo_terms",
+                "source": "request",
+                "status": "reported",
+                "value": [
+                  "HP:0001250"
+                ],
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/genotype",
+                "source": "request",
+                "status": "reported",
+                "value": "0/1",
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/alleleDepth",
+                "source": "request",
+                "status": "reported",
+                "value": "20,10",
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/depth",
+                "source": "request",
+                "status": "reported",
+                "value": 30,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/genotypeQuality",
+                "source": "request",
+                "status": "reported",
+                "value": 40,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/genotype",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/alleleDepth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/alleleFrequency",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/genotypeQuality",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/genotype",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/alleleDepth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/genotypeQuality",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.identity_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.de_novo_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.phase_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.segregation_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.hi",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.ts",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.protein_coding_count",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.complete_overlap",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.orientation",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              }
+            ],
+            "reported_is_not_verified": true,
+            "version": "imported-facts-v1"
+          },
+          "sample": {
+            "age": 0,
+            "analysis_mode": "trio",
+            "gender": "female",
+            "hpo_terms": [
+              {
+                "id": "HP:0001250"
+              }
+            ]
+          },
+          "variant_annotations": {
+            "alt": "G",
+            "annotationValues": {},
+            "chromosome": "1",
+            "consequence": "missense_variant",
+            "coordinateSystem": "0-based-half-open",
+            "copyNumber": 0,
+            "endPosition": 100,
+            "gene": "SYNTHETIC",
+            "gnomadAF": 0,
+            "position": 100,
+            "ref": "A",
+            "sampleGenotypes": {
+              "father": {
+                "alleleFrequency": 0,
+                "genotype": "./."
+              },
+              "proband": {
+                "alleleDepth": "20,10",
+                "depth": 30,
+                "genotype": "0/1",
+                "genotypeQuality": 40
+              }
+            },
+            "startPosition": 0,
+            "transcript": "ENST_SYNTHETIC"
+          }
+        },
+        "sources": []
+      },
+      "mode": "ai_assisted",
+      "options": {
+        "provider_profile_id": "synthetic-profile"
+      },
+      "schema_version": "sepilens-evaluation-2.0",
+      "variant": {
+        "allele_frequency": 0,
+        "alt": "G",
+        "assembly": "GRCh38",
+        "chrom": "1",
+        "consequence": "missense_variant",
+        "gene": "SYNTHETIC",
+        "pos": 100,
+        "ref": "A",
+        "transcript": "ENST_SYNTHETIC"
+      }
+    }
+  },
+  {
+    "feature": "svcv4",
+    "request": {
+      "clinical_context": {
+        "disease_id": "",
+        "inheritance": "unknown",
+        "sample_type": "unknown",
+        "variant_origin": "unknown"
+      },
+      "engine_id": "svc_v4",
+      "evidence_package": {
+        "ai_context": {
+          "fact_pack": {
+            "engine_id": "svc_v4",
+            "facts": [
+              {
+                "field": "variant.assembly",
+                "path": "/variant/assembly",
+                "source": "request",
+                "status": "reported",
+                "value": "GRCh38",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.chrom",
+                "path": "/variant/chrom",
+                "source": "request",
+                "status": "reported",
+                "value": "1",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.pos",
+                "path": "/variant/pos",
+                "source": "request",
+                "status": "reported",
+                "value": 100,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.ref",
+                "path": "/variant/ref",
+                "source": "request",
+                "status": "reported",
+                "value": "A",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.alt",
+                "path": "/variant/alt",
+                "source": "request",
+                "status": "reported",
+                "value": "G",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.gene",
+                "path": "/variant/gene",
+                "source": "request",
+                "status": "reported",
+                "value": "SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.transcript",
+                "path": "/variant/transcript",
+                "source": "request",
+                "status": "reported",
+                "value": "ENST_SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.hgvs_c",
+                "path": "/variant/hgvs_c",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.hgvs_p",
+                "path": "/variant/hgvs_p",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.consequence",
+                "path": "/variant/consequence",
+                "source": "request",
+                "status": "reported",
+                "value": "missense_variant",
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.allele_frequency",
+                "path": "/variant/allele_frequency",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.assembly",
+                "path": "/cnv/assembly",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.chrom",
+                "path": "/cnv/chrom",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.start",
+                "path": "/cnv/start",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.end",
+                "path": "/cnv/end",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.coordinate_system",
+                "path": "/cnv/coordinate_system",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.type",
+                "path": "/cnv/type",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.copy_number",
+                "path": "/cnv/copy_number",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.disease_id",
+                "path": "/clinical_context/disease_id",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.inheritance",
+                "path": "/clinical_context/inheritance",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.sample_type",
+                "path": "/clinical_context/sample_type",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.variant_origin",
+                "path": "/clinical_context/variant_origin",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.hpo_terms",
+                "path": "/clinical_context/hpo_terms",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gene",
+                "path": "/evidence_package/ai_context/variant_annotations/gene",
+                "source": "request",
+                "status": "reported",
+                "value": "SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.transcript",
+                "path": "/evidence_package/ai_context/variant_annotations/transcript",
+                "source": "request",
+                "status": "reported",
+                "value": "ENST_SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.consequence",
+                "path": "/evidence_package/ai_context/variant_annotations/consequence",
+                "source": "request",
+                "status": "reported",
+                "value": "missense_variant",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarId",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarId",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarSignificance",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarSignificance",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarReviewStatus",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarReviewStatus",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarStars",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarStars",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarDisease",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarDisease",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gnomadAF",
+                "path": "/evidence_package/ai_context/variant_annotations/gnomadAF",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gnomadEasAF",
+                "path": "/evidence_package/ai_context/variant_annotations/gnomadEasAF",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.maxAF",
+                "path": "/evidence_package/ai_context/variant_annotations/maxAF",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.alphaMissenseScore",
+                "path": "/evidence_package/ai_context/variant_annotations/alphaMissenseScore",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.pangolinGain",
+                "path": "/evidence_package/ai_context/variant_annotations/pangolinGain",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.pangolinLoss",
+                "path": "/evidence_package/ai_context/variant_annotations/pangolinLoss",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyNumber",
+                "path": "/evidence_package/ai_context/variant_annotations/copyNumber",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyNumberEstimate",
+                "path": "/evidence_package/ai_context/variant_annotations/copyNumberEstimate",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyRatio",
+                "path": "/evidence_package/ai_context/variant_annotations/copyRatio",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.confidence",
+                "path": "/evidence_package/ai_context/variant_annotations/confidence",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.analysis_mode",
+                "path": "/evidence_package/ai_context/sample/analysis_mode",
+                "source": "request",
+                "status": "reported",
+                "value": "trio",
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.gender",
+                "path": "/evidence_package/ai_context/sample/gender",
+                "source": "request",
+                "status": "reported",
+                "value": "female",
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.age",
+                "path": "/evidence_package/ai_context/sample/age",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.sample_type",
+                "path": "/evidence_package/ai_context/sample/sample_type",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.father_affected_status",
+                "path": "/evidence_package/ai_context/sample/father_affected_status",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.mother_affected_status",
+                "path": "/evidence_package/ai_context/sample/mother_affected_status",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.hpo_terms",
+                "path": "/evidence_package/ai_context/sample/hpo_terms",
+                "source": "request",
+                "status": "reported",
+                "value": [
+                  "HP:0001250"
+                ],
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/genotype",
+                "source": "request",
+                "status": "reported",
+                "value": "0/1",
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/alleleDepth",
+                "source": "request",
+                "status": "reported",
+                "value": "20,10",
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/depth",
+                "source": "request",
+                "status": "reported",
+                "value": 30,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/genotypeQuality",
+                "source": "request",
+                "status": "reported",
+                "value": 40,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/genotype",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/alleleDepth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/alleleFrequency",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/genotypeQuality",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/genotype",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/alleleDepth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/genotypeQuality",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.identity_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.de_novo_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.phase_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.segregation_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.hi",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.ts",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.protein_coding_count",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.complete_overlap",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.orientation",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              }
+            ],
+            "reported_is_not_verified": true,
+            "version": "imported-facts-v1"
+          },
+          "sample": {
+            "age": 0,
+            "analysis_mode": "trio",
+            "gender": "female",
+            "hpo_terms": [
+              {
+                "id": "HP:0001250"
+              }
+            ]
+          },
+          "variant_annotations": {
+            "alt": "G",
+            "annotationValues": {},
+            "chromosome": "1",
+            "consequence": "missense_variant",
+            "coordinateSystem": "0-based-half-open",
+            "copyNumber": 0,
+            "endPosition": 100,
+            "gene": "SYNTHETIC",
+            "gnomadAF": 0,
+            "position": 100,
+            "ref": "A",
+            "sampleGenotypes": {
+              "father": {
+                "alleleFrequency": 0,
+                "genotype": "./."
+              },
+              "proband": {
+                "alleleDepth": "20,10",
+                "depth": 30,
+                "genotype": "0/1",
+                "genotypeQuality": 40
+              }
+            },
+            "startPosition": 0,
+            "transcript": "ENST_SYNTHETIC"
+          }
+        },
+        "sources": []
+      },
+      "mode": "ai_assisted",
+      "options": {
+        "allow_experimental": true,
+        "provider_profile_id": "synthetic-profile"
+      },
+      "schema_version": "sepilens-evaluation-2.0",
+      "variant": {
+        "allele_frequency": 0,
+        "alt": "G",
+        "assembly": "GRCh38",
+        "chrom": "1",
+        "consequence": "missense_variant",
+        "gene": "SYNTHETIC",
+        "pos": 100,
+        "ref": "A",
+        "transcript": "ENST_SYNTHETIC"
+      }
+    }
+  },
+  {
+    "feature": "cnv_gain",
+    "request": {
+      "clinical_context": {
+        "disease_id": "",
+        "inheritance": "unknown",
+        "sample_type": "unknown",
+        "variant_origin": "unknown"
+      },
+      "cnv": {
+        "assembly": "GRCh38",
+        "chrom": "1",
+        "coordinate_system": "1-based-inclusive",
+        "copy_number": 0,
+        "end": 100,
+        "start": 1,
+        "type": "gain"
+      },
+      "engine_id": "cnv_gain_2020",
+      "evidence_package": {
+        "ai_context": {
+          "fact_pack": {
+            "engine_id": "cnv_gain_2020",
+            "facts": [
+              {
+                "field": "variant.assembly",
+                "path": "/variant/assembly",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.chrom",
+                "path": "/variant/chrom",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.pos",
+                "path": "/variant/pos",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.ref",
+                "path": "/variant/ref",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.alt",
+                "path": "/variant/alt",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.gene",
+                "path": "/variant/gene",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.transcript",
+                "path": "/variant/transcript",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.hgvs_c",
+                "path": "/variant/hgvs_c",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.hgvs_p",
+                "path": "/variant/hgvs_p",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.consequence",
+                "path": "/variant/consequence",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.allele_frequency",
+                "path": "/variant/allele_frequency",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.assembly",
+                "path": "/cnv/assembly",
+                "source": "request",
+                "status": "reported",
+                "value": "GRCh38",
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.chrom",
+                "path": "/cnv/chrom",
+                "source": "request",
+                "status": "reported",
+                "value": "1",
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.start",
+                "path": "/cnv/start",
+                "source": "request",
+                "status": "reported",
+                "value": 1,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.end",
+                "path": "/cnv/end",
+                "source": "request",
+                "status": "reported",
+                "value": 100,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.coordinate_system",
+                "path": "/cnv/coordinate_system",
+                "source": "request",
+                "status": "reported",
+                "value": "1-based-inclusive",
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.type",
+                "path": "/cnv/type",
+                "source": "request",
+                "status": "reported",
+                "value": "gain",
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.copy_number",
+                "path": "/cnv/copy_number",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.disease_id",
+                "path": "/clinical_context/disease_id",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.inheritance",
+                "path": "/clinical_context/inheritance",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.sample_type",
+                "path": "/clinical_context/sample_type",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.variant_origin",
+                "path": "/clinical_context/variant_origin",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.hpo_terms",
+                "path": "/clinical_context/hpo_terms",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gene",
+                "path": "/evidence_package/ai_context/variant_annotations/gene",
+                "source": "request",
+                "status": "reported",
+                "value": "SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.transcript",
+                "path": "/evidence_package/ai_context/variant_annotations/transcript",
+                "source": "request",
+                "status": "reported",
+                "value": "ENST_SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.consequence",
+                "path": "/evidence_package/ai_context/variant_annotations/consequence",
+                "source": "request",
+                "status": "reported",
+                "value": "missense_variant",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarId",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarId",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarSignificance",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarSignificance",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarReviewStatus",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarReviewStatus",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarStars",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarStars",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarDisease",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarDisease",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gnomadAF",
+                "path": "/evidence_package/ai_context/variant_annotations/gnomadAF",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gnomadEasAF",
+                "path": "/evidence_package/ai_context/variant_annotations/gnomadEasAF",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.maxAF",
+                "path": "/evidence_package/ai_context/variant_annotations/maxAF",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.alphaMissenseScore",
+                "path": "/evidence_package/ai_context/variant_annotations/alphaMissenseScore",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.pangolinGain",
+                "path": "/evidence_package/ai_context/variant_annotations/pangolinGain",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.pangolinLoss",
+                "path": "/evidence_package/ai_context/variant_annotations/pangolinLoss",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyNumber",
+                "path": "/evidence_package/ai_context/variant_annotations/copyNumber",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyNumberEstimate",
+                "path": "/evidence_package/ai_context/variant_annotations/copyNumberEstimate",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyRatio",
+                "path": "/evidence_package/ai_context/variant_annotations/copyRatio",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.confidence",
+                "path": "/evidence_package/ai_context/variant_annotations/confidence",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.analysis_mode",
+                "path": "/evidence_package/ai_context/sample/analysis_mode",
+                "source": "request",
+                "status": "reported",
+                "value": "trio",
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.gender",
+                "path": "/evidence_package/ai_context/sample/gender",
+                "source": "request",
+                "status": "reported",
+                "value": "female",
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.age",
+                "path": "/evidence_package/ai_context/sample/age",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.sample_type",
+                "path": "/evidence_package/ai_context/sample/sample_type",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.father_affected_status",
+                "path": "/evidence_package/ai_context/sample/father_affected_status",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.mother_affected_status",
+                "path": "/evidence_package/ai_context/sample/mother_affected_status",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.hpo_terms",
+                "path": "/evidence_package/ai_context/sample/hpo_terms",
+                "source": "request",
+                "status": "reported",
+                "value": [
+                  "HP:0001250"
+                ],
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/genotype",
+                "source": "request",
+                "status": "reported",
+                "value": "0/1",
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/alleleDepth",
+                "source": "request",
+                "status": "reported",
+                "value": "20,10",
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/depth",
+                "source": "request",
+                "status": "reported",
+                "value": 30,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/genotypeQuality",
+                "source": "request",
+                "status": "reported",
+                "value": 40,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/genotype",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/alleleDepth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/alleleFrequency",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/genotypeQuality",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/genotype",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/alleleDepth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/genotypeQuality",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.identity_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.de_novo_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.phase_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.segregation_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.hi",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.ts",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.protein_coding_count",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.complete_overlap",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.orientation",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              }
+            ],
+            "reported_is_not_verified": true,
+            "version": "imported-facts-v1"
+          },
+          "sample": {
+            "age": 0,
+            "analysis_mode": "trio",
+            "gender": "female",
+            "hpo_terms": [
+              {
+                "id": "HP:0001250"
+              }
+            ]
+          },
+          "variant_annotations": {
+            "alt": "G",
+            "annotationValues": {},
+            "chromosome": "1",
+            "consequence": "missense_variant",
+            "coordinateSystem": "0-based-half-open",
+            "copyNumber": 0,
+            "endPosition": 100,
+            "gene": "SYNTHETIC",
+            "gnomadAF": 0,
+            "position": 100,
+            "ref": "A",
+            "sampleGenotypes": {
+              "father": {
+                "alleleFrequency": 0,
+                "genotype": "./."
+              },
+              "proband": {
+                "alleleDepth": "20,10",
+                "depth": 30,
+                "genotype": "0/1",
+                "genotypeQuality": 40
+              }
+            },
+            "startPosition": 0,
+            "transcript": "ENST_SYNTHETIC"
+          }
+        },
+        "sources": []
+      },
+      "mode": "ai_assisted",
+      "options": {
+        "provider_profile_id": "synthetic-profile"
+      },
+      "schema_version": "sepilens-evaluation-2.0"
+    }
+  },
+  {
+    "feature": "cnv_loss",
+    "request": {
+      "clinical_context": {
+        "disease_id": "",
+        "inheritance": "unknown",
+        "sample_type": "unknown",
+        "variant_origin": "unknown"
+      },
+      "cnv": {
+        "assembly": "GRCh38",
+        "chrom": "1",
+        "coordinate_system": "1-based-inclusive",
+        "copy_number": 0,
+        "end": 100,
+        "start": 1,
+        "type": "loss"
+      },
+      "engine_id": "cnv_loss_2020",
+      "evidence_package": {
+        "ai_context": {
+          "fact_pack": {
+            "engine_id": "cnv_loss_2020",
+            "facts": [
+              {
+                "field": "variant.assembly",
+                "path": "/variant/assembly",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.chrom",
+                "path": "/variant/chrom",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.pos",
+                "path": "/variant/pos",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.ref",
+                "path": "/variant/ref",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.alt",
+                "path": "/variant/alt",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.gene",
+                "path": "/variant/gene",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.transcript",
+                "path": "/variant/transcript",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.hgvs_c",
+                "path": "/variant/hgvs_c",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.hgvs_p",
+                "path": "/variant/hgvs_p",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.consequence",
+                "path": "/variant/consequence",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "variant.allele_frequency",
+                "path": "/variant/allele_frequency",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.assembly",
+                "path": "/cnv/assembly",
+                "source": "request",
+                "status": "reported",
+                "value": "GRCh38",
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.chrom",
+                "path": "/cnv/chrom",
+                "source": "request",
+                "status": "reported",
+                "value": "1",
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.start",
+                "path": "/cnv/start",
+                "source": "request",
+                "status": "reported",
+                "value": 1,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.end",
+                "path": "/cnv/end",
+                "source": "request",
+                "status": "reported",
+                "value": 100,
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.coordinate_system",
+                "path": "/cnv/coordinate_system",
+                "source": "request",
+                "status": "reported",
+                "value": "1-based-inclusive",
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.type",
+                "path": "/cnv/type",
+                "source": "request",
+                "status": "reported",
+                "value": "loss",
+                "version": "unversioned"
+              },
+              {
+                "field": "cnv.copy_number",
+                "path": "/cnv/copy_number",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.disease_id",
+                "path": "/clinical_context/disease_id",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.inheritance",
+                "path": "/clinical_context/inheritance",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.sample_type",
+                "path": "/clinical_context/sample_type",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.variant_origin",
+                "path": "/clinical_context/variant_origin",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "context.hpo_terms",
+                "path": "/clinical_context/hpo_terms",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gene",
+                "path": "/evidence_package/ai_context/variant_annotations/gene",
+                "source": "request",
+                "status": "reported",
+                "value": "SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.transcript",
+                "path": "/evidence_package/ai_context/variant_annotations/transcript",
+                "source": "request",
+                "status": "reported",
+                "value": "ENST_SYNTHETIC",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.consequence",
+                "path": "/evidence_package/ai_context/variant_annotations/consequence",
+                "source": "request",
+                "status": "reported",
+                "value": "missense_variant",
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarId",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarId",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarSignificance",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarSignificance",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarReviewStatus",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarReviewStatus",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarStars",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarStars",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.clinvarDisease",
+                "path": "/evidence_package/ai_context/variant_annotations/clinvarDisease",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gnomadAF",
+                "path": "/evidence_package/ai_context/variant_annotations/gnomadAF",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.gnomadEasAF",
+                "path": "/evidence_package/ai_context/variant_annotations/gnomadEasAF",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.maxAF",
+                "path": "/evidence_package/ai_context/variant_annotations/maxAF",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.alphaMissenseScore",
+                "path": "/evidence_package/ai_context/variant_annotations/alphaMissenseScore",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.pangolinGain",
+                "path": "/evidence_package/ai_context/variant_annotations/pangolinGain",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.pangolinLoss",
+                "path": "/evidence_package/ai_context/variant_annotations/pangolinLoss",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyNumber",
+                "path": "/evidence_package/ai_context/variant_annotations/copyNumber",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyNumberEstimate",
+                "path": "/evidence_package/ai_context/variant_annotations/copyNumberEstimate",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.copyRatio",
+                "path": "/evidence_package/ai_context/variant_annotations/copyRatio",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "annotation.confidence",
+                "path": "/evidence_package/ai_context/variant_annotations/confidence",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.analysis_mode",
+                "path": "/evidence_package/ai_context/sample/analysis_mode",
+                "source": "request",
+                "status": "reported",
+                "value": "trio",
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.gender",
+                "path": "/evidence_package/ai_context/sample/gender",
+                "source": "request",
+                "status": "reported",
+                "value": "female",
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.age",
+                "path": "/evidence_package/ai_context/sample/age",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.sample_type",
+                "path": "/evidence_package/ai_context/sample/sample_type",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.father_affected_status",
+                "path": "/evidence_package/ai_context/sample/father_affected_status",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.mother_affected_status",
+                "path": "/evidence_package/ai_context/sample/mother_affected_status",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "sample.hpo_terms",
+                "path": "/evidence_package/ai_context/sample/hpo_terms",
+                "source": "request",
+                "status": "reported",
+                "value": [
+                  "HP:0001250"
+                ],
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/genotype",
+                "source": "request",
+                "status": "reported",
+                "value": "0/1",
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/alleleDepth",
+                "source": "request",
+                "status": "reported",
+                "value": "20,10",
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/depth",
+                "source": "request",
+                "status": "reported",
+                "value": 30,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/genotypeQuality",
+                "source": "request",
+                "status": "reported",
+                "value": 40,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.proband.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/proband/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/genotype",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/alleleDepth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/alleleFrequency",
+                "source": "request",
+                "status": "reported",
+                "value": 0,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/genotypeQuality",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.father.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/father/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.genotype",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/genotype",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.alleleDepth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/alleleDepth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.alleleFrequency",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/alleleFrequency",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.depth",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/depth",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.genotypeQuality",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/genotypeQuality",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.zygosity",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/zygosity",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.mother.vafSource",
+                "path": "/evidence_package/ai_context/variant_annotations/sampleGenotypes/mother/vafSource",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.identity_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.de_novo_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.phase_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "family.segregation_confirmed",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.hi",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.ts",
+                "path": "",
+                "source": "request",
+                "status": "not_applicable",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.protein_coding_count",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.complete_overlap",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              },
+              {
+                "field": "dosage.orientation",
+                "path": "",
+                "source": "request",
+                "status": "unknown",
+                "value": null,
+                "version": "unversioned"
+              }
+            ],
+            "reported_is_not_verified": true,
+            "version": "imported-facts-v1"
+          },
+          "sample": {
+            "age": 0,
+            "analysis_mode": "trio",
+            "gender": "female",
+            "hpo_terms": [
+              {
+                "id": "HP:0001250"
+              }
+            ]
+          },
+          "variant_annotations": {
+            "alt": "G",
+            "annotationValues": {},
+            "chromosome": "1",
+            "consequence": "missense_variant",
+            "coordinateSystem": "0-based-half-open",
+            "copyNumber": 0,
+            "endPosition": 100,
+            "gene": "SYNTHETIC",
+            "gnomadAF": 0,
+            "position": 100,
+            "ref": "A",
+            "sampleGenotypes": {
+              "father": {
+                "alleleFrequency": 0,
+                "genotype": "./."
+              },
+              "proband": {
+                "alleleDepth": "20,10",
+                "depth": 30,
+                "genotype": "0/1",
+                "genotypeQuality": 40
+              }
+            },
+            "startPosition": 0,
+            "transcript": "ENST_SYNTHETIC"
+          }
+        },
+        "sources": []
+      },
+      "mode": "ai_assisted",
+      "options": {
+        "provider_profile_id": "synthetic-profile"
+      },
+      "schema_version": "sepilens-evaluation-2.0"
+    }
+  }
+]

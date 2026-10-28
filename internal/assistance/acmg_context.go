@@ -59,6 +59,11 @@ func acmgSampleGenotypes(value any) map[string]any {
 		if v, ok := sample["alleleFrequency"].(float64); ok && !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 && v <= 1 {
 			call["alleleFrequency"] = v
 		}
+		for _, field := range []string{"depth", "genotypeQuality"} {
+			if n, ok := sample[field].(float64); ok && !math.IsNaN(n) && !math.IsInf(n, 0) && n >= 0 && n <= 9007199254740991 && n == math.Trunc(n) {
+				call[field] = n
+			}
+		}
 		switch z := text(sample["zygosity"]); z {
 		case "Reference", "Heterozygous", "Homozygous", "Hemizygous", "Unknown":
 			call["zygosity"] = z
