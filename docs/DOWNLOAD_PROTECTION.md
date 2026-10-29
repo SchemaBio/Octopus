@@ -1,4 +1,4 @@
-# COS 直连下载防护（2026-10-29，本地实现）
+# COS 直连下载防护（2026-10-29，代码已部署、防护未启用）
 
 ## 行为与限制
 
@@ -64,3 +64,5 @@ Cuttlefish「设置→平台计费→下载防护事件」提供组织、用户�
 本地验证：仅使用名为 `download_protection` 的回环PostgreSQL测试库，设置 `DOWNLOAD_PROTECTION_TEST_DSN` 后执行 `go test ./internal/service ./internal/handler ./internal/router ./internal/middleware ./internal/config -run 'TestDownload|TestDirectCOS|TestInterpretation|TestBusinessPermission|TestValidateStartup' -count=1`。无测试DSN时PostgreSQL用例会跳过；交付记录必须注明是否实际执行。
 
 官方依据：[IP策略条件](https://intl.cloud.tencent.com/zh/document/product/436/46206)、[COS日志检索与字段](https://intl.cloud.tencent.com/zh/document/product/436/59486)、[单请求限速](https://intl.cloud.tencent.com/zh/document/product/436/34072)。
+
+2026-10-29配套部署提交 `f4a9ff8`，标签 `ops-announcements-20261029t094949z`，用于与管理控制台接口保持兼容。生产开关继续关闭，真实CLS/IP/小对象验收仍待完成；本次没有开通CLS、绑定用户IP或发起付费下载。隔离PostgreSQL回归重新通过。详细发布交接见YiJian `docs/REMOTE_SERVER_SESSION_HANDOFF.md` 第51节。
