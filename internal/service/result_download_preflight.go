@@ -17,6 +17,9 @@ import (
 // check. It issues restricted STS credentials and reads at most one byte; it
 // never creates a quote, starts a package build or calls the credit service.
 func InspectResultDownloadAuthorization(ctx context.Context, cfg *config.Config, task *model.Task, ip string, probe bool) (map[string]interface{}, error) {
+	if cfg.Storage.DownloadProtectionEnabled {
+		return nil, fmt.Errorf("protected downloads require synthetic IP-bound and CLS acceptance; legacy preflight cannot certify this mode")
+	}
 	svc := &ResultDownloadService{cfg: cfg}
 	catalog, err := svc.Catalog(ctx, task, false)
 	if err != nil {

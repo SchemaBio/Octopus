@@ -140,6 +140,9 @@ func main() {
 	waitAI := aiService.Start(ctx)
 
 	if cfg.IsSaaS() {
+		if err := service.MigrateDownloadProtection(cfg); err != nil {
+			log.Fatalf("download protection migration: %v", err)
+		}
 		if err := service.MigrateExampleData(cfg); err != nil {
 			log.Fatalf("example data migration: %v", err)
 		}
@@ -154,6 +157,7 @@ func main() {
 	retentionSvc.Start(ctx)
 	service.NewBAMRetentionService(cfg).Start(ctx)
 	service.NewExampleDataService(cfg).Start(ctx)
+	service.StartDownloadUsageSync(ctx, cfg)
 	taskSvc.StartSepiidaSync(ctx, 30*time.Second)
 	taskSvc.StartExecutionDelivery(ctx)
 	fmt.Println("Sepiida status sync started (interval: 30s)")

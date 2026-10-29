@@ -166,6 +166,14 @@ func New(cfg *config.Config) *gin.Engine {
 		aiHandler := handler.NewAIHandler(cfg)
 		exportHandler := handler.NewExportHandler(cfg)
 		resultDownloadHandler := handler.NewResultDownloadHandler(cfg)
+		if cfg.IsSaaS() {
+			protection := handler.NewDownloadProtectionHandler(cfg)
+			adminDownloads := v1.Group("/admin/download-protection", middleware.JWTAuth(cfg), middleware.RequireAdmin())
+			adminDownloads.GET("/grants", protection.List)
+			adminDownloads.GET("/grants/:grant", protection.Detail)
+			adminDownloads.POST("/grants/:grant/:action", middleware.IPRateLimit(30, time.Minute), protection.Action)
+			adminDownloads.POST("/sync", middleware.IPRateLimit(3, time.Minute), protection.Sync)
+		}
 		reportHandler := handler.NewReportHandler(cfg)
 		resultPackageHandler := handler.NewResultPackageHandler(cfg)
 		tasks := v1.Group("/tasks")
@@ -206,6 +214,9 @@ func New(cfg *config.Config) *gin.Engine {
 			tasks.POST("/:id/downloads/prepare", resultDownloadHandler.Catalog)
 			tasks.POST("/:id/downloads/quote", resultDownloadHandler.Quote)
 			tasks.POST("/:id/downloads/issue", resultDownloadHandler.Issue)
+			if cfg.IsSaaS() {
+				tasks.POST("/:id/downloads/network-requests", middleware.IPRateLimit(10, time.Minute), resultDownloadHandler.RequestNetwork)
+			}
 			tasks.GET("/:id/downloads/:grant/file", resultDownloadHandler.File)
 
 			// Export

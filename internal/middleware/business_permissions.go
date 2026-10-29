@@ -206,7 +206,7 @@ func requestPermission(c *gin.Context) (string, []string, error) {
 		if strings.Contains(path, "/views") {
 			return "", nil, nil
 		} // Personal preferences.
-		for _, suffix := range []string{"/query", "/export", "/igv/urls", "/result-package/prepare", "/downloads/prepare", "/downloads/quote", "/downloads/issue"} {
+		for _, suffix := range []string{"/query", "/export", "/igv/urls", "/result-package/prepare", "/downloads/prepare", "/downloads/quote", "/downloads/issue", "/downloads/network-requests"} {
 			if strings.HasSuffix(path, suffix) {
 				return "", nil, nil
 			}

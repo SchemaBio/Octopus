@@ -118,6 +118,10 @@ type LLMConfig struct {
 }
 
 type StorageConfig struct {
+	DownloadProtectionEnabled     bool
+	DownloadCLSRegion             string
+	DownloadCLSTopicID            string
+	DownloadCLSCredentialsFile    string
 	TaskRetentionEnabled          bool
 	ResultDownloadLinkTTL         time.Duration
 	ResultDownloadRefreshInterval time.Duration
@@ -296,6 +300,10 @@ func Load() *Config {
 			ProxyMaxBodyBytes: int64(parseIntEnv("LLM_PROXY_MAX_BODY_MB", 2)) << 20,
 		},
 		Storage: StorageConfig{
+			DownloadProtectionEnabled:     getEnv("DOWNLOAD_PROTECTION_ENABLED", "false") == "true",
+			DownloadCLSRegion:             getEnv("DOWNLOAD_CLS_REGION", ""),
+			DownloadCLSTopicID:            getEnv("DOWNLOAD_CLS_TOPIC_ID", ""),
+			DownloadCLSCredentialsFile:    getEnv("DOWNLOAD_CLS_CREDENTIALS_FILE", ""),
 			TaskRetentionEnabled:          getEnv("DEPLOYMENT_EDITION", "opensource") == "saas",
 			ResultDownloadLinkTTL:         parseDuration(getEnv("RESULT_DOWNLOAD_LINK_TTL", "30m")),
 			ResultDownloadRefreshInterval: parseDuration(getEnv("RESULT_DOWNLOAD_REFRESH_INTERVAL", "60s")),

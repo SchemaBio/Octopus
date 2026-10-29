@@ -15,6 +15,9 @@ import (
 )
 
 func TestInterpretationGuardClassifiesEdits(t *testing.T) {
+	if isTaskEditRequest(http.MethodPost, "/tasks/:id/downloads/network-requests") {
+		t.Fatal("network recovery is not an interpretation edit")
+	}
 	for _, route := range []string{"/tasks/:id", "/tasks/:id/retry", "/tasks/:id/reports", "/tasks/:id/results/rows/:table/:vid", "/tasks/:id/results/:type/:vid/review", "/tasks/:id/results/:type/:vid/report", "/tasks/:id/results/cnv-assessments/:type/:vid", "/archive/:uuid/import"} {
 		if !isTaskEditRequest(http.MethodPut, route) {
 			t.Errorf("edit exempted: %s", route)

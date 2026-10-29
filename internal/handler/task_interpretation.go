@@ -18,7 +18,7 @@ func isTaskEditRequest(method, route string) bool {
 		return false
 	}
 	// Viewing, downloading and saving personal filters do not alter the interpretation.
-	for _, suffix := range []string{"/igv/urls", "/igv/snapshot", "/query", "/export", "/views", "/result-package/prepare", "/downloads/prepare", "/downloads/quote", "/downloads/issue", "/assessment/context"} {
+	for _, suffix := range []string{"/igv/urls", "/igv/snapshot", "/query", "/export", "/views", "/result-package/prepare", "/downloads/prepare", "/downloads/quote", "/downloads/issue", "/downloads/network-requests", "/assessment/context"} {
 		if strings.HasSuffix(route, suffix) {
 			return false
 		}

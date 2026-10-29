@@ -20,6 +20,12 @@ import (
 	"github.com/SchemaBio/Octopus/internal/config"
 )
 
+type downloadSignContextKey struct{}
+type downloadSignContext struct {
+	IP     string
+	Record func(keyID string, credentialExpires time.Time) error
+}
+
 // COS serves the exact object directly. The temporary secret key stays here;
 // the URL includes only the temporary ID/token and a short-lived signature.
 func directCOSDownload(ctx context.Context, cfg config.StorageConfig, key, filename string, expires time.Time) (string, error) {
@@ -39,10 +45,19 @@ func directCOSDownloadWithClient(ctx context.Context, cfg config.StorageConfig, 
 	if _, err := strconv.ParseUint(appID, 10, 64); err != nil {
 		return "", fmt.Errorf("invalid COS bucket AppId")
 	}
-	policy, err := json.Marshal(map[string]interface{}{"version": "2.0", "statement": []interface{}{map[string]interface{}{
+	statement := map[string]interface{}{
 		"effect": "allow", "action": []string{"name/cos:GetObject"},
 		"resource": []string{"qcs::cos:" + cfg.S3Region + ":uid/" + appID + ":" + cfg.S3Bucket + "/" + key},
-	}}})
+	}
+	protection, protected := ctx.Value(downloadSignContextKey{}).(downloadSignContext)
+	if protected {
+		ip, err := publicDownloadIP(protection.IP)
+		if err != nil {
+			return "", err
+		}
+		statement["condition"] = map[string]interface{}{"ip_equal": map[string]interface{}{"qcs:ip": ip}}
+	}
+	policy, err := json.Marshal(map[string]interface{}{"version": "2.0", "statement": []interface{}{statement}})
 	if err != nil {
 		return "", err
 	}
@@ -103,6 +118,14 @@ func directCOSDownloadWithClient(ctx context.Context, cfg config.StorageConfig, 
 	}
 	if r.Credentials.ID == "" || r.Credentials.Key == "" || r.Credentials.Token == "" || r.ExpiredTime < expires.Unix() {
 		return "", fmt.Errorf("COS temporary authorization does not cover requested validity")
+	}
+	if protected {
+		if protection.Record == nil {
+			return "", fmt.Errorf("download_issuance_record_unavailable")
+		}
+		if err := protection.Record(r.Credentials.ID, time.Unix(r.ExpiredTime, 0)); err != nil {
+			return "", err
+		}
 	}
 	host := cfg.S3Bucket + ".cos." + cfg.S3Region + ".myqcloud.com"
 	u := &url.URL{Scheme: "https", Host: host, Path: "/" + key}

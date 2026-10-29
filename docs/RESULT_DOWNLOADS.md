@@ -1,5 +1,7 @@
 # Interpretation workspace and paid raw downloads (2026-10-06)
 
+2026-10-29：已本地新增可选IP绑定、CLS观测流量1.3倍阈值停发和管理员换绑。默认关闭，未部署；新策略的配置、限制和验收见 [DOWNLOAD_PROTECTION.md](DOWNLOAD_PROTECTION.md)。以下无IP绑定说明适用于历史默认模式。
+
 ## Behavior
 
 - Interpretation tabs no longer include runtime/status. Old `tab=runtime` links normalize to overview. Task list status is preserved.

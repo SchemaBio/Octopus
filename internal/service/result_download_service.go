@@ -41,18 +41,19 @@ type ResultDownloadFile struct {
 	key       string
 }
 type ResultDownloadCatalog struct {
-	Transport        string               `json:"transport,omitempty"`
-	Version          string               `json:"version,omitempty"`
-	Files            []ResultDownloadFile `json:"files,omitempty"`
-	AttemptID        string               `json:"attempt_id"`
-	BAMExpiresAt     *time.Time           `json:"bam_expires_at,omitempty"`
-	BAMRetentionDays int                  `json:"bam_retention_days"`
-	BAMStatus        string               `json:"bam_status"`
-	ZIPStatus        string               `json:"zip_status"`
-	ZIPError         string               `json:"zip_error,omitempty"`
-	ZIP              *ResultDownloadFile  `json:"zip,omitempty"`
-	BAMs             []ResultDownloadFile `json:"bams"`
-	Missing          []string             `json:"missing"`
+	DownloadProtectionEnabled bool                 `json:"download_protection_enabled"`
+	Transport                 string               `json:"transport,omitempty"`
+	Version                   string               `json:"version,omitempty"`
+	Files                     []ResultDownloadFile `json:"files,omitempty"`
+	AttemptID                 string               `json:"attempt_id"`
+	BAMExpiresAt              *time.Time           `json:"bam_expires_at,omitempty"`
+	BAMRetentionDays          int                  `json:"bam_retention_days"`
+	BAMStatus                 string               `json:"bam_status"`
+	ZIPStatus                 string               `json:"zip_status"`
+	ZIPError                  string               `json:"zip_error,omitempty"`
+	ZIP                       *ResultDownloadFile  `json:"zip,omitempty"`
+	BAMs                      []ResultDownloadFile `json:"bams"`
+	Missing                   []string             `json:"missing"`
 }
 
 func NewResultDownloadService(cfg *config.Config) *ResultDownloadService {
@@ -108,6 +109,20 @@ func (s *ResultDownloadService) Active(ctx context.Context, task *model.Task, ac
 	}
 	rows := []model.ResultDownload{}
 	err := database.DB.WithContext(ctx).Where("task_uuid = ? AND attempt_id = ? AND user_id = ? AND org_id = ? AND link_expires_at > ? AND refunded_at IS NULL", task.UUID, task.ExecutionAttemptID, actor.UserID, actor.OrgID, time.Now()).Order("created_at DESC").Limit(10).Find(&rows).Error
+	if err == nil {
+		for i := range rows {
+			rows[i].FileID = downloadID(rows[i].ObjectKey)
+			if rows[i].ProtectionVersion > 0 {
+				var request model.DownloadNetworkRequest
+				e := database.DB.WithContext(ctx).Where("grant_id = ?", rows[i].ID).Order("created_at DESC").First(&request).Error
+				if e == nil {
+					rows[i].NetworkRequest = &request
+				} else if !errors.Is(e, gorm.ErrRecordNotFound) {
+					return nil, e
+				}
+			}
+		}
+	}
 	if err != nil {
 		return rows, err
 	}
@@ -216,7 +231,7 @@ func (s *ResultDownloadService) Catalog(ctx context.Context, task *model.Task, p
 	}
 	findQC(manifest)
 	qcJSON, _ := json.Marshal(embeddedQC)
-	catalog := &ResultDownloadCatalog{AttemptID: task.ExecutionAttemptID, ZIPStatus: "pending", BAMs: []ResultDownloadFile{}, Missing: []string{}}
+	catalog := &ResultDownloadCatalog{DownloadProtectionEnabled: s.protectionEnabled(), AttemptID: task.ExecutionAttemptID, ZIPStatus: "pending", BAMs: []ResultDownloadFile{}, Missing: []string{}}
 	deadline, err := bamRetentionDeadline(ctx, s.cfg, task)
 	if err != nil {
 		return nil, err
@@ -577,7 +592,11 @@ func (s *ResultDownloadService) Quote(ctx context.Context, task *model.Task, act
 		return nil, fmt.Errorf("下载文件大小超限")
 	}
 	quote := &model.ResultDownload{ID: uuid.NewString(), TaskUUID: task.UUID, AttemptID: task.ExecutionAttemptID, OrgID: actor.OrgID, UserID: actor.UserID, ClientIP: ip, Kind: kind, ObjectKey: chosen.key, Filename: chosen.Filename, SizeBytes: size, ETag: aws.ToString(meta.ETag), Credits: credits, QuoteExpiresAt: time.Now().Add(10 * time.Minute)}
-	return reuseOrCreateDownloadQuote(ctx, task, quote)
+	selected, err := reuseOrCreateDownloadQuote(ctx, task, quote)
+	if err == nil {
+		selected.ProtectionPlanned = s.protectionEnabled() || selected.ProtectionVersion > 0
+	}
+	return selected, err
 }
 
 // Serialize on the task, not on a fresh quote UUID: double clicks, new tabs and
@@ -592,9 +611,11 @@ func reuseOrCreateDownloadQuote(ctx context.Context, task *model.Task, quote *mo
 		err := tx.Where("task_uuid = ? AND attempt_id = ? AND org_id = ? AND user_id = ? AND kind = ? AND object_key = ? AND e_tag = ? AND size_bytes = ? AND refunded_at IS NULL", quote.TaskUUID, quote.AttemptID, quote.OrgID, quote.UserID, quote.Kind, quote.ObjectKey, quote.ETag, quote.SizeBytes).
 			Where("(link_expires_at > ?) OR (charged_at IS NULL AND quote_expires_at > ?)", time.Now(), time.Now()).Order("created_at DESC").First(&selected).Error
 		if err == nil {
-			return nil
+			if selected.IssuanceState != "threshold" {
+				return nil
+			}
 		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		selected = *quote
@@ -636,6 +657,9 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 			return fmt.Errorf("下载申请已关闭")
 		}
 		now := time.Now().UTC()
+		if err := s.protectIssue(tx, &quote, ip, now); err != nil {
+			return err
+		}
 		if quote.Kind == "bam" && deadline != nil {
 			if !now.Before(*deadline) {
 				return fmt.Errorf("BAM 保留期已到期，无法申请下载")
@@ -658,6 +682,9 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 			quote.LinkExpiresAt = &expires
 			return tx.Save(&quote).Error
 		}
+		if quote.ProtectionVersion > 0 {
+			return tx.Save(&quote).Error
+		}
 		return nil
 	})
 	if reserveErr != nil {
@@ -669,6 +696,9 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 			return fmt.Errorf("下载申请不存在")
 		}
 		now := time.Now().UTC()
+		if err := s.protectIssue(tx, &quote, ip, now); err != nil {
+			return err
+		}
 		if quote.Kind == "bam" && deadline != nil {
 			if !now.Before(*deadline) {
 				return fmt.Errorf("BAM 保留期已到期，无法申请下载")
@@ -705,7 +735,13 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 		if err != nil || aws.ToInt64(meta.ContentLength) != quote.SizeBytes || aws.ToString(meta.ETag) != quote.ETag {
 			return fmt.Errorf("文件发生变化或不可用，请重新申请；本次未扣费")
 		}
-		link, err = s.signDownload(ctx, s.cfg.Storage, quote.ObjectKey, quote.Filename, linkExpires)
+		signCtx := ctx
+		if quote.ProtectionVersion > 0 {
+			signCtx = context.WithValue(ctx, downloadSignContextKey{}, downloadSignContext{IP: quote.BoundIP, Record: func(keyID string, credentialExpires time.Time) error {
+				return tx.Create(&model.DownloadIssuance{ID: uuid.NewString(), GrantID: quote.ID, KeyHash: downloadHash(keyID), ObjectHash: downloadHash("/" + quote.ObjectKey), Bucket: s.cfg.Storage.S3Bucket, BoundIP: quote.BoundIP, ExpiresAt: linkExpires, CredentialExpiresAt: credentialExpires}).Error
+			}})
+		}
+		link, err = s.signDownload(signCtx, s.cfg.Storage, quote.ObjectKey, quote.Filename, linkExpires)
 		if err != nil {
 			return err
 		}
@@ -731,6 +767,7 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 		}
 		quote.LastIssuedAt = &now
 		quote.IssueCount++
+		quote.Revision++
 		return tx.Save(&quote).Error
 	})
 	if err != nil {
@@ -738,7 +775,7 @@ func (s *ResultDownloadService) Issue(ctx context.Context, task *model.Task, act
 	}
 	settings := downloadSettings(s.cfg.Storage)
 	log.Printf("download_link_issued grant=%s task=%s kind=%s count=%d bytes=%d", quote.ID, task.UUID, quote.Kind, quote.IssueCount, quote.SizeBytes)
-	return map[string]interface{}{"id": quote.ID, "url": link, "filename": quote.Filename, "size_bytes": quote.SizeBytes, "credits_charged": quote.Credits, "expires_at": linkExpires, "grant_expires_at": quote.LinkExpiresAt, "ip_bound": false, "refresh_after": quote.LastIssuedAt.Add(settings.ResultDownloadRefreshInterval), "remaining_issues": settings.ResultDownloadMaxIssues - quote.IssueCount, "traffic_limit_bps": settings.ResultDownloadTrafficLimit}, nil
+	return map[string]interface{}{"id": quote.ID, "url": link, "filename": quote.Filename, "size_bytes": quote.SizeBytes, "credits_charged": quote.Credits, "expires_at": linkExpires, "grant_expires_at": quote.LinkExpiresAt, "ip_bound": quote.ProtectionVersion > 0, "bound_ip": quote.BoundIP, "observed_bytes": quote.ObservedBytes, "traffic_threshold_bytes": quote.TrafficThresholdBytes, "usage_synced_at": quote.UsageSyncedAt, "issuance_state": quote.IssuanceState, "refresh_after": quote.LastIssuedAt.Add(settings.ResultDownloadRefreshInterval), "remaining_issues": settings.ResultDownloadMaxIssues - quote.IssueCount, "traffic_limit_bps": settings.ResultDownloadTrafficLimit}, nil
 }
 
 // Stable names keep each downloaded VCF next to its matching .tbi, even when

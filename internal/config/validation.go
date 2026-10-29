@@ -23,6 +23,9 @@ func ValidateStartup(cfg *Config) error {
 	if cfg.IsSaaS() && (!cfg.Overlay.Enabled || cfg.Storage.Provider != "s3") {
 		return fmt.Errorf("SaaS requires the overlay and object storage")
 	}
+	if cfg.Storage.DownloadProtectionEnabled && (!cfg.IsSaaS() || cfg.Storage.DownloadCLSRegion == "" || cfg.Storage.DownloadCLSTopicID == "" || cfg.Storage.DownloadCLSCredentialsFile == "") {
+		return fmt.Errorf("download protection requires SaaS and DOWNLOAD_CLS_REGION, DOWNLOAD_CLS_TOPIC_ID, DOWNLOAD_CLS_CREDENTIALS_FILE; verify real log delivery before enabling")
+	}
 
 	for _, name := range []string{"PARQUET_QUERY_URL", "RESULT_ENGINE_BACKEND", "SVC_ENGINE_BACKEND"} {
 		if strings.TrimSpace(os.Getenv(name)) != "" {
