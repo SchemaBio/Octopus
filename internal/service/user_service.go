@@ -94,6 +94,9 @@ func (s *UserService) Login(email, password string) (*model.LoginResponse, error
 
 // Register creates a new user account
 func (s *UserService) Register(req *model.RegisterRequest) (*model.LoginResponse, error) {
+	if strings.TrimSpace(req.Name) == "" {
+		req.Name = "User"
+	}
 	// Check if email exists
 	if s.repo.ExistsByEmail(req.Email) {
 		return nil, errors.New("email already exists")
