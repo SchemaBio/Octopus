@@ -83,6 +83,9 @@ func EnableSaaSRetention() error {
 		if err := installRetentionWriteFences(tx); err != nil {
 			return err
 		}
+		if err := installOrganizationResetFences(tx); err != nil {
+			return err
+		}
 		if err := tx.Exec(`CREATE OR REPLACE FUNCTION research_sample_link_fence() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
    IF NEW.sample_id IS NULL OR NEW.sample_id='' THEN RETURN NEW; END IF;
    IF TG_OP='UPDATE' THEN IF NEW.sample_id=OLD.sample_id THEN RETURN NEW; END IF; END IF;
@@ -121,8 +124,13 @@ func EnableSaaSRetention() error {
 // SHARE locks serialize child writes with cleanup's parent deletion.
 func installRetentionWriteFences(tx *gorm.DB) error {
 	if err := tx.Exec(`CREATE OR REPLACE FUNCTION research_task_content_fence() RETURNS trigger LANGUAGE plpgsql AS $$
- DECLARE identity text; BEGIN
+ DECLARE identity text; org text; BEGIN
  identity=to_jsonb(NEW)->>TG_ARGV[0];
+ SELECT external_org_id INTO org FROM tasks WHERE uuid=identity OR id=identity LIMIT 1;
+ IF org IS NOT NULL AND org<>'' THEN
+ PERFORM pg_advisory_xact_lock_shared(hashtextextended('organization-reset:'||org,0));
+ IF EXISTS(SELECT 1 FROM organization_resets WHERE org_id=org AND state='clearing') THEN RAISE EXCEPTION 'organization reset in progress' USING ERRCODE='23514'; END IF;
+ END IF;
  PERFORM 1 FROM tasks WHERE (uuid=identity OR id=identity) AND deleted_at IS NULL AND expires_at>clock_timestamp() FOR SHARE;
  IF NOT FOUND THEN RAISE EXCEPTION 'task unavailable' USING ERRCODE='23514'; END IF;
  RETURN NEW; END $$`).Error; err != nil {

@@ -49,6 +49,7 @@ func AutoMigrate() error {
 	DB.Exec("UPDATE users SET token_version = 1 WHERE token_version IS NULL OR token_version = 0")
 
 	err := DB.AutoMigrate(
+		&model.OrganizationReset{},
 		&assistance.Settings{}, &assistance.Request{}, &assistance.SettingsEvent{}, &assistance.ProfileRecord{},
 		&model.CVMSubmission{}, &model.CVMCancellation{}, &model.ExecutionOutbox{},
 		// Core models

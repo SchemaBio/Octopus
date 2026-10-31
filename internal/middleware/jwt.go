@@ -143,7 +143,7 @@ func JWTAuth(cfg *config.Config) gin.HandlerFunc {
 			if !enforceBusinessPermissions(c, cfg) {
 				return
 			}
-			c.Next()
+			withOrganizationResetGuard(c, cfg)
 			return
 		}
 

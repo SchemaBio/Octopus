@@ -115,6 +115,10 @@ func (s *RetentionService) Execute(ctx context.Context, id string) error {
 }
 
 func (s *RetentionService) destroyTask(ctx context.Context, db *gorm.DB, job *model.RetentionJob) error {
+	return s.destroyTaskForReset(ctx, db, job, false)
+}
+
+func (s *RetentionService) destroyTaskForReset(ctx context.Context, db *gorm.DB, job *model.RetentionJob, reset bool) error {
 	var task model.Task
 	err := db.Where("uuid=? AND external_org_id=?", job.ResourceID, job.OrgID).First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -123,7 +127,7 @@ func (s *RetentionService) destroyTask(ctx context.Context, db *gorm.DB, job *mo
 	if err != nil {
 		return err
 	}
-	if task.ExpiresAt == nil || time.Now().Before(*task.ExpiresAt) {
+	if !reset && (task.ExpiresAt == nil || time.Now().Before(*task.ExpiresAt)) {
 		return fmt.Errorf("task not due")
 	}
 	prefix, err := retentionPrefix(task.ExternalOrgID, task.UUID)
@@ -159,8 +163,10 @@ func (s *RetentionService) destroyTask(ctx context.Context, db *gorm.DB, job *mo
 	if err != nil {
 		return err
 	}
-	if err := s.preserveBaselines(ctx, db, storage, &task, prefix); err != nil {
-		return err
+	if !reset {
+		if err := s.preserveBaselines(ctx, db, storage, &task, prefix); err != nil {
+			return err
+		}
 	}
 	// Reject unexpected independently stored screenshot locations rather than silently orphaning them.
 	var screenshots []model.IGVSnapshot
@@ -277,6 +283,10 @@ func (s *RetentionService) destroyTask(ctx context.Context, db *gorm.DB, job *mo
 }
 
 func (s *RetentionService) destroySample(db *gorm.DB, job *model.RetentionJob) error {
+	return s.destroySampleForReset(db, job, false)
+}
+
+func (s *RetentionService) destroySampleForReset(db *gorm.DB, job *model.RetentionJob, reset bool) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		var sample model.Sample
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid=? AND external_org_id=?", job.ResourceID, job.OrgID).First(&sample).Error
@@ -286,7 +296,7 @@ func (s *RetentionService) destroySample(db *gorm.DB, job *model.RetentionJob) e
 		if err != nil {
 			return err
 		}
-		if sample.ExpiresAt == nil || time.Now().Before(*sample.ExpiresAt) {
+		if !reset && (sample.ExpiresAt == nil || time.Now().Before(*sample.ExpiresAt)) {
 			return fmt.Errorf("sample not due")
 		}
 		if s.tasks.overlay == nil {
@@ -313,8 +323,10 @@ func (s *RetentionService) destroySample(db *gorm.DB, job *model.RetentionJob) e
 				return err
 			}
 		}
-		if err := tx.Model(&model.UploadJob{}).Where("sample_id=? AND external_org_id=?", sample.UUID, sample.ExternalOrgID).Updates(map[string]interface{}{"sample_id": "", "internal_id": ""}).Error; err != nil {
-			return err
+		if !reset {
+			if err := tx.Model(&model.UploadJob{}).Where("sample_id=? AND external_org_id=?", sample.UUID, sample.ExternalOrgID).Updates(map[string]interface{}{"sample_id": "", "internal_id": ""}).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Exec("INSERT INTO research_erased_resources(digest) VALUES (md5(?)) ON CONFLICT DO NOTHING", "samples:"+sample.ExternalOrgID+":"+sample.UUID).Error; err != nil {
 			return err

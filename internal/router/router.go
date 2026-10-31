@@ -157,6 +157,7 @@ func New(cfg *config.Config) *gin.Engine {
 		v1.POST("/internal/cvm/inputs/refresh", taskHandler.CVMInputRefresh)
 		storageHandler := handler.NewStorageHandler(cfg)
 		v1.POST("/internal/storage/tenants", middleware.IPRateLimit(120, time.Minute), storageHandler.InitializeTenant)
+		v1.POST("/internal/organizations/reset", handler.OrganizationResetStep(cfg))
 		if cfg.IsSaaS() {
 			example := handler.NewExampleDataHandler(cfg)
 			v1.POST("/internal/example-data/template", example.Template)
