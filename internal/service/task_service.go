@@ -1508,14 +1508,9 @@ func (s *TaskService) launchTask(task *model.Task) {
 		s.updateTaskError(task, "Failed to parse workflow inputs")
 		return
 	}
-	delete(executionInputs, "reference_genome")
-	delete(executionInputs, "trio_members")
-	delete(executionInputs, "trio_input_bytes")
 	if task.Template == "trio" {
-		inputs := executionInputs
-		content, _ := inputs["TrioWES.ped_content"].(string)
-		pedPath, _ := inputs["TrioWES.ped"].(string)
-		delete(inputs, "TrioWES.ped_content")
+		content, _ := executionInputs["TrioWES.ped_content"].(string)
+		pedPath, _ := executionInputs["TrioWES.ped"].(string)
 		if content == "" || pedPath == "" {
 			s.updateTaskError(task, "Trio PED input is missing")
 			return
@@ -1529,7 +1524,19 @@ func (s *TaskService) launchTask(task *model.Task) {
 			return
 		}
 	}
-	inputJSON, _ = json.Marshal(executionInputs)
+	// Sample files are stored under fastq_r1/fastq_r2. miniwdl only accepts
+	// the workflow's declared inputs, so project them before launch.
+	wdlInputs, err := localMiniWDLInputs(task.Template, executionInputs)
+	if err != nil {
+		s.updateTaskError(task, fmt.Sprintf("Failed to prepare workflow inputs: %v", err))
+		return
+	}
+	encoded, err := json.Marshal(wdlInputs)
+	if err != nil {
+		s.updateTaskError(task, "Failed to encode workflow inputs")
+		return
+	}
+	inputJSON = encoded
 	if err := os.WriteFile(inputFile, inputJSON, 0600); err != nil {
 		s.updateTaskError(task, fmt.Sprintf("Failed to write input file: %v", err))
 		return
@@ -1614,6 +1621,27 @@ func (s *TaskService) launchTask(task *model.Task) {
 			s.importTaskArchive(task)
 		}
 	}()
+}
+
+// localMiniWDLInputs returns the JSON miniwdl can accept. Uploaded reads,
+// BED files, and CNV baselines stay on their storage keys in the task record
+// and are copied onto the workflow inputs here.
+func localMiniWDLInputs(template string, stored map[string]interface{}) (map[string]interface{}, error) {
+	genome, err := cvmReferenceGenome(stored)
+	if err != nil {
+		return nil, err
+	}
+	inputs, err := buildCVMWDLInputs(template, genome, stored)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range []string{
+		"reference_genome", "trio_members", "trio_input_bytes", "TrioWES.ped_content",
+		"fastq_r1", "fastq_r2", "bed_file", "cnv_baseline",
+	} {
+		delete(inputs, key)
+	}
+	return inputs, nil
 }
 
 func (s *TaskService) miniWDLCommand(task *model.Task, inputFile string) *exec.Cmd {
