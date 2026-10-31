@@ -1,6 +1,6 @@
 package model
 
-// CNVExon represents a CNV gene-level exon result (51 columns from gene.cnvanno.txt)
+// CNVExon represents a gene-level CNV result and its annotation.
 type CNVExon struct {
 	ResultProvenance     `json:"-" gorm:"embedded"`
 	ID                   string   `json:"id" gorm:"primaryKey;size:36"`
@@ -14,6 +14,14 @@ type CNVExon struct {
 	EnsemblTranscript    string   `json:"ensemblTranscript,omitempty" gorm:"size:100"`
 	ExonCount            int      `json:"exonCount" gorm:"type:integer"`
 	Log2Ratio            *float64 `json:"log2Ratio,omitempty" gorm:"type:numeric"`
+	Log2Median           *float64 `json:"log2Median,omitempty" gorm:"type:numeric"`
+	Log2Std              *float64 `json:"log2Std,omitempty" gorm:"type:numeric"`
+	CopyNumber           *float64 `json:"copyNumber,omitempty" gorm:"type:numeric"`
+	BinCount             int      `json:"binCount"`
+	SegmentCount         int      `json:"segmentCount"`
+	CoverageRatio        *float64 `json:"coverageRatio,omitempty" gorm:"type:numeric"`
+	ConfidenceLabel      string   `json:"confidenceLabel,omitempty" gorm:"size:20"`
+	PValue               *float64 `json:"pValue,omitempty" gorm:"type:numeric"`
 	CopyRatio            *float64 `json:"copyRatio,omitempty" gorm:"type:numeric"`
 	Weight               *float64 `json:"weight,omitempty" gorm:"type:numeric"`
 	DepthRatio           *float64 `json:"depthRatio,omitempty" gorm:"type:numeric"`

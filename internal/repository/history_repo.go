@@ -303,8 +303,8 @@ func (r *HistoryRepository) GetGroupedCNVExons(query *model.HistoryListQuery) ([
 			MIN(start_position) AS start_position,
 			MAX(end_position) AS end_position,
 			type,
-			CAST(ROUND(AVG(COALESCE(copy_ratio, 1.0)) * 2) AS INTEGER) AS copy_number,
-			AVG(COALESCE(copy_ratio, depth_ratio, ratio2, 1.0)) AS ratio,
+			CAST(ROUND(AVG(COALESCE(copy_number, copy_ratio * 2, 2.0))) AS INTEGER) AS copy_number,
+			AVG(COALESCE(copy_ratio, copy_number / 2, depth_ratio, ratio2, 1.0)) AS ratio,
 			AVG(COALESCE(weight, quality, 1.0)) AS confidence,
 			COUNT(*) as count, MIN(reviewed_at) as first_at, MAX(reviewed_at) as last_at`).
 		Group("gene, transcript, exon_count, type")

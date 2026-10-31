@@ -675,18 +675,6 @@ func (imp *Importer) importCNVExons(taskID string, path string) (int, error) {
 			Gene:                 row["Col5"],
 			Transcript:           row["Col6"],
 			EnsemblTranscript:    row["Col7"],
-			ExonCount:            parseInt(row["Col8"]),
-			Log2Ratio:            parseFloatPtr(row["Col9"]),
-			CopyRatio:            parseFloatPtr(row["Col10"]),
-			Weight:               parseFloatPtr(row["Col11"]),
-			DepthRatio:           parseFloatPtr(row["Col12"]),
-			Depth:                parseFloatPtr(row["Col13"]),
-			Quality:              parseFloatPtr(row["Col14"]),
-			Ratio2:               parseFloatPtr(row["Col15"]),
-			Flag1:                parseInt(row["Col16"]),
-			Flag2:                parseInt(row["Col17"]),
-			FloatFlag:            parseFloatPtr(row["Col18"]),
-			Impact:               row["Col19"],
 			ISCN:                 row["ISCN"],
 			GeneCount:            parseInt(row["Gene_Count"]),
 			HIMax:                parseFloatPtr(row["HI_Max"]),
@@ -720,6 +708,9 @@ func (imp *Importer) importCNVExons(taskID string, path string) (int, error) {
 			Classification:       row["Classification"],
 			Reason:               row["Reason"],
 			EvidenceDetails:      row["Evidence_Details"],
+		}
+		if err := applyCNVGeneMetrics(&v, row); err != nil {
+			return 0, fmt.Errorf("CNV gene row %d: %w", len(results)+2, err)
 		}
 		results = append(results, v)
 	}

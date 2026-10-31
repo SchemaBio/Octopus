@@ -37,7 +37,7 @@ var progressProfiles = map[string]progressProfile{
 		{"secondary_analysis", "MT/CNV/ROH/UPD/MEI/STR 分析", 22, []string{"CreateMitoBed", "MitochondrialMutect2", "MtVEP", "MTReport", "CNVKitAntitarget", "CNVKitCoverage", "CNVKitFix", "CNVGene", "CNVRegion", "CNVAnnoGene", "CNVAnnoRegion", "AutoMap", "ROHReport", "AutoMapParent1", "ROHReportParent1", "AutoMapParent2", "ROHReportParent2", "UPD", "TIEA_WES", "MeiVEP", "MEIReport", "ExpansionHunter", "Stranger", "STRReport"}},
 	}},
 	"germline_baseline": {stages: []progressStageProfile{
-		{"preparation", "准备", 5, []string{"FixBed", "TargetBed", "CNVKitAntitarget"}},
+		{"preparation", "准备", 5, []string{"ValidateInputs", "FixBed", "TargetBed", "CNVKitAntitarget"}},
 		{"preprocessing", "FASTQ 预处理", 10, []string{"Fastp"}},
 		{"alignment", "比对与去重", 55, []string{"BwaAlign", "Markdup"}},
 		{"coverage", "覆盖度计算", 17, []string{"CNVKitCoverage"}},
