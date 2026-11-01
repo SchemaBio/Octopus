@@ -280,10 +280,28 @@ func (h *ResultHandler) SaveParquetRowAdjustment(c *gin.Context) {
 		ErrorBadRequest(c, "datasetVersion and attemptId are required")
 		return
 	}
-	for key, feature := range map[string]string{"acmgAIResult": "acmg", "svcv4AIResult": "svcv4"} {
+	aiCheck := map[string]string{
+		"acmgAIResult":  "acmg",
+		"svcv4AIResult": "svcv4",
+		"cnvAIResult":   "cnv",
+	}
+	for key, feature := range aiCheck {
 		if value, exists := request.Adjustments[key]; exists {
-			id, valid := value.(string)
-			if !valid || !(&assistance.Service{DB: database.DB}).CanSaveCalculatorResult(c.Request.Context(), model.TenantIDForTask(task), task.UUID, user, id, feature) {
+			var id string
+			if strVal, ok := value.(string); ok {
+				id = strVal
+			} else if mapVal, ok := value.(map[string]interface{}); ok {
+				if reqID, ok := mapVal["requestId"].(string); ok {
+					id = reqID
+				}
+			}
+			if id != "" {
+				aiSvc := &assistance.Service{DB: database.DB, SaaS: h.svc.IsSaaS()}
+				if !aiSvc.CanSaveCalculatorResult(c.Request.Context(), model.TenantIDForTask(task), task.UUID, user, id, feature) {
+					ErrorBadRequest(c, "AI request does not belong to this user and task")
+					return
+				}
+			} else if h.svc.IsSaaS() {
 				ErrorBadRequest(c, "AI request does not belong to this user and task")
 				return
 			}

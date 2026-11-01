@@ -11,13 +11,42 @@ import (
 
 var ErrLegacyACMGBinding = errors.New("historical ACMG result requires original immutable variant verification")
 
+func matchFeature(feature string) []string {
+	switch feature {
+	case "acmg":
+		return []string{"acmg"}
+	case "svcv4":
+		return []string{"svcv4"}
+	case "cnv_gain":
+		return []string{"cnv_gain"}
+	case "cnv_loss":
+		return []string{"cnv_loss"}
+	case "cnv":
+		return []string{"cnv_gain", "cnv_loss"}
+	default:
+		return nil
+	}
+}
+
 // Authorization is checked for the current reviewer before reading archived content.
 func (s *Service) CanSaveCalculatorResult(ctx context.Context, scope, task string, user uint, id, feature string) bool {
-	if _, err := uuid.Parse(id); err != nil || (feature != "acmg" && feature != "svcv4") || s.DB == nil {
+	if _, err := uuid.Parse(id); err != nil || s.DB == nil {
 		return false
 	}
+	features := matchFeature(feature)
+	if len(features) == 0 {
+		return false
+	}
+	query := s.DB.WithContext(ctx).Model(&Request{}).
+		Where("id=? AND task_id=? AND feature IN ? AND state=? AND cancel_requested=?", id, task, features, "completed", false)
+	if s.SaaS {
+		query = query.Where("scope=?", scope)
+		if user != 0 {
+			query = query.Where("user_id=?", user)
+		}
+	}
 	var n int64
-	return s.DB.WithContext(ctx).Model(&Request{}).Where("id=? AND scope=? AND task_id=? AND user_id=? AND feature=? AND state=? AND cancel_requested=?", id, scope, task, user, feature, "completed", false).Count(&n).Error == nil && n == 1
+	return query.Count(&n).Error == nil && n == 1
 }
 
 func (s *Service) SavedACMGResult(ctx context.Context, scope, task, row, datasetHash, id string) (map[string]interface{}, error) {
@@ -28,7 +57,11 @@ func (s *Service) SavedACMGResult(ctx context.Context, scope, task, row, dataset
 		return nil, ErrUnavailable
 	}
 	var r Request
-	if err := s.DB.WithContext(ctx).Where("id=? AND scope=? AND task_id=?", id, scope, task).First(&r).Error; err != nil {
+	query := s.DB.WithContext(ctx).Where("id=? AND task_id=?", id, task)
+	if s.SaaS {
+		query = query.Where("scope=?", scope)
+	}
+	if err := query.First(&r).Error; err != nil {
 		return nil, fmt.Errorf("AI result unavailable for this task")
 	}
 	return s.savedACMGResult(r, task, row, datasetHash)
@@ -64,7 +97,11 @@ func (s *Service) savedACMGResult(r Request, task, row, datasetHash string) (map
 
 func (s *Service) SavedLegacyACMGResult(ctx context.Context, scope, task, row, hash, id string, expected map[string]interface{}) (map[string]interface{}, error) {
 	var r Request
-	if err := s.DB.WithContext(ctx).Where("id=? AND scope=? AND task_id=?", id, scope, task).First(&r).Error; err != nil {
+	query := s.DB.WithContext(ctx).Where("id=? AND task_id=?", id, task)
+	if s.SaaS {
+		query = query.Where("scope=?", scope)
+	}
+	if err := query.First(&r).Error; err != nil {
 		return nil, ErrLegacyACMGBinding
 	}
 	if r.Feature != "acmg" || r.State != "completed" || !validJobID(r.JobID) || r.UpstreamID == "" || r.UpstreamID != s.upstreamID() {
@@ -104,5 +141,41 @@ func (s *Service) SavedLegacyACMGResult(ctx context.Context, scope, task, row, h
 	}
 	saved["requestId"] = r.ID
 	saved["historicalBinding"] = true
+	return saved, nil
+}
+
+func (s *Service) SavedCNVResult(ctx context.Context, scope, task, id string) (map[string]interface{}, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, fmt.Errorf("invalid CNV AI request ID")
+	}
+	if s.DB == nil || s.Cipher == nil {
+		return nil, ErrUnavailable
+	}
+	var r Request
+	query := s.DB.WithContext(ctx).Where("id=? AND task_id=?", id, task)
+	if s.SaaS {
+		query = query.Where("scope=?", scope)
+	}
+	if err := query.First(&r).Error; err != nil {
+		return nil, fmt.Errorf("CNV AI result unavailable for this task")
+	}
+	if r.TaskID != task || (r.Feature != "cnv_gain" && r.Feature != "cnv_loss") || r.State != "completed" || r.CancelRequested {
+		return nil, fmt.Errorf("completed CNV AI result required")
+	}
+	v, err := s.View(r)
+	if err != nil || v.Result == nil {
+		return nil, ErrUnavailable
+	}
+	copy := *v.Result
+	copy.ReviewerDecision = nil
+	b, err := json.Marshal(copy)
+	if err != nil || len(b) > 1<<20 {
+		return nil, fmt.Errorf("invalid AI result")
+	}
+	var saved map[string]interface{}
+	if err := json.Unmarshal(b, &saved); err != nil {
+		return nil, err
+	}
+	saved["requestId"] = r.ID
 	return saved, nil
 }

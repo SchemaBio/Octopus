@@ -23,7 +23,11 @@ func (s *Service) SavedSVCResult(ctx context.Context, scope, taskID, rowID, requ
 		return nil, ErrUnavailable
 	}
 	var r Request
-	if err := s.DB.WithContext(ctx).Where("id=? AND scope=? AND task_id=?", requestID, scope, taskID).First(&r).Error; err != nil {
+	query := s.DB.WithContext(ctx).Where("id=? AND task_id=?", requestID, taskID)
+	if s.SaaS {
+		query = query.Where("scope=?", scope)
+	}
+	if err := query.First(&r).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("SVC AI result does not belong to this task")
 		}
@@ -82,7 +86,11 @@ func (s *Service) savedSVCResult(r Request, taskID, rowID string) (map[string]in
 // currently authorized Parquet row, never against browser-supplied coordinates.
 func (s *Service) SavedLegacySVCResult(ctx context.Context, scope, taskID, rowID, id string, expected map[string]interface{}) (map[string]interface{}, error) {
 	var r Request
-	if err := s.DB.WithContext(ctx).Where("id=? AND scope=? AND task_id=?", id, scope, taskID).First(&r).Error; err != nil {
+	query := s.DB.WithContext(ctx).Where("id=? AND task_id=?", id, taskID)
+	if s.SaaS {
+		query = query.Where("scope=?", scope)
+	}
+	if err := query.First(&r).Error; err != nil {
 		return nil, ErrLegacySVCBinding
 	}
 	if r.State != "completed" || r.Feature != "svcv4" || !validJobID(r.JobID) || r.UpstreamID == "" || r.UpstreamID != s.upstreamID() {

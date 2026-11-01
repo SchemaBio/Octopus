@@ -189,8 +189,15 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			if table != "snv-indel" {
 				return nil, nil, fmt.Errorf("SVC AI result is only valid for SNP/InDel")
 			}
-			id, ok := value.(string)
-			if !ok {
+			var id string
+			if strVal, ok := value.(string); ok {
+				id = strVal
+			} else if mapVal, ok := value.(map[string]interface{}); ok {
+				if reqID, ok := mapVal["requestId"].(string); ok {
+					id = reqID
+				}
+			}
+			if id == "" {
 				return nil, nil, fmt.Errorf("SVC AI save accepts only a request ID")
 			}
 			if _, err := uuid.Parse(id); err != nil {
@@ -260,7 +267,13 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 				return nil, nil, fmt.Errorf("CNV AI result is only valid for CNV rows")
 			}
 			if _, ok := value.(map[string]interface{}); !ok {
-				return nil, nil, fmt.Errorf("CNV AI result must be an object")
+				if strVal, ok := value.(string); ok {
+					if _, err := uuid.Parse(strVal); err != nil {
+						return nil, nil, fmt.Errorf("invalid CNV AI request")
+					}
+				} else {
+					return nil, nil, fmt.Errorf("CNV AI result must be an object")
+				}
 			}
 		case "adoptedCNV":
 			if table != "cnv-segment" && table != "cnv-exon" {
@@ -285,9 +298,17 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if request.AttemptID != "" && request.AttemptID != executionAttempt(task) || request.DatasetVersion != "" && request.DatasetVersion != dataset.DataVersion {
 		return nil, nil, ErrAdjustmentConflict
 	}
-	if id, ok := request.Adjustments["acmgAIResult"].(string); ok {
+	var acmgID string
+	if strVal, ok := request.Adjustments["acmgAIResult"].(string); ok {
+		acmgID = strVal
+	} else if mapVal, ok := request.Adjustments["acmgAIResult"].(map[string]interface{}); ok {
+		if reqID, ok := mapVal["requestId"].(string); ok {
+			acmgID = reqID
+		}
+	}
+	if acmgID != "" {
 		ai := assistance.New(database.DB, s.cfg.IsSaaS(), s.cfg.Overlay.BaseURL, s.cfg.Overlay.SharedSecret)
-		saved, err := ai.SavedACMGResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, dataset.ObjectSHA256, id)
+		saved, err := ai.SavedACMGResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, dataset.ObjectSHA256, acmgID)
 		if errors.Is(err, assistance.ErrLegacyACMGBinding) && request.RowOrdinal != nil {
 			cache, readErr := s.historyDatasetCache(ctx, dataset)
 			if readErr != nil {
@@ -299,7 +320,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			}
 			identity := normalizeParquetAPIItem(table, page.Rows[0])
 			identity["assembly"] = TaskReferenceGenome(task)
-			saved, err = ai.SavedLegacyACMGResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, dataset.ObjectSHA256, id, identity)
+			saved, err = ai.SavedLegacyACMGResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, dataset.ObjectSHA256, acmgID, identity)
 		}
 
 		if err != nil {
@@ -312,9 +333,17 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		}
 		request.Adjustments["acmgAIResult"] = saved
 	}
-	if id, ok := request.Adjustments["svcv4AIResult"].(string); ok {
+	var svcv4ID string
+	if strVal, ok := request.Adjustments["svcv4AIResult"].(string); ok {
+		svcv4ID = strVal
+	} else if mapVal, ok := request.Adjustments["svcv4AIResult"].(map[string]interface{}); ok {
+		if reqID, ok := mapVal["requestId"].(string); ok {
+			svcv4ID = reqID
+		}
+	}
+	if svcv4ID != "" {
 		ai := assistance.New(database.DB, s.cfg.IsSaaS(), s.cfg.Overlay.BaseURL, s.cfg.Overlay.SharedSecret)
-		saved, err := ai.SavedSVCResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, id)
+		saved, err := ai.SavedSVCResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, svcv4ID)
 		if errors.Is(err, assistance.ErrLegacySVCBinding) && request.RowOrdinal != nil {
 			cache, readErr := s.historyDatasetCache(ctx, dataset)
 			if readErr != nil {
@@ -326,7 +355,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			}
 			identity := normalizeParquetAPIItem(table, page.Rows[0])
 			identity["assembly"] = TaskReferenceGenome(task)
-			saved, err = ai.SavedLegacySVCResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, id, identity)
+			saved, err = ai.SavedLegacySVCResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, svcv4ID, identity)
 		}
 		if err != nil {
 			return nil, nil, err
@@ -337,6 +366,19 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			request.Adjustments[key] = value
 		}
 		request.Adjustments["svcv4AIResult"] = saved
+	}
+	if strVal, ok := request.Adjustments["cnvAIResult"].(string); ok && strVal != "" {
+		ai := assistance.New(database.DB, s.cfg.IsSaaS(), s.cfg.Overlay.BaseURL, s.cfg.Overlay.SharedSecret)
+		saved, err := ai.SavedCNVResult(ctx, model.TenantIDForTask(task), task.UUID, strVal)
+		if err != nil {
+			return nil, nil, err
+		}
+		original := request.Adjustments
+		request.Adjustments = make(map[string]interface{}, len(original))
+		for key, value := range original {
+			request.Adjustments[key] = value
+		}
+		request.Adjustments["cnvAIResult"] = saved
 	}
 	// Submitted totals are never trusted; recompute before acquiring database locks.
 	if input, ok := request.Adjustments["svcv4Assessment"].(map[string]interface{}); ok {

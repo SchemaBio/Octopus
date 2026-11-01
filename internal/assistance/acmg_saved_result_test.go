@@ -48,3 +48,26 @@ func TestCalculatorArchivePostgresRejectsOtherUserTaskAndFeature(t *testing.T) {
 		t.Fatal("archive authorization invoked model")
 	}
 }
+
+func TestCalculatorArchiveSelfHostedAllowsCrossUserAndCNVFeatures(t *testing.T) {
+	s, _ := integrationService(t)
+	s.SaaS = false
+
+	r := Request{ID: uuid.NewString(), Scope: "user:1", TaskID: "task-123", UserID: 1, Feature: "cnv_loss", State: "completed", Key: "fixed"}
+	if e := s.DB.Create(&r).Error; e != nil {
+		t.Fatal(e)
+	}
+
+	if !s.CanSaveCalculatorResult(context.Background(), "user:2", "task-123", 2, r.ID, "cnv") {
+		t.Fatal("self-hosted cross-user CNV result rejected")
+	}
+	if !s.CanSaveCalculatorResult(context.Background(), "user:2", "task-123", 2, r.ID, "cnv_loss") {
+		t.Fatal("self-hosted CNV loss result rejected")
+	}
+	if s.CanSaveCalculatorResult(context.Background(), "user:2", "other-task", 2, r.ID, "cnv") {
+		t.Fatal("foreign task accepted in self-hosted mode")
+	}
+	if s.CanSaveCalculatorResult(context.Background(), "user:2", "task-123", 2, r.ID, "acmg") {
+		t.Fatal("mismatched feature accepted in self-hosted mode")
+	}
+}

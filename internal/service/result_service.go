@@ -35,6 +35,10 @@ func NewResultService(cfg *config.Config) *ResultService {
 	}
 }
 
+func (s *ResultService) IsSaaS() bool {
+	return s != nil && s.cfg != nil && s.cfg.IsSaaS()
+}
+
 // ========== QC ==========
 
 func (s *ResultService) GetQC(ctx context.Context, taskID string) (*model.QCResult, error) {
