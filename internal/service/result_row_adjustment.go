@@ -266,14 +266,8 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			if table != "cnv-segment" && table != "cnv-exon" {
 				return nil, nil, fmt.Errorf("CNV AI result is only valid for CNV rows")
 			}
-			if _, ok := value.(map[string]interface{}); !ok {
-				if strVal, ok := value.(string); ok {
-					if _, err := uuid.Parse(strVal); err != nil {
-						return nil, nil, fmt.Errorf("invalid CNV AI request")
-					}
-				} else {
-					return nil, nil, fmt.Errorf("CNV AI result must be an object")
-				}
+			if _, err := cnvAIRequestID(value); err != nil {
+				return nil, nil, err
 			}
 		case "adoptedCNV":
 			if table != "cnv-segment" && table != "cnv-exon" {
@@ -367,9 +361,13 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 		}
 		request.Adjustments["svcv4AIResult"] = saved
 	}
-	if strVal, ok := request.Adjustments["cnvAIResult"].(string); ok && strVal != "" {
+	if value, exists := request.Adjustments["cnvAIResult"]; exists {
+		id, err := cnvAIRequestID(value)
+		if err != nil {
+			return nil, nil, err
+		}
 		ai := assistance.New(database.DB, s.cfg.IsSaaS(), s.cfg.Overlay.BaseURL, s.cfg.Overlay.SharedSecret)
-		saved, err := ai.SavedCNVResult(ctx, model.TenantIDForTask(task), task.UUID, strVal)
+		saved, err := ai.SavedCNVResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, id)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -537,6 +535,11 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			}
 			payload["adoptedACMG"] = snapshotAdoptedACMG(payload)
 		}
+		if _, adopting := request.Adjustments["adoptedCNV"]; adopting {
+			if err := canonicalCNVAdoption(payload, actor); err != nil {
+				return err
+			}
+		}
 		after, err := json.Marshal(payload)
 		if err != nil {
 			return err
@@ -625,5 +628,65 @@ func persistParquetAdjustment(tx *gorm.DB, saved *model.ResultRowAdjustment, ver
 	if write.RowsAffected != 1 {
 		return ErrAdjustmentConflict
 	}
+	return nil
+}
+
+// Accept legacy objects only as request references; all browser result content is discarded.
+func cnvAIRequestID(value interface{}) (string, error) {
+	id, _ := value.(string)
+	if object, ok := value.(map[string]interface{}); ok {
+		id, _ = object["requestId"].(string)
+	}
+	if _, err := uuid.Parse(id); err != nil {
+		return "", fmt.Errorf("CNV AI save requires a valid request ID")
+	}
+	return id, nil
+}
+
+// AI and calculator adoption use archived server values, never submitted scores.
+func canonicalCNVAdoption(payload map[string]interface{}, actor string) error {
+	choice, ok := payload["adoptedCNV"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid CNV adoption")
+	}
+	source, _ := choice["source"].(string)
+	result := map[string]interface{}{"source": source, "savedBy": actor, "savedAt": time.Now().UTC().Format(time.RFC3339Nano)}
+	switch source {
+	case "ai":
+		ai, ok := payload["cnvAIResult"].(map[string]interface{})
+		if !ok || ai["requestId"] == nil {
+			return fmt.Errorf("save the bound CNV AI result before adoption")
+		}
+		result["classification"] = ai["suggestedClassification"]
+	case "clingen":
+		assessment, ok := payload["cnvAssessment"].(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("save the CNV calculator before adoption")
+		}
+		// Also recompute previously stored calculator values before use.
+		raw, err := json.Marshal(assessment)
+		if err != nil {
+			return err
+		}
+		var computed map[string]interface{}
+		if json.Unmarshal(raw, &computed) != nil {
+			return fmt.Errorf("invalid CNV calculator")
+		}
+		if err := normalizeCNVScoring(computed); err != nil {
+			return err
+		}
+		result["classification"], result["score"] = computed["classification"], computed["totalScore"]
+	case "database", "quick":
+		// Explicit reviewer selection; never carry client timestamps or an automatic flag.
+		if value, ok := choice["classification"].(string); ok {
+			result["classification"] = value
+		}
+		if value, ok := choice["score"].(float64); ok {
+			result["score"] = value
+		}
+	default:
+		return fmt.Errorf("invalid CNV adoption source")
+	}
+	payload["adoptedCNV"] = result
 	return nil
 }

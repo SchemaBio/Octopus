@@ -40,10 +40,10 @@ func (s *Service) CanSaveCalculatorResult(ctx context.Context, scope, task strin
 	query := s.DB.WithContext(ctx).Model(&Request{}).
 		Where("id=? AND task_id=? AND feature IN ? AND state=? AND cancel_requested=?", id, task, features, "completed", false)
 	if s.SaaS {
-		query = query.Where("scope=?", scope)
-		if user != 0 {
-			query = query.Where("user_id=?", user)
+		if user == 0 {
+			return false
 		}
+		query = query.Where("scope=? AND user_id=?", scope, user)
 	}
 	var n int64
 	return query.Count(&n).Error == nil && n == 1
@@ -144,7 +144,7 @@ func (s *Service) SavedLegacyACMGResult(ctx context.Context, scope, task, row, h
 	return saved, nil
 }
 
-func (s *Service) SavedCNVResult(ctx context.Context, scope, task, id string) (map[string]interface{}, error) {
+func (s *Service) SavedCNVResult(ctx context.Context, scope, task, row, id string) (map[string]interface{}, error) {
 	if _, err := uuid.Parse(id); err != nil {
 		return nil, fmt.Errorf("invalid CNV AI request ID")
 	}
@@ -162,9 +162,30 @@ func (s *Service) SavedCNVResult(ctx context.Context, scope, task, id string) (m
 	if r.TaskID != task || (r.Feature != "cnv_gain" && r.Feature != "cnv_loss") || r.State != "completed" || r.CancelRequested {
 		return nil, fmt.Errorf("completed CNV AI result required")
 	}
+	return s.savedCNVResult(r, task, row)
+}
+
+func (s *Service) savedCNVResult(r Request, task, row string) (map[string]interface{}, error) {
 	v, err := s.View(r)
 	if err != nil || v.Result == nil {
 		return nil, ErrUnavailable
+	}
+
+	if r.TaskID != task || r.State != "completed" || r.CancelRequested || (r.Feature != "cnv_gain" && r.Feature != "cnv_loss") || v.Result.Feature != r.Feature {
+		return nil, fmt.Errorf("completed matching CNV result required")
+	}
+	binding := v.Result.VariantID
+	if binding == "" && r.Ciphertext != "" {
+		var stored StoredInput
+		if open(s.Cipher, r.ID, r.Ciphertext, &stored) != nil {
+			return nil, ErrUnavailable
+		}
+		if stored.Input.TaskID == task && stored.Input.Feature == r.Feature {
+			binding = text(stored.Input.Variant["id"])
+		}
+	}
+	if row == "" || binding != row {
+		return nil, fmt.Errorf("CNV AI result does not belong to this variant")
 	}
 	copy := *v.Result
 	copy.ReviewerDecision = nil
