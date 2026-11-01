@@ -34,12 +34,22 @@ func (s *ResultService) AISequenceVariant(ctx context.Context, task *model.Task,
 	if err != nil || len(page.Rows) != 1 {
 		return nil, ErrParquetIncomplete
 	}
-	raw := page.Rows[0]
+	return canonicalAISequenceRow(page.Rows[0], d, executionAttempt(task), id, n)
+}
+
+func canonicalAISequenceRow(raw map[string]interface{}, d *model.ResultDataset, attempt, id string, ordinal float64) (map[string]interface{}, error) {
 	resultengine.RemapSampleColumns(raw, d.SampleColumnRoles)
 	row := normalizeParquetAPIItem("snv-indel", raw)
+	// Archived report Parquet columns may be strings, including Position.
+	// JSON round-tripping alone does not convert them to the numeric AI contract.
+	position, err := strconv.ParseFloat(strings.TrimSpace(fmt.Sprint(row["position"])), 64)
+	if err != nil || math.IsNaN(position) || math.IsInf(position, 0) || position < 1 || position > 9007199254740991 || math.Trunc(position) != position {
+		return nil, fmt.Errorf("invalid immutable variant position")
+	}
+	row["position"] = position
 	row["sampleGenotypes"] = aiSampleCalls(raw)
-	row["id"], row["rowOrdinal"] = id, n
-	row["attemptId"], row["datasetVersion"] = executionAttempt(task), d.DataVersion
+	row["id"], row["rowOrdinal"] = id, ordinal
+	row["attemptId"], row["datasetVersion"] = attempt, d.DataVersion
 	row["datasetObjectSha256"] = d.ObjectSHA256
 	for source, target := range map[string]string{"clinvarRevStat": "clinvarReviewStatus", "clinvarStar": "clinvarStars", "clinvarDn": "clinvarDisease", "alphaMissenseAM": "alphaMissenseScore", "alphaMissenseAMC": "alphaMissenseClass"} {
 		if value, exists := row[source]; exists {

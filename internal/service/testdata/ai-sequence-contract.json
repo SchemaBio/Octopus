@@ -1,0 +1,119 @@
+{
+  "acmg": {
+    "clinical_context": {
+      "disease_id": "",
+      "inheritance": "unknown",
+      "sample_type": "unknown",
+      "variant_origin": "unknown"
+    },
+    "engine_id": "acmg_amp_2015",
+    "evidence_package": {
+      "ai_context": {
+        "sample": null,
+        "variant_annotations": {
+          "alleleFrequency": null,
+          "alt": "T",
+          "annotationValues": {
+            "Alt": "T",
+            "Chromosome": "17",
+            "Consequence": "missense variant",
+            "Gene": "MYH3",
+            "HGVS_c": "c.2015G\u003eA",
+            "HGVS_p": "p.Arg672His",
+            "Position": "10544634",
+            "Ref": "C",
+            "Transcript": "NM_002470.4"
+          },
+          "attemptId": "attempt",
+          "chromosome": "17",
+          "consequence": "missense variant",
+          "datasetObjectSha256": "fixed-sha",
+          "datasetVersion": "fixed",
+          "gene": "MYH3",
+          "hgvsc": "c.2015G\u003eA",
+          "hgvsp": "p.Arg672His",
+          "position": 10544634,
+          "ref": "C",
+          "transcript": "NM_002470.4"
+        }
+      },
+      "sources": []
+    },
+    "mode": "ai_assisted",
+    "options": {
+      "provider_profile_id": "synthetic"
+    },
+    "schema_version": "sepilens-evaluation-2.0",
+    "variant": {
+      "alt": "T",
+      "assembly": "GRCh37",
+      "chrom": "17",
+      "consequence": "missense_variant",
+      "gene": "MYH3",
+      "hgvs_c": "c.2015G\u003eA",
+      "hgvs_p": "p.Arg672His",
+      "pos": 10544634,
+      "ref": "C",
+      "transcript": "NM_002470.4"
+    }
+  },
+  "svcv4": {
+    "clinical_context": {
+      "disease_id": "",
+      "inheritance": "unknown",
+      "sample_type": "unknown",
+      "variant_origin": "unknown"
+    },
+    "engine_id": "svc_v4",
+    "evidence_package": {
+      "ai_context": {
+        "sample": null,
+        "variant_annotations": {
+          "alleleFrequency": null,
+          "alt": "T",
+          "annotationValues": {
+            "Alt": "T",
+            "Chromosome": "17",
+            "Consequence": "missense variant",
+            "Gene": "MYH3",
+            "HGVS_c": "c.2015G\u003eA",
+            "HGVS_p": "p.Arg672His",
+            "Position": "10544634",
+            "Ref": "C",
+            "Transcript": "NM_002470.4"
+          },
+          "attemptId": "attempt",
+          "chromosome": "17",
+          "consequence": "missense variant",
+          "datasetObjectSha256": "fixed-sha",
+          "datasetVersion": "fixed",
+          "gene": "MYH3",
+          "hgvsc": "c.2015G\u003eA",
+          "hgvsp": "p.Arg672His",
+          "position": 10544634,
+          "ref": "C",
+          "transcript": "NM_002470.4"
+        }
+      },
+      "sources": []
+    },
+    "mode": "ai_assisted",
+    "options": {
+      "allow_experimental": true,
+      "provider_profile_id": "synthetic"
+    },
+    "schema_version": "sepilens-evaluation-2.0",
+    "variant": {
+      "alt": "T",
+      "assembly": "GRCh37",
+      "chrom": "17",
+      "consequence": "missense_variant",
+      "gene": "MYH3",
+      "hgvs_c": "c.2015G\u003eA",
+      "hgvs_p": "p.Arg672His",
+      "pos": 10544634,
+      "ref": "C",
+      "transcript": "NM_002470.4"
+    }
+  }
+}

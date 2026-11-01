@@ -74,7 +74,11 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 	}
 	body := map[string]any{"schema_version": "sepilens-evaluation-2.0", "mode": "ai_assisted", "engine_id": eng, "options": opts, "clinical_context": ctx, "evidence_package": pkg}
 	if !isCNV {
-		variant := map[string]any{"assembly": asm, "chrom": chrom, "pos": number(v["position"]), "ref": strings.ToUpper(text(v["ref"])), "alt": strings.ToUpper(text(v["alt"])), "gene": text(v["gene"])}
+		position := number(v["position"])
+		if math.IsNaN(position) || math.IsInf(position, 0) || position < 1 || position > 9007199254740991 || math.Trunc(position) != position {
+			return "", nil, errors.New("invalid variant position")
+		}
+		variant := map[string]any{"assembly": asm, "chrom": chrom, "pos": position, "ref": strings.ToUpper(text(v["ref"])), "alt": strings.ToUpper(text(v["alt"])), "gene": text(v["gene"])}
 		if autoContext && !canonicalAIGene.MatchString(text(v["gene"])) {
 			variant["gene"] = ""
 		}
