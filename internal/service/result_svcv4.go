@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/SchemaBio/Octopus/internal/svcv4"
+	"strings"
 )
 
 const SVCv4Revision = "ef66faff51a265fef7b5c4e6439905f3aa540c46"
@@ -48,6 +49,12 @@ func svcResult(payload map[string]interface{}) map[string]interface{} {
 }
 func validateActiveACMG(payload map[string]interface{}) error {
 	version := stringAdjustment(payload, "activeAcmgVersion")
+	if snap, ok := payload["adoptedACMG"].(map[string]interface{}); ok {
+		if snap["version"] != "svcv4" || (snap["state"] == "classified" && snap["classification"] != "" && snap["source"] == "svcv4_reference") {
+			return nil
+		}
+		return fmt.Errorf("invalid adopted SVC snapshot")
+	}
 	if version != "" && version != "legacy" && version != "svcv4" {
 		return fmt.Errorf("invalid ACMG version")
 	}
@@ -61,7 +68,74 @@ func validateActiveACMG(payload map[string]interface{}) error {
 	return nil
 }
 
+// Only server-calculated saved evidence can become an adopted snapshot.
+func snapshotAdoptedACMG(payload map[string]interface{}) map[string]interface{} {
+	version := stringAdjustment(payload, "activeAcmgVersion")
+	if version == "" {
+		version = "legacy"
+	}
+	snap := map[string]interface{}{"version": version}
+	if version == "svcv4" {
+		snap["assessment"] = svcAssessment(payload)
+		if ai, ok := payload["svcv4AIResult"].(map[string]interface{}); ok {
+			snap["aiRequestId"] = ai["requestId"]
+		}
+		for _, k := range []string{"classification", "score", "state", "vusSubclass"} {
+			snap[k] = svcResult(payload)[k]
+		}
+		snap["profile"], snap["source"], snap["savedAt"], snap["savedBy"] = "svcv4-draft-reference", "svcv4_reference", payload["svcv4SavedAt"], payload["svcv4SavedBy"]
+	} else {
+		snap["evidence"], snap["overrideReason"] = payload["acmgEvidence"], payload["acmgOverrideReason"]
+		if ai, ok := payload["acmgAIResult"].(map[string]interface{}); ok {
+			snap["aiRequestId"] = ai["requestId"]
+		}
+		_, manual := payload["acmgEvidence"]
+		manual = manual || stringAdjustment(payload, "acmgOverride") != ""
+		snap["automatic"] = !manual
+		for _, k := range []string{"classification", "score", "profile", "state"} {
+			snap[k] = payload["acmg"+strings.ToUpper(k[:1])+k[1:]]
+		}
+		snap["source"] = "automatic"
+		if manual {
+			snap["source"] = "manual_evidence"
+		}
+		if stringAdjustment(payload, "acmgOverride") != "" {
+			snap["source"] = "manual_override"
+			snap["classification"] = payload["acmgOverride"]
+		}
+		snap["savedAt"], snap["savedBy"] = payload["acmgSavedAt"], payload["acmgSavedBy"]
+	}
+	return snap
+}
+func preserveAdoptedACMG(payload, changes map[string]interface{}) {
+	if _, exists := payload["adoptedACMG"]; exists {
+		return
+	}
+	for _, key := range []string{"acmgEvidence", "acmgOverride", "resetAcmg", "svcv4Assessment", "activeAcmgVersion"} {
+		if _, changed := changes[key]; changed {
+			payload["adoptedACMG"] = snapshotAdoptedACMG(payload)
+			return
+		}
+	}
+}
 func applyActiveACMG(row, payload map[string]interface{}) {
+	if snap, ok := payload["adoptedACMG"].(map[string]interface{}); ok {
+		row["activeAcmgVersion"] = snap["version"]
+		if snap["automatic"] == true {
+			if auto, ok := row["automaticAcmg"].(map[string]interface{}); ok {
+				for _, k := range []string{"classification", "score", "profile", "state"} {
+					row["acmg"+strings.ToUpper(k[:1])+k[1:]] = auto[k]
+				}
+			}
+		} else {
+			for _, k := range []string{"classification", "score", "profile", "state", "vusSubclass"} {
+				row["acmg"+strings.ToUpper(k[:1])+k[1:]] = snap[k]
+			}
+		}
+		row["acmgAssessmentSource"] = snap["source"]
+		return
+	}
+
 	version := stringAdjustment(payload, "activeAcmgVersion")
 	if version == "" {
 		version = "legacy"

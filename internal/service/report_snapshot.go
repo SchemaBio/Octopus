@@ -10,6 +10,7 @@ import (
 	"errors"
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/resultengine"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"io"
@@ -157,7 +158,9 @@ func (s *ReportService) prepareReportSnapshot(ctx context.Context, task *model.T
 					if e := validateActiveACMG(interpretation); e != nil {
 						return e
 					}
+					interpretation["automaticAcmg"] = resultengine.AutomaticACMG(page.Rows[0])
 					applyActiveACMG(interpretation, interpretation)
+					delete(interpretation, "automaticAcmg")
 					interpretation["acmgTrial"] = interpretation["activeAcmgVersion"] == "svcv4"
 				}
 				row := reportSnapshotRow{Table: d.Table, RowID: a.RowID, DatasetVersion: d.DataVersion, AdjustmentVersion: a.Version, Original: page.Rows[0], Interpretation: interpretation}

@@ -66,6 +66,9 @@ def main():
     for payload in [{'reviewed':True,'acmgOverride':'Pathogenic'}, {'acmgEvidence':[],'acmgClassification':'','acmgScore':0}, {'activeAcmgVersion':'svcv4','acmgOverride':'Pathogenic','svcv4Assessment':{'confirmed':True,'result':{'classification':'VUS','vusSubclass':'VUS-high','score':4,'state':'classified'}}}]:
         overlays=[{'rowId':identity,'version':3,'payload':payload}]
         add(overlays=overlays); add(overlays=overlays,export=True); add(overlays=overlays,filters=[{'column':'acmgClassification','operator':'equals','value':'VUS'}])
+    for snapshot in [{'version':'legacy','classification':'VUS','score':2}, {'version':'legacy','automatic':True}]:
+        overlays=[{'rowId':identity,'version':2,'payload':{'adoptedACMG':snapshot,'acmgEvidence':[], 'acmgClassification':'Benign','acmgScore':-8}}]
+        add(overlays=overlays); add(overlays=overlays,export=True)
     add(rowId=identity); add(offset=100); add(limit=10000); add(search='GENE'); add(search='likely_benign')
     add(overlays=[{'rowId':identity,'version':1,'payload':{'svcv4Assessment':{'warnings':['中文<>&😀'], 'inputs':{'tiny':1e-6,'integerFloat':1.0}},'acmgEvidence':[{'code':'PP3','note':'中文😀','value':1.0}]}}],export=True)
     for needle in ['&','中文']:

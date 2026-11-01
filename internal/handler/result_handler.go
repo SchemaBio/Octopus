@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/SchemaBio/Octopus/internal/assistance"
+	"github.com/SchemaBio/Octopus/internal/database"
 	"io"
 	"net/http"
 	"strconv"
@@ -254,7 +256,7 @@ func (h *ResultHandler) SaveParquetRowAdjustment(c *gin.Context) {
 	if !ok {
 		return
 	}
-	_, email, _, ok := middleware.GetCurrentUser(c)
+	user, email, _, ok := middleware.GetCurrentUser(c)
 	if !ok {
 		ErrorUnauthorized(c, "Unauthorized")
 		return
@@ -277,6 +279,15 @@ func (h *ResultHandler) SaveParquetRowAdjustment(c *gin.Context) {
 	if request.DatasetVersion == "" || request.AttemptID == "" {
 		ErrorBadRequest(c, "datasetVersion and attemptId are required")
 		return
+	}
+	for key, feature := range map[string]string{"acmgAIResult": "acmg", "svcv4AIResult": "svcv4"} {
+		if value, exists := request.Adjustments[key]; exists {
+			id, valid := value.(string)
+			if !valid || !(&assistance.Service{DB: database.DB}).CanSaveCalculatorResult(c.Request.Context(), model.TenantIDForTask(task), task.UUID, user, id, feature) {
+				ErrorBadRequest(c, "AI request does not belong to this user and task")
+				return
+			}
+		}
 	}
 	item, event, err := h.svc.SaveParquetRowAdjustment(c.Request.Context(), task, c.Param("table"), c.Param("vid"), email, request)
 	if errors.Is(err, service.ErrAdjustmentConflict) {

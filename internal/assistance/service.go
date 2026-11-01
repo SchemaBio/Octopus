@@ -503,10 +503,13 @@ func (s *Service) finish(r Request, state, code string, result *Result, billable
 	var encoded string
 	var err error
 	if result != nil {
-		if (r.Feature == "svcv4" || r.Feature == "cnv_gain" || r.Feature == "cnv_loss") && result.VariantID == "" {
+		if (r.Feature == "acmg" || r.Feature == "svcv4" || r.Feature == "cnv_gain" || r.Feature == "cnv_loss") && result.VariantID == "" {
 			var stored StoredInput
 			if open(s.Cipher, r.ID, r.Ciphertext, &stored) == nil && stored.Input.TaskID == r.TaskID && stored.Input.Feature == r.Feature {
 				result.VariantID = text(stored.Input.Variant["id"])
+				result.DatasetHash = text(stored.Input.Variant["datasetObjectSha256"])
+				result.AttemptID = text(stored.Input.Variant["attemptId"])
+				result.DatasetVersion = text(stored.Input.Variant["datasetVersion"])
 			}
 		}
 		encoded, err = seal(s.Cipher, r.ID+":result", result)

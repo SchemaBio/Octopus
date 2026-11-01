@@ -23,6 +23,7 @@ MAX_FILTERS = 40
 FIELD_PROFILE_VERSION = "parquet-fields-v2"
 ACMG_PROFILE = "acmg-snv-points-v2"
 OVERLAY_FIELDS = {
+    "adoptedACMG", "acmgAIResult", "svcv4AIResult", "acmgSavedAt", "acmgSavedBy", "svcv4SavedAt", "svcv4SavedBy",
     "activeAcmgVersion", "svcv4Assessment", "acmgVusSubclass", "acmgTrial",
     "reviewed", "focused", "interpretation", "acmgClassification", "acmgEvidence",
     "cnvAssessment", "cnvClassification", "cnvScore", "acmgScore", "acmgProfile", "acmgState", "acmgOverride", "acmgOverrideReason",
@@ -64,17 +65,22 @@ def automatic_expr(columns, table):
 
 
 def field_expr(column, columns, table):
+    adopted = "json_exists(o.payload, '$.adoptedACMG')"
+    active = "COALESCE(json_extract_string(o.payload, '$.adoptedACMG.version'), " + overlay_expr('activeAcmgVersion') + ", 'legacy')"
     if column == 'activeAcmgVersion':
-        return "COALESCE(" + overlay_expr(column) + ", 'legacy')"
+        return active
     if column == 'acmgTrial':
-        return "CASE WHEN " + overlay_expr('activeAcmgVersion') + "='svcv4' THEN 'true' ELSE 'false' END"
+        return "CASE WHEN " + active + "='svcv4' THEN 'true' ELSE 'false' END"
     if column == 'acmgVusSubclass':
-        return "CASE WHEN " + overlay_expr('activeAcmgVersion') + "='svcv4' THEN json_extract_string(o.payload, '$.svcv4Assessment.result.vusSubclass') END"
+        return "CASE WHEN " + adopted + " THEN json_extract_string(o.payload, '$.adoptedACMG.vusSubclass') WHEN " + active + "='svcv4' THEN json_extract_string(o.payload, '$.svcv4Assessment.result.vusSubclass') END"
     if column in {'acmgClassification', 'acmgScore', 'acmgProfile', 'acmgState'}:
         key = {'acmgClassification':'classification','acmgScore':'score','acmgState':'state'}.get(column)
         legacy = legacy_acmg_expr(column, columns, table)
         current = "'svcv4-draft-reference'" if key is None else "json_extract_string(o.payload, '$.svcv4Assessment.result." + key + "')"
-        return "CASE WHEN " + overlay_expr('activeAcmgVersion') + "='svcv4' THEN " + current + " ELSE " + legacy + " END"
+        key = key or 'profile'
+        base = "json_extract_string(" + automatic_expr(columns, table) + ", '$." + key + "')"
+        snapshot = "CASE WHEN json_extract_string(o.payload, '$.adoptedACMG.automatic')='true' THEN " + base + " ELSE json_extract_string(o.payload, '$.adoptedACMG." + key + "') END"
+        return "CASE WHEN " + adopted + " THEN " + snapshot + " WHEN " + active + "='svcv4' THEN " + current + " ELSE " + legacy + " END"
     if column in {"cnvClassification", "cnvScore", "cnvAssessment"}:
         if column == "cnvAssessment": return overlay_expr(column)
         key = "classification" if column == "cnvClassification" else "totalScore"

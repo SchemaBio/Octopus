@@ -130,7 +130,22 @@ type PublicSettings struct {
 	Capabilities   map[string]Capability `json:"capabilities"`
 	ServiceVersion string                `json:"serviceVersion,omitempty"`
 }
+type CalculatorChange struct {
+	Path      string   `json:"path"`
+	Value     any      `json:"value"`
+	Status    string   `json:"status"`
+	Reason    string   `json:"reason"`
+	SourceIDs []string `json:"sourceIds,omitempty"`
+}
+type CalculatorDraft struct {
+	Version string             `json:"version"`
+	Changes []CalculatorChange `json:"changes"`
+}
+
 type Result struct {
+	CalculatorDraft         *CalculatorDraft    `json:"calculatorDraft,omitempty"`
+	AttemptID               string              `json:"attemptId,omitempty"`
+	DatasetVersion          string              `json:"datasetVersion,omitempty"`
 	VariantID               string              `json:"variantId,omitempty"`
 	SVCContext              any                 `json:"svcContext,omitempty"`
 	Feature                 string              `json:"feature"`

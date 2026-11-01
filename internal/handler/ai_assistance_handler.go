@@ -17,13 +17,14 @@ import (
 )
 
 type AIAssistanceHandler struct {
-	svc   *assistance.Service
-	tasks *repository.TaskRepository
-	saas  bool
+	svc     *assistance.Service
+	tasks   *repository.TaskRepository
+	saas    bool
+	results *service.ResultService
 }
 
 func NewAIAssistanceHandler(cfg *config.Config) *AIAssistanceHandler {
-	return &AIAssistanceHandler{assistance.New(database.GetDB(), cfg.ExternalAuth.Enabled, cfg.Overlay.BaseURL, cfg.Overlay.SharedSecret), repository.NewTaskRepository(), cfg.ExternalAuth.Enabled}
+	return &AIAssistanceHandler{svc: assistance.New(database.GetDB(), cfg.ExternalAuth.Enabled, cfg.Overlay.BaseURL, cfg.Overlay.SharedSecret), tasks: repository.NewTaskRepository(), saas: cfg.ExternalAuth.Enabled, results: service.NewResultService(cfg)}
 }
 func aiIdentity(c *gin.Context) (string, string, uint) {
 	user, _, _, _ := middleware.GetCurrentUser(c)
@@ -134,6 +135,14 @@ func (h *AIAssistanceHandler) Generate(c *gin.Context) {
 		}
 		if reference := service.TaskReferenceGenome(task); reference != "" {
 			in.Reference = reference
+		}
+		if in.Feature == "acmg" || in.Feature == "svcv4" {
+			canonical, err := h.results.AISequenceVariant(c.Request.Context(), task, in.Variant)
+			if err != nil {
+				ErrorBadRequest(c, "变异结果已变化或不可读取，请刷新结果后重试")
+				return
+			}
+			in.Variant = canonical
 		}
 		if task.SampleID != "" {
 			sample, err := repository.NewSampleRepository().FindScopedByUUID(task.SampleID, taskActorFromContext(c))

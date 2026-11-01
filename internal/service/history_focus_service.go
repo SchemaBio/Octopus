@@ -231,6 +231,14 @@ func (s *ResultService) historyDatasetCache(ctx context.Context, d *model.Result
 }
 
 func historyEffectiveClassification(tx *gorm.DB, d *model.ResultDataset, rowID string, payload map[string]interface{}) (string, error) {
+	if snap, ok := payload["adoptedACMG"].(map[string]interface{}); ok {
+		if snap["automatic"] != true {
+			return stringAdjustment(snap, "classification"), nil
+		}
+		// Saved-only calculator edits must not override the adopted automatic baseline.
+		payload = map[string]interface{}{}
+	}
+
 	if stringAdjustment(payload, "activeAcmgVersion") == "svcv4" {
 		return stringAdjustment(svcResult(payload), "classification"), nil
 	}

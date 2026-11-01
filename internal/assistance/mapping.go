@@ -80,7 +80,14 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 		}
 		for from, to := range map[string]string{"transcript": "transcript", "hgvsc": "hgvs_c", "hgvsp": "hgvs_p", "consequence": "consequence"} {
 			if value := text(v[from]); value != "" {
-				if autoContext && (len(value) > 512 || strings.ContainsAny(value, " \t\r\n\"<>{}")) {
+				if from == "consequence" {
+					value = canonicalConsequence(value)
+				}
+				blocked := " \t\r\n\"<>{}"
+				if from == "hgvsc" || from == "hgvsp" {
+					blocked = " \t\r\n\"<{}"
+				}
+				if autoContext && (len(value) > 512 || strings.ContainsAny(value, blocked)) {
 					continue
 				}
 				variant[to] = value
@@ -268,6 +275,7 @@ func normalizeResult(feature, model string, raw map[string]any, paidDelivery boo
 			r.Summary = summary
 		}
 		r.SuggestedClassification = text(ai["classification"])
+		r.CalculatorDraft = calculatorProposal(feature, ai)
 		if warnings, ok := proposal["normalization_warnings"].([]any); ok {
 			for _, warning := range warnings {
 				if value := text(warning); value != "" {

@@ -173,7 +173,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if len(request.Adjustments) == 0 {
 		return nil, nil, fmt.Errorf("at least one adjustment is required")
 	}
-	allowed := map[string]bool{"svcv4AIResult": true, "svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "focused": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
+	allowed := map[string]bool{"acmgAIResult": true, "svcv4AIResult": true, "svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "focused": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
 	if _, has := request.Adjustments["cnvAssessment"]; has && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("CNV evidence changes require an adjustment reason")
 	}
@@ -185,7 +185,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			return nil, nil, fmt.Errorf("unsupported adjustment field")
 		}
 		switch key {
-		case "svcv4AIResult":
+		case "svcv4AIResult", "acmgAIResult":
 			if table != "snv-indel" {
 				return nil, nil, fmt.Errorf("SVC AI result is only valid for SNP/InDel")
 			}
@@ -263,6 +263,33 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	}
 	if request.AttemptID != "" && request.AttemptID != executionAttempt(task) || request.DatasetVersion != "" && request.DatasetVersion != dataset.DataVersion {
 		return nil, nil, ErrAdjustmentConflict
+	}
+	if id, ok := request.Adjustments["acmgAIResult"].(string); ok {
+		ai := assistance.New(database.DB, s.cfg.IsSaaS(), s.cfg.Overlay.BaseURL, s.cfg.Overlay.SharedSecret)
+		saved, err := ai.SavedACMGResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, dataset.ObjectSHA256, id)
+		if errors.Is(err, assistance.ErrLegacyACMGBinding) && request.RowOrdinal != nil {
+			cache, readErr := s.historyDatasetCache(ctx, dataset)
+			if readErr != nil {
+				return nil, nil, readErr
+			}
+			page, readErr := NewParquetReader().ReadPage(cache, *request.RowOrdinal, 1)
+			if readErr != nil || len(page.Rows) != 1 {
+				return nil, nil, ErrParquetIncomplete
+			}
+			identity := normalizeParquetAPIItem(table, page.Rows[0])
+			identity["assembly"] = TaskReferenceGenome(task)
+			saved, err = ai.SavedLegacyACMGResult(ctx, model.TenantIDForTask(task), task.UUID, rowID, dataset.ObjectSHA256, id, identity)
+		}
+
+		if err != nil {
+			return nil, nil, err
+		}
+		original := request.Adjustments
+		request.Adjustments = make(map[string]interface{}, len(original))
+		for key, value := range original {
+			request.Adjustments[key] = value
+		}
+		request.Adjustments["acmgAIResult"] = saved
 	}
 	if id, ok := request.Adjustments["svcv4AIResult"].(string); ok {
 		ai := assistance.New(database.DB, s.cfg.IsSaaS(), s.cfg.Overlay.BaseURL, s.cfg.Overlay.SharedSecret)
@@ -387,8 +414,19 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			return ErrAdjustmentConflict
 		}
 		before, _ := json.Marshal(payload)
+		if table == "snv-indel" {
+			preserveAdoptedACMG(payload, request.Adjustments)
+		}
 		for key, value := range request.Adjustments {
 			payload[key] = value
+		}
+		if _, changed := request.Adjustments["acmgEvidence"]; changed {
+			payload["acmgSavedAt"] = time.Now().UTC().Format(time.RFC3339Nano)
+			payload["acmgSavedBy"] = actor
+		}
+		if _, changed := request.Adjustments["svcv4Assessment"]; changed {
+			payload["svcv4SavedAt"] = time.Now().UTC().Format(time.RFC3339Nano)
+			payload["svcv4SavedBy"] = actor
 		}
 		if focused, changed := request.Adjustments["focused"]; changed {
 			if focused == true {
@@ -429,8 +467,12 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			payload["acmgProfile"] = assessment.Profile
 			payload["acmgState"] = assessment.State
 		}
-		if err := validateActiveACMG(payload); err != nil {
-			return err
+		if _, adopting := request.Adjustments["activeAcmgVersion"]; adopting {
+			delete(payload, "adoptedACMG")
+			if err := validateActiveACMG(payload); err != nil {
+				return err
+			}
+			payload["adoptedACMG"] = snapshotAdoptedACMG(payload)
 		}
 		after, err := json.Marshal(payload)
 		if err != nil {
