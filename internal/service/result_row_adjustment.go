@@ -173,7 +173,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if len(request.Adjustments) == 0 {
 		return nil, nil, fmt.Errorf("at least one adjustment is required")
 	}
-	allowed := map[string]bool{"acmgAIResult": true, "svcv4AIResult": true, "svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "focused": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true}
+	allowed := map[string]bool{"acmgAIResult": true, "svcv4AIResult": true, "svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "focused": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true, "adoptedACMG": true, "adoptedCNV": true, "cnvAIResult": true}
 	if _, has := request.Adjustments["cnvAssessment"]; has && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("CNV evidence changes require an adjustment reason")
 	}
@@ -254,6 +254,27 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			}
 			if err := normalizeCNVScoring(value.(map[string]interface{})); err != nil {
 				return nil, nil, err
+			}
+		case "cnvAIResult":
+			if table != "cnv-segment" && table != "cnv-exon" {
+				return nil, nil, fmt.Errorf("CNV AI result is only valid for CNV rows")
+			}
+			if _, ok := value.(map[string]interface{}); !ok {
+				return nil, nil, fmt.Errorf("CNV AI result must be an object")
+			}
+		case "adoptedCNV":
+			if table != "cnv-segment" && table != "cnv-exon" {
+				return nil, nil, fmt.Errorf("adopted CNV is only valid for CNV rows")
+			}
+			if _, ok := value.(map[string]interface{}); !ok {
+				return nil, nil, fmt.Errorf("adopted CNV must be an object")
+			}
+		case "adoptedACMG":
+			if table != "snv-indel" {
+				return nil, nil, fmt.Errorf("adopted ACMG is only valid for SNP/InDel rows")
+			}
+			if _, ok := value.(map[string]interface{}); !ok {
+				return nil, nil, fmt.Errorf("adopted ACMG must be an object")
 			}
 		}
 	}

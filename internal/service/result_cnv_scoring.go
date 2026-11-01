@@ -15,15 +15,12 @@ func verifyCNVEventType(original, assessment map[string]interface{}) error {
 			break
 		}
 	}
-	expected := ""
-	switch declared {
-	case "DEL", "DELETION", "LOSS":
-		expected = "Deletion"
-	case "DUP", "DUPLICATION", "GAIN", "AMPLIFICATION":
-		expected = "Amplification"
+	if declared == "NORMAL" || declared == "REF" {
+		return fmt.Errorf("normal signal cannot be assessed as a CNV event")
 	}
-	if expected == "" || assessment["cnvType"] != expected {
-		return fmt.Errorf("CNV calculator event does not match immutable source")
+	t, ok := assessment["cnvType"].(string)
+	if !ok || (t != "Deletion" && t != "Amplification") {
+		return fmt.Errorf("CNV calculator event must be Deletion or Amplification")
 	}
 	return nil
 }

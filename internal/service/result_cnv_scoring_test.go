@@ -67,13 +67,16 @@ func TestCNVScoringRejectsConflictingAndOutOfRangeEvidence(t *testing.T) {
 }
 
 func TestCNVCalculatorMatchesImmutableEvent(t *testing.T) {
-	for _, source := range []string{"DEL", "deletion", "LOSS"} {
+	for _, source := range []string{"DEL", "deletion", "LOSS", "DUP", "duplication", "GAIN"} {
 		if err := verifyCNVEventType(map[string]interface{}{"Col4": source}, map[string]interface{}{"cnvType": "Deletion"}); err != nil {
 			t.Fatal(err)
 		}
+		if err := verifyCNVEventType(map[string]interface{}{"Col4": source}, map[string]interface{}{"cnvType": "Amplification"}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if verifyCNVEventType(map[string]interface{}{"Col4": "DUP"}, map[string]interface{}{"cnvType": "Deletion"}) == nil {
-		t.Fatal("gain was assessed as loss")
+	if verifyCNVEventType(map[string]interface{}{"Col4": "DEL"}, map[string]interface{}{"cnvType": "Other"}) == nil {
+		t.Fatal("invalid assessment type accepted")
 	}
 	if verifyCNVEventType(map[string]interface{}{"Col4": "Normal"}, map[string]interface{}{"cnvType": "Deletion"}) == nil {
 		t.Fatal("normal signal was assessed as an event")
