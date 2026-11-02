@@ -236,6 +236,7 @@ type TaskListQuery struct {
 
 // TaskResponse matches frontend AnalysisTask type
 type TaskResponse struct {
+	PipelineID  string               `json:"pipelineId,omitempty"`
 	Origin      string               `json:"origin,omitempty"`
 	TrioMembers []TrioMemberSnapshot `json:"trio_members,omitempty"`
 
@@ -274,6 +275,7 @@ type TaskResponse struct {
 
 // TaskDetailResponse matches frontend AnalysisTaskDetail type
 type TaskDetailResponse struct {
+	PipelineID                string             `json:"pipelineId,omitempty"`
 	Origin                    string             `json:"origin,omitempty"`
 	ResultImportStatus        ResultImportStatus `json:"result_import_status"`
 	ResultCapabilities        []string           `json:"result_capabilities"`
@@ -506,6 +508,7 @@ func (t *Task) ToResponse() TaskResponse {
 		SampleID:           t.SampleID,
 		InternalID:         t.InternalID,
 		Pipeline:           t.Pipeline,
+		PipelineID:         t.PipelineSnapshotID(),
 		PipelineVersion:    t.PipelineVersion,
 		Status:             t.Status,
 		VMStatus:           t.VMStatus,
@@ -528,6 +531,17 @@ func (t *Task) ToResponse() TaskResponse {
 	return resp
 }
 
+// PipelineSnapshotID returns only the saved pipeline identity, not resource details.
+func (t *Task) PipelineSnapshotID() string {
+	var snapshot struct {
+		PipelineID string `json:"pipeline_id"`
+	}
+	if json.Unmarshal([]byte(t.PipelineSnapshotJSON), &snapshot) != nil {
+		return ""
+	}
+	return snapshot.PipelineID
+}
+
 // ToDetailResponse converts Task to TaskDetailResponse
 func (t *Task) ToDetailResponse() TaskDetailResponse {
 	resp := TaskDetailResponse{
@@ -545,6 +559,7 @@ func (t *Task) ToDetailResponse() TaskDetailResponse {
 		SampleID:           t.SampleID,
 		InternalID:         t.InternalID,
 		Pipeline:           t.Pipeline,
+		PipelineID:         t.PipelineSnapshotID(),
 		PipelineVersion:    t.PipelineVersion,
 		Status:             t.Status,
 		VMStatus:           t.VMStatus,
