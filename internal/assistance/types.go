@@ -87,6 +87,7 @@ type Context struct {
 	HPOTerms      []string `json:"hpoTerms"`
 }
 type Input struct {
+	Locale          string          `json:"locale,omitempty"`
 	Feature         string          `json:"feature"`
 	Mode            string          `json:"mode,omitempty"`
 	DraftAssessment json.RawMessage `json:"draftAssessment,omitempty"`

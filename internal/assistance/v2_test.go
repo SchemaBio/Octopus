@@ -27,6 +27,24 @@ func TestV2AIOnlyPayloadAndUntrustedAnnotations(t *testing.T) {
 	}
 }
 
+func TestOutputLocalePayloadAndIdentity(t *testing.T) {
+	for _, locale := range []string{"zh-CN", "zh-Hant", "en", "es-419"} {
+		in := Input{Feature: "hpo", Diagnosis: "synthetic", Locale: locale}
+		_, payload, err := BuildPayload(in, "profile")
+		if err != nil || payload["options"].(map[string]any)["locale"] != locale {
+			t.Fatal("locale not forwarded", err)
+		}
+		other := in
+		other.Locale = ""
+		if inputHash(in) == inputHash(other) {
+			t.Fatal("locale missing from request identity")
+		}
+	}
+	if _, _, err := BuildPayload(Input{Feature: "hpo", Diagnosis: "synthetic", Locale: "unsupported"}, "profile"); err == nil {
+		t.Fatal("invalid locale accepted")
+	}
+}
+
 func TestV2ResultDoesNotDeliverFailedLocalBaseline(t *testing.T) {
 	raw := map[string]any{"schema_version": "sepilens-evaluation-2.0", "delivery_status": "failed", "failure_code": "AI_PROVIDER_UNAVAILABLE", "local_baseline": map[string]any{"classification": "pathogenic"}}
 	if _, _, err := NormalizeResult("acmg", "m", raw); err == nil {

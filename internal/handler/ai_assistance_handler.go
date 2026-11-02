@@ -46,6 +46,7 @@ func (h *AIAssistanceHandler) Settings(c *gin.Context) {
 func (h *AIAssistanceHandler) CachedHPO(c *gin.Context) {
 	var in struct {
 		Diagnosis string `json:"diagnosis"`
+		Locale    string `json:"locale"`
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 	if c.ShouldBindJSON(&in) != nil || strings.TrimSpace(in.Diagnosis) == "" || utf8.RuneCountInString(in.Diagnosis) > 10000 {
@@ -53,7 +54,7 @@ func (h *AIAssistanceHandler) CachedHPO(c *gin.Context) {
 		return
 	}
 	scope, _, user := aiIdentity(c)
-	result, err := h.svc.CachedHPO(c.Request.Context(), scope, user, in.Diagnosis)
+	result, err := h.svc.CachedHPO(c.Request.Context(), scope, user, in.Diagnosis, in.Locale)
 	if err != nil {
 		Error(c, 503, "已保存的 HPO 结果暂不可用")
 		return

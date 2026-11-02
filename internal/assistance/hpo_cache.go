@@ -9,12 +9,16 @@ import (
 
 // The existing encrypted result is reused for the same user's exact phenotype
 // input. Only its keyed hash is queried; this never submits a model request.
-func (s *Service) CachedHPO(ctx context.Context, scope string, user uint, diagnosis string) (*Result, error) {
+func (s *Service) CachedHPO(ctx context.Context, scope string, user uint, diagnosis string, locales ...string) (*Result, error) {
 	if s.DB == nil || s.Cipher == nil {
 		return nil, ErrUnavailable
 	}
+	locale := ""
+	if len(locales) > 0 {
+		locale = locales[0]
+	}
 	var row Request
-	err := scopedQuery(s.DB.WithContext(ctx), scope, user).Where("feature = ? AND hash = ? AND state = ? AND result_ciphertext <> ''", "hpo", inputHash(Input{Feature: "hpo", Diagnosis: diagnosis}), "completed").Order("created_at DESC").First(&row).Error
+	err := scopedQuery(s.DB.WithContext(ctx), scope, user).Where("feature = ? AND hash = ? AND state = ? AND result_ciphertext <> ''", "hpo", inputHash(Input{Feature: "hpo", Diagnosis: diagnosis, Locale: locale}), "completed").Order("created_at DESC").First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}

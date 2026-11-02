@@ -23,11 +23,16 @@ func assembly(s string) string {
 // BuildPayload exposes only SepiLens AI execution. Local evaluation is never
 // submitted, and an AI failure must never be replaced with its local baseline.
 func BuildPayload(in Input, profile string) (string, map[string]any, error) {
+	switch in.Locale {
+	case "", "zh-CN", "zh-Hant", "en", "es-419":
+	default:
+		return "", nil, errors.New("unsupported output locale")
+	}
 	if in.Feature == "hpo" {
 		if strings.TrimSpace(in.Diagnosis) == "" || profile == "" {
 			return "", nil, errors.New("clinical text and provider profile required")
 		}
-		return "/v2/hpo/extract", map[string]any{"text": in.Diagnosis, "options": map[string]any{"provider_profile_id": profile, "allow_local_fallback": false}}, nil
+		return "/v2/hpo/extract", map[string]any{"text": in.Diagnosis, "options": outputLocaleOptions(in.Locale, map[string]any{"provider_profile_id": profile, "allow_local_fallback": false})}, nil
 	}
 	eng, ok := Engines[in.Feature]
 	if !ok {
@@ -67,7 +72,7 @@ func BuildPayload(in Input, profile string) (string, map[string]any, error) {
 	if len(c.HPOTerms) > 0 {
 		ctx["hpo_terms"] = c.HPOTerms
 	}
-	opts := map[string]any{"provider_profile_id": profile}
+	opts := outputLocaleOptions(in.Locale, map[string]any{"provider_profile_id": profile})
 	pkg := map[string]any{"sources": []any{}}
 	if autoContext {
 		pkg["ai_context"] = map[string]any{"variant_annotations": acmgVariantAnnotations(v), "sample": in.SampleContext}
@@ -376,4 +381,11 @@ func normalizeResult(feature, model string, raw map[string]any, paidDelivery boo
 
 func suggestionBillingPolicy(kind string, evidenceOnlyEnabled bool) bool {
 	return kind == "production" || (evidenceOnlyEnabled && kind == "evidence_only")
+}
+
+func outputLocaleOptions(locale string, opts map[string]any) map[string]any {
+	if locale != "" {
+		opts["locale"] = locale
+	}
+	return opts
 }
