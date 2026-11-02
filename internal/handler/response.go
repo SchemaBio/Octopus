@@ -82,12 +82,15 @@ func ErrorInternal(c *gin.Context, message string) {
 // SanitizeAuthError returns a generic error message for authentication failures
 // to avoid leaking internal details (e.g., "user not found" vs "wrong password")
 func SanitizeAuthError(err error) string {
+	if err == nil {
+		return "authentication failed"
+	}
 	errMsg := err.Error()
 	// Map known internal errors to generic messages
 	switch {
 	case errMsg == "email already exists":
 		return errMsg // Safe to expose
-	case errMsg == "invalid credentials" || errMsg == "wrong password":
+	case errMsg == "invalid email or password" || errMsg == "invalid credentials" || errMsg == "wrong password":
 		return "invalid email or password"
 	case errMsg == "user not found":
 		return "invalid email or password" // Don't reveal if user exists
