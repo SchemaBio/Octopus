@@ -148,6 +148,22 @@ func (s *BAMRetentionService) head(ctx context.Context, storage *s3Storage, key 
 }
 
 func (s *BAMRetentionService) prepare(ctx context.Context, job *model.BAMRetentionJob) ([]BAMRetentionObject, error) {
+	var resource model.Task
+	if err := database.DB.WithContext(ctx).Where("uuid=? AND external_org_id=?", job.TaskUUID, job.OrgID).First(&resource).Error; err != nil {
+		return nil, err
+	}
+	if resource.Origin == "example" {
+		if !s.cfg.ExampleDataCleanupEnabled {
+			return nil, fmt.Errorf("example cleanup disabled")
+		}
+		ok, err := exampleCleanupScope(database.DB.WithContext(ctx), "task", job.TaskUUID, job.OrgID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || resource.ExecutionAttemptID != job.AttemptID {
+			return nil, fmt.Errorf("IDENTITY_INVALID")
+		}
+	}
 	if job.Bucket != s.cfg.Storage.S3Bucket {
 		return nil, fmt.Errorf("BUCKET_CHANGED")
 	}

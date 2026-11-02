@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SchemaBio/Octopus/internal/assistance"
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/exampledata"
@@ -70,7 +71,7 @@ func TestExampleIntegrationCopyPublicationAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	cfg := &config.Config{Edition: "saas", RetentionCleanupEnabled: true, RetentionBackupPolicyVerified: true}
+	cfg := &config.Config{Edition: "saas", ExampleDataEnabled: true, ExampleDataCleanupEnabled: true}
 	cfg.Storage = config.StorageConfig{Provider: "s3", S3Endpoint: endpoint, S3Region: "us-east-1", S3Bucket: "example-" + uuid.NewString(), S3AccessKey: "example_test_user", S3SecretKey: "example-test-password-only", S3UsePathStyle: true, RetentionDays: 7, BAMRetentionDays: 7, BAMCleanupEnabled: true, TaskRetentionEnabled: true}
 	cfg.ResultQuery.CacheDir = t.TempDir()
 	if err := MigrateExampleData(cfg); err != nil {
@@ -155,6 +156,10 @@ func TestExampleIntegrationCopyPublicationAndExpiry(t *testing.T) {
 	}
 	var active atomic.Bool
 	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/overlay/tasks/retention" || r.URL.Path == "/api/v1/overlay/samples/retention" {
+			_ = json.NewEncoder(w).Encode(map[string]bool{"ready": true})
+			return
+		}
 		if r.URL.Path != "/api/v1/overlay/example-data/eligibility" {
 			t.Errorf("unexpected compute/billing call: %s", r.URL.Path)
 			w.WriteHeader(500)
@@ -300,4 +305,102 @@ func TestExampleIntegrationCopyPublicationAndExpiry(t *testing.T) {
 	if _, err := store.stat(ctx, exampleObjectKey(g, m.Objects[0])); err != nil {
 		t.Fatal("cleanup crossed organization boundary")
 	}
+	// Stopping issuance must not stop cleanup of previously published files.
+	cfg.ExampleDataEnabled = false
+	for i := range assets {
+		bad := assets[i]
+		bad.StorageKey = exampleObjectKey(g2, m.Objects[0])
+		if err := validateExampleAsset(ctx, &bad); err == nil {
+			t.Fatal("cross-organization object accepted")
+		}
+		if err := NewDataAssetService(cfg).deleteAsset(ctx, &assets[i]); err != nil {
+			t.Fatal("independent FASTQ cleanup failed", err)
+		}
+		versions, err := store.client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{Bucket: aws.String(store.bucket), Prefix: aws.String(assets[i].StorageKey)})
+		if err != nil || len(versions.Versions)+len(versions.DeleteMarkers) != 0 {
+			t.Fatal("FASTQ generations remain", err)
+		}
+	}
+	if _, err := store.stat(ctx, exampleTemplatePrefix+m.Version+"/"+m.Objects[0].Path); err != nil {
+		t.Fatal("FASTQ cleanup removed template", err)
+	}
+	for _, kind := range []string{"task", "sample"} {
+		id := g.TaskUUID
+		if kind == "sample" {
+			id = g.SampleUUID
+		}
+		ok, err := exampleCleanupScope(db, kind, id, g.OrgID)
+		if err != nil || !ok {
+			t.Fatal("approved example scope rejected", kind, err)
+		}
+		ok, err = exampleCleanupScope(db, kind, id, g2.OrgID)
+		if err != nil || ok {
+			t.Fatal("cross-organization cleanup accepted", kind, err)
+		}
+	}
+	if err := db.Model(&task).Update("origin", "upload").Error; err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := exampleCleanupScope(db, "task", g.TaskUUID, g.OrgID); err != nil || ok {
+		t.Fatal("grant alone authorized cleanup", err)
+	}
+	if err := db.AutoMigrate(&assistance.Request{}); err != nil {
+		t.Fatal(err)
+	}
+	// Age only this throwaway schema's fixtures; production deadline triggers
+	// must never be disabled by the application or deployment procedures.
+	old := time.Now().UTC().Add(-721 * time.Hour)
+	regular := task
+	regular.ID = uuid.NewString()
+	regular.UUID = regular.ID
+	regular.Origin = "upload"
+	regular.CreatedAt = old
+	regular.ExpiresAt = ptrExampleTime(old.Add(720 * time.Hour))
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SET LOCAL session_replication_role=replica").Error; err != nil {
+			return err
+		}
+		if err := tx.Unscoped().Model(&model.Task{}).Where("uuid=?", g.TaskUUID).Updates(map[string]interface{}{"origin": "example", "created_at": old, "expires_at": old.Add(720 * time.Hour)}).Error; err != nil {
+			return err
+		}
+		if err := tx.Unscoped().Model(&model.Sample{}).Where("uuid=?", g.SampleUUID).Updates(map[string]interface{}{"created_at": old, "expires_at": old.Add(720 * time.Hour)}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&regular).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Task.OutputDir = t.TempDir()
+	cfg.Task.ArchiveDir = t.TempDir()
+	cfg.ResultQuery.ReferenceDir = t.TempDir()
+	ret := NewRetentionService(cfg, NewTaskService(cfg))
+	if err := ret.Scan(ctx, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := ret.Execute(ctx, "task:"+regular.UUID); err == nil {
+		t.Fatal("independent worker accepted ordinary task")
+	}
+	for _, id := range []string{"task:" + g.TaskUUID, "sample:" + g.SampleUUID} {
+		if err := ret.Execute(ctx, id); err != nil {
+			t.Fatal("independent thirty-day cleanup failed", id, err)
+		}
+	}
+	for _, table := range []string{"samples", "tasks", "data_assets"} {
+		var remaining int64
+		q := db.Unscoped().Table(table).Where("external_org_id=?", g.OrgID)
+		if table == "tasks" {
+			q = q.Where("uuid<>?", regular.UUID)
+		}
+		if err := q.Count(&remaining).Error; err != nil || remaining != 0 {
+			t.Fatal("example metadata remains", table, remaining, err)
+		}
+	}
+	if err := db.Unscoped().First(&regular, "uuid=?", regular.UUID).Error; err != nil {
+		t.Fatal("ordinary task removed", err)
+	}
+	if _, err := store.stat(ctx, exampleTemplatePrefix+m.Version+"/"+m.Objects[4].Path); err != nil {
+		t.Fatal("thirty-day cleanup removed template", err)
+	}
 }
+
+func ptrExampleTime(t time.Time) *time.Time { return &t }

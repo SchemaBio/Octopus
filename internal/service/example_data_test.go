@@ -9,6 +9,30 @@ import (
 	"testing"
 )
 
+func TestExampleIndependentAvailability(t *testing.T) {
+	cfg := &config.Config{Edition: "saas", ExampleDataEnabled: true, ExampleDataCleanupEnabled: true}
+	cfg.Storage = config.StorageConfig{Provider: "s3", RetentionDays: 7, BAMRetentionDays: 7, BAMCleanupEnabled: true}
+	if !exampleAvailable(cfg) {
+		t.Fatal("global cleanup must not gate examples")
+	}
+	cfg.RetentionCleanupEnabled = true
+	cfg.RetentionBackupPolicyVerified = true
+	cfg.ExampleDataEnabled = false
+	if exampleUnavailableReason(cfg) != "feature_disabled" {
+		t.Fatal("global cleanup must not enable examples")
+	}
+	cfg.ExampleDataEnabled = true
+	cfg.ExampleDataCleanupEnabled = false
+	if exampleUnavailableReason(cfg) != "cleanup_disabled" {
+		t.Fatal("cleanup prerequisite missing")
+	}
+	cfg.ExampleDataCleanupEnabled = true
+	cfg.Storage.RetentionDays = 30
+	if exampleUnavailableReason(cfg) != "retention_policy_unavailable" {
+		t.Fatal("unsafe deadlines accepted")
+	}
+}
+
 func TestExampleDataIsSaaSOnly(t *testing.T) {
 	cfg := &config.Config{Edition: "opensource"}
 	if exampleAvailable(cfg) {

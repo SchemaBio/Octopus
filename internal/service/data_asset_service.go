@@ -143,6 +143,14 @@ type assetDeletionState struct {
 }
 
 func (s *DataAssetService) deleteAsset(ctx context.Context, asset *model.DataAsset) error {
+	if asset.Source == "example" {
+		if !s.cfg.ExampleDataCleanupEnabled {
+			return fmt.Errorf("example cleanup disabled")
+		}
+		if err := validateExampleAsset(ctx, asset); err != nil {
+			return err
+		}
+	}
 	db := database.GetDB()
 	if db == nil {
 		return fmt.Errorf("database is not initialized")

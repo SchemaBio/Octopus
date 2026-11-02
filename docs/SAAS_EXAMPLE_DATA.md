@@ -48,10 +48,18 @@ Squid 的审核事务原子保存账号状态、审核时间、选择及组织�
 
 ## 部署与验收
 
-Squid 需显式配置 `DEPLOYMENT_EDITION=saas`，并启用已有 Octopus 机器代理。Octopus 需配置 S3/COS、`DATA_RETENTION_DAYS=7`、`BAM_RETENTION_DAYS=7`、`BAM_CLEANUP_ENABLED=true`、`RETENTION_CLEANUP_ENABLED=true` 和已核实的 `RETENTION_BACKUP_POLICY_VERIFIED=true`，才能向新审核提供可用模板。不能用设置核实标记代替实际存储/备份策略核验。
+Squid 需显式配置 `DEPLOYMENT_EDITION=saas`，并启用已有 Octopus 机器代理。Octopus 需配置 S3/COS、`DATA_RETENTION_DAYS=7`、`BAM_RETENTION_DAYS=7`、`BAM_CLEANUP_ENABLED=true`、`EXAMPLE_DATA_ENABLED=true` 和 `EXAMPLE_DATA_CLEANUP_ENABLED=true`，才能向新审核提供可用模板。两个 DEMO 开关默认关闭，与全局 `RETENTION_CLEANUP_ENABLED` / `RETENTION_BACKUP_POLICY_VERIFIED` 无关；不得为发放 DEMO 将全局备份核验标记设为真。
 
 发布顺序为 Octopus → Squid → Cuttlefish/YiJian，最后发布并启用经选定的模板。模板未启用时不自动给历史组织补发，管理员仍能取消示例选项正常审核。回滚先禁用新发放，保留已发放副本的清理能力。
 
 测试包含 SaaS/自部署接口门禁、审核 BFF 和 CSRF、默认勾选及模板不可用、组织切换、文件内容及引用校验，以及独立 PostgreSQL/版本化 S3 的真实复制、幂等、暂停恢复、原子发布、BAM 历史版本清理和七天部分副本销毁。
 
 集成测试只接受回环地址和名为 `example_test_local` 的专用测试数据库，不使用应用 `DB_DSN`。设置 `EXAMPLE_DATA_TEST_DSN` 和 `EXAMPLE_DATA_TEST_S3` 后运行 `go test ./internal/service -run TestExampleIntegration -count=1`；未设置时该集成测试跳过。Squid 同样使用 `EXAMPLE_DATA_TEST_DSN` 验证审核、发放意图和邮件失败的事务回滚。
+
+## 独立清理与故障定位
+
+关闭 `EXAMPLE_DATA_ENABLED` 停止新发放；保持 `EXAMPLE_DATA_CLEANUP_ENABLED=true`，以继续清理已发放副本。七天文件清理复用 FASTQ/BAM 工作者；三十天样本与结果清理仅领取发放记录及组织、UUID、创建者、origin 匹配的作业。全局清理关闭时，普通样本和任务不会因 DEMO 清理而销毁。平台模板不在组织副本的清理范围内。
+
+模板状态新增可选 `reason`：`feature_disabled`、`cleanup_disabled`、`storage_unavailable`、`retention_policy_unavailable`、`template_missing`、`object_validation_failed`、`service_unavailable`。管理台展示原因，仍允许取消示例选项后审核。已有客户端可继续使用 available/version。
+
+启用前在专用随机测试前缀验证服务账号的读取、复制、版本列举/删除及分片中止能力，验证后删除合成对象。权限不足时不启用发放；清理失败保持待重试，不宣称物理销毁成功。独立清理仅覆盖应用管理的副本，不代表云备份、快照或外部副本已经销毁。

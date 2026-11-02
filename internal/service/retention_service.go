@@ -42,9 +42,13 @@ func (s *RetentionService) Start(ctx context.Context) {
 			if err := s.Scan(cycle, time.Now().UTC()); err != nil {
 				log.Print("retention: inventory failed")
 			}
-			if s.cfg.RetentionCleanupEnabled {
+			if s.cfg.RetentionCleanupEnabled || s.cfg.ExampleDataCleanupEnabled {
 				var jobs []model.RetentionJob
-				if database.DB.WithContext(cycle).Where("(next_retry_at IS NULL OR next_retry_at<=?) AND (lease_until IS NULL OR lease_until<=?)", time.Now(), time.Now()).Order("due_at,id").Limit(20).Find(&jobs).Error == nil {
+				query := database.DB.WithContext(cycle).Where("(next_retry_at IS NULL OR next_retry_at<=?) AND (lease_until IS NULL OR lease_until<=?)", time.Now(), time.Now())
+				if !s.cfg.RetentionCleanupEnabled {
+					query = query.Where("(kind='task' AND EXISTS (SELECT 1 FROM example_data_grants g JOIN tasks r ON r.uuid=g.task_uuid AND r.external_org_id=g.org_id AND r.execution_attempt_id=g.attempt_uuid AND r.origin='example' AND r.created_by=g.user_id WHERE g.task_uuid=retention_jobs.resource_id AND g.org_id=retention_jobs.org_id)) OR (kind='sample' AND EXISTS (SELECT 1 FROM example_data_grants g JOIN samples r ON r.uuid=g.sample_uuid AND r.external_org_id=g.org_id AND r.origin='example' AND r.created_by=g.user_id WHERE g.sample_uuid=retention_jobs.resource_id AND g.org_id=retention_jobs.org_id))")
+				}
+				if query.Order("due_at,id").Limit(20).Find(&jobs).Error == nil {
 					for _, job := range jobs {
 						if cycle.Err() != nil {
 							break
@@ -66,7 +70,7 @@ func (s *RetentionService) Start(ctx context.Context) {
 }
 
 func (s *RetentionService) Scan(ctx context.Context, now time.Time) error {
-	db := database.DB.WithContext(ctx).Unscoped()
+	db := database.DB.WithContext(ctx).Unscoped().Session(&gorm.Session{})
 	// INSERT SELECT avoids loading every old task into memory; jobs are durable.
 	for _, item := range [][2]string{{"tasks", "task"}, {"samples", "sample"}} {
 		statement := fmt.Sprintf(`INSERT INTO retention_jobs(id,kind,resource_id,org_id,due_at,attempts,lease_id,last_error) SELECT '%s:'||uuid,'%s',uuid,external_org_id,expires_at,0,'','' FROM %s WHERE expires_at<=? ON CONFLICT(id) DO NOTHING`, item[1], item[1], item[0])
@@ -78,10 +82,23 @@ func (s *RetentionService) Scan(ctx context.Context, now time.Time) error {
 }
 
 func (s *RetentionService) Execute(ctx context.Context, id string) error {
-	if !s.cfg.IsSaaS() || !s.cfg.RetentionCleanupEnabled {
+	if !s.cfg.IsSaaS() || (!s.cfg.RetentionCleanupEnabled && !s.cfg.ExampleDataCleanupEnabled) {
 		return fmt.Errorf("physical cleanup disabled")
 	}
-	db := database.DB.WithContext(ctx).Unscoped()
+	db := database.DB.WithContext(ctx).Unscoped().Session(&gorm.Session{})
+	if !s.cfg.RetentionCleanupEnabled {
+		var candidate model.RetentionJob
+		if err := db.First(&candidate, "id=?", id).Error; err != nil {
+			return err
+		}
+		ok, err := exampleCleanupScope(db, candidate.Kind, candidate.ResourceID, candidate.OrgID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("not an approved example resource")
+		}
+	}
 	now := time.Now().UTC()
 	lease := uuid.NewString()
 	until := now.Add(5 * time.Minute)
@@ -139,6 +156,15 @@ func (s *RetentionService) destroyTaskForReset(ctx context.Context, db *gorm.DB,
 	}
 	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uuid=? AND external_org_id=?", task.UUID, task.ExternalOrgID).First(&task).Error; err != nil {
 		return err
+	}
+	if !reset && (!s.cfg.RetentionCleanupEnabled || task.Origin == "example") {
+		ok, err := exampleCleanupScope(db, "task", task.UUID, task.ExternalOrgID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("example task identity mismatch")
+		}
 	}
 	// Squid confirms ALL attempts are terminal and their credentials revoked.
 	if s.tasks.overlay == nil {
@@ -278,7 +304,15 @@ func (s *RetentionService) destroyTaskForReset(ctx context.Context, db *gorm.DB,
 		if err := tx.Exec("INSERT INTO research_erased_resources(digest) VALUES (md5(?)) ON CONFLICT DO NOTHING", "tasks:"+task.ExternalOrgID+":"+task.UUID).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&task).Error
+		if err := tx.Delete(&task).Error; err != nil {
+			return err
+		}
+		// Finish resource erasure and its queue entry atomically. Otherwise an
+		// independent worker cannot re-authorize an already erased resource.
+		if job.ID != "" {
+			return tx.Where("id=? AND resource_id=? AND org_id=?", job.ID, task.UUID, task.ExternalOrgID).Delete(&model.RetentionJob{}).Error
+		}
+		return nil
 	})
 }
 
@@ -298,6 +332,44 @@ func (s *RetentionService) destroySampleForReset(db *gorm.DB, job *model.Retenti
 		}
 		if !reset && (sample.ExpiresAt == nil || time.Now().Before(*sample.ExpiresAt)) {
 			return fmt.Errorf("sample not due")
+		}
+		if !reset && (!s.cfg.RetentionCleanupEnabled || sample.Origin == "example") {
+			ok, err := exampleCleanupScope(tx, "sample", sample.UUID, sample.ExternalOrgID)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return fmt.Errorf("example sample identity mismatch")
+			}
+			var grant model.ExampleDataGrant
+			if err := tx.Where("org_id=? AND sample_uuid=?", sample.ExternalOrgID, sample.UUID).First(&grant).Error; err != nil {
+				return err
+			}
+			if err := validateExampleGrantPaths(&grant); err != nil {
+				return err
+			}
+			var assets []model.DataAsset
+			if err := tx.Where("external_org_id=? AND uuid IN ?", grant.OrgID, []string{grant.Read1UUID, grant.Read2UUID}).Find(&assets).Error; err != nil {
+				return err
+			}
+			for _, asset := range assets {
+				if err := validateExampleAsset(db.Statement.Context, &asset); err != nil {
+					return err
+				}
+				if asset.Status != model.FileStatusDeleted {
+					return fmt.Errorf("example files await cleanup")
+				}
+			}
+			storage, err := newS3Storage(db.Statement.Context, s.cfg.Storage)
+			if err != nil {
+				return err
+			}
+			if err := storage.purgePrefix(db.Statement.Context, exampleDataPrefix(&grant)); err != nil {
+				return err
+			}
+			if err := tx.Where("external_org_id=? AND source='example' AND status=? AND uuid IN ?", grant.OrgID, model.FileStatusDeleted, []string{grant.Read1UUID, grant.Read2UUID}).Delete(&model.DataAsset{}).Error; err != nil {
+				return err
+			}
 		}
 		if s.tasks.overlay == nil {
 			return fmt.Errorf("sample audit erasure unavailable")
@@ -331,7 +403,13 @@ func (s *RetentionService) destroySampleForReset(db *gorm.DB, job *model.Retenti
 		if err := tx.Exec("INSERT INTO research_erased_resources(digest) VALUES (md5(?)) ON CONFLICT DO NOTHING", "samples:"+sample.ExternalOrgID+":"+sample.UUID).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&sample).Error
+		if err := tx.Delete(&sample).Error; err != nil {
+			return err
+		}
+		if job.ID != "" {
+			return tx.Where("id=? AND resource_id=? AND org_id=?", job.ID, sample.UUID, sample.ExternalOrgID).Delete(&model.RetentionJob{}).Error
+		}
+		return nil
 	})
 }
 

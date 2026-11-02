@@ -52,20 +52,38 @@ func MigrateExampleData(cfg *config.Config) error {
 }
 
 func exampleAvailable(cfg *config.Config) bool {
-	return cfg.IsSaaS() && cfg.Storage.Provider == "s3" && cfg.Storage.RetentionDays == 7 && cfg.Storage.BAMRetentionDays == 7 && cfg.Storage.BAMCleanupEnabled && cfg.RetentionCleanupEnabled && cfg.RetentionBackupPolicyVerified
+	return exampleUnavailableReason(cfg) == ""
+}
+
+func exampleUnavailableReason(cfg *config.Config) string {
+	if !cfg.IsSaaS() || !cfg.ExampleDataEnabled {
+		return "feature_disabled"
+	}
+	if !cfg.ExampleDataCleanupEnabled {
+		return "cleanup_disabled"
+	}
+	if cfg.Storage.Provider != "s3" {
+		return "storage_unavailable"
+	}
+	if cfg.Storage.RetentionDays != 7 || cfg.Storage.BAMRetentionDays != 7 || !cfg.Storage.BAMCleanupEnabled {
+		return "retention_policy_unavailable"
+	}
+	return ""
 }
 
 type ExampleTemplateInfo struct {
 	Available bool   `json:"available"`
 	Version   string `json:"version"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 func ExampleTemplate(ctx context.Context, cfg *config.Config, version string) (ExampleTemplateInfo, error) {
-	info := ExampleTemplateInfo{}
+	info := ExampleTemplateInfo{Reason: exampleUnavailableReason(cfg)}
 	if !exampleAvailable(cfg) {
 		return info, nil
 	}
 	if version == "" {
+		info.Reason = "template_missing"
 		var active model.ExampleTemplateActive
 		if err := database.DB.WithContext(ctx).First(&active, 1).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -76,6 +94,7 @@ func ExampleTemplate(ctx context.Context, cfg *config.Config, version string) (E
 		version = active.Version
 	}
 	var t model.ExampleTemplate
+	info.Reason = "template_missing"
 	if err := database.DB.WithContext(ctx).First(&t, "version=?", version).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return info, nil
@@ -84,20 +103,24 @@ func ExampleTemplate(ctx context.Context, cfg *config.Config, version string) (E
 	}
 	var m exampledata.Manifest
 	if json.Unmarshal([]byte(t.ManifestJSON), &m) != nil || m.Validate() != nil {
-		return info, errors.New("invalid template")
+		info.Reason = "object_validation_failed"
+		return info, nil
 	}
 	info.Version = t.Version
 	store, err := newS3Storage(ctx, cfg.Storage)
 	if err != nil {
+		info.Reason = "storage_unavailable"
 		return info, nil
 	}
 	for _, object := range m.Objects {
 		size, err := store.stat(ctx, exampleTemplatePrefix+t.Version+"/"+object.Path)
 		if err != nil || size != object.Size {
+			info.Reason = "object_validation_failed"
 			return info, nil
 		}
 	}
 	info.Available = true
+	info.Reason = ""
 	return info, nil
 }
 

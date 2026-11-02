@@ -180,6 +180,12 @@ func exampleObjectKey(g *model.ExampleDataGrant, o exampledata.Object) string {
 }
 
 func (s *ExampleDataService) provision(ctx context.Context, g *model.ExampleDataGrant) (string, string) {
+	if err := validateExampleGrantPaths(g); err != nil {
+		return "failed", "invalid_identity"
+	}
+	if !s.cfg.ExampleDataCleanupEnabled {
+		return "paused", "cleanup_policy_unavailable"
+	}
 	store, err := newS3Storage(ctx, s.cfg.Storage)
 	if err != nil {
 		return "failed", "storage_unavailable"

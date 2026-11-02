@@ -11,6 +11,9 @@ import (
 
 // ValidateStartup checks the configuration for common mistakes at server startup.
 func ValidateStartup(cfg *Config) error {
+	if (cfg.ExampleDataEnabled || cfg.ExampleDataCleanupEnabled) && !cfg.IsSaaS() {
+		return fmt.Errorf("example data requires SaaS edition")
+	}
 	if cfg.Edition != "" && cfg.Edition != "opensource" && cfg.Edition != "saas" {
 		return fmt.Errorf("DEPLOYMENT_EDITION must be opensource or saas")
 	}

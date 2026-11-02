@@ -9,6 +9,8 @@ import (
 )
 
 type Config struct {
+	ExampleDataEnabled            bool
+	ExampleDataCleanupEnabled     bool
 	Edition                       string
 	RetentionCleanupEnabled       bool
 	RetentionBackupPolicyVerified bool
@@ -217,6 +219,8 @@ func Load() *Config {
 		}
 	}
 	return &Config{
+		ExampleDataEnabled:            getEnv("EXAMPLE_DATA_ENABLED", "false") == "true",
+		ExampleDataCleanupEnabled:     getEnv("EXAMPLE_DATA_CLEANUP_ENABLED", "false") == "true",
 		Edition:                       getEnv("DEPLOYMENT_EDITION", "opensource"),
 		RetentionCleanupEnabled:       getEnv("RETENTION_CLEANUP_ENABLED", "false") == "true",
 		RetentionBackupPolicyVerified: getEnv("RETENTION_BACKUP_POLICY_VERIFIED", "false") == "true",
