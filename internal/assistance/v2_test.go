@@ -63,6 +63,26 @@ func TestV2ResultDoesNotDeliverFailedLocalBaseline(t *testing.T) {
 	}
 }
 
+func TestDeliveredAIResultBillsWithoutLiteratureRetrieval(t *testing.T) {
+	raw := map[string]any{
+		"schema_version": "sepilens-evaluation-2.0", "delivery_status": "delivered",
+		"result_kind": "evidence_only", "settlement_eligible": true,
+		"agent_proposal": map[string]any{
+			"retrieval_status": "unavailable",
+			"ai_assessment": map[string]any{"clinical_summary": "Synthetic result", "criteria": []any{}},
+		},
+	}
+	result, bill, err := normalizeResult("acmg", "synthetic", raw, true)
+	if err != nil || !bill {
+		t.Fatal("delivered AI result was not billable", err)
+	}
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "文献检索不可用") {
+			t.Fatal("optional retrieval status leaked into user warning")
+		}
+	}
+}
+
 func TestV2JobIdentifiers(t *testing.T) {
 	for _, id := range []string{"job-0123456789abcdef0123456789abcdef"} {
 		if !validJobID(id) {

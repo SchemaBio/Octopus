@@ -292,9 +292,6 @@ func normalizeResult(feature, model string, raw map[string]any, paidDelivery boo
 				}
 			}
 		}
-		if text(proposal["retrieval_status"]) == "unavailable" {
-			r.Warnings = append(r.Warnings, "外部文献检索不可用，以下建议未完成文献核验；不可将检索失败理解为没有相关证据。")
-		}
 		if criteria, ok := ai["criteria"].([]any); ok {
 			for _, item := range criteria {
 				if c, ok := item.(map[string]any); ok {
