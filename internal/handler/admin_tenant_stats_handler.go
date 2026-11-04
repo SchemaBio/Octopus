@@ -102,20 +102,40 @@ func (h *AdminTenantStatsHandler) GetTenantStats(c *gin.Context) {
 		stats[row.OrgID] = item
 	}
 
-	cutoff := time.Now().Add(-time.Hour)
-	var uploadRows []struct {
+	// Match the user-facing completed storage inventory, including scanner and
+	// example assets that have no upload_files history. Pending bytes are not used storage.
+	var assetRows []struct {
 		OrgID             string
 		UploadedFileCount int64
 		UploadedBytes     int64
-		StaleUploadCount  int64
+	}
+	if err := db.WithContext(c.Request.Context()).Table("data_assets").
+		Select("external_org_id AS org_id, COUNT(*) AS uploaded_file_count, COALESCE(SUM(file_size), 0) AS uploaded_bytes").
+		Where("external_org_id IN ?", orgIDs).Where("status = ?", model.FileStatusCompleted).
+		Group("external_org_id").Scan(&assetRows).Error; err != nil {
+		ErrorInternal(c, "Failed to load tenant storage statistics")
+		return
+	}
+	for _, row := range assetRows {
+		item, ok := stats[row.OrgID]
+		if !ok {
+			continue
+		}
+		item.UploadedFileCount = row.UploadedFileCount
+		item.UploadedBytes = row.UploadedBytes
+		stats[row.OrgID] = item
+	}
+
+	cutoff := time.Now().Add(-time.Hour)
+	var uploadRows []struct {
+		OrgID            string
+		StaleUploadCount int64
 	}
 	if err := db.WithContext(c.Request.Context()).Table("upload_files").
 		Joins("JOIN upload_jobs ON upload_jobs.id = upload_files.job_id").
 		Select(`upload_jobs.external_org_id AS org_id,
-			COUNT(*) FILTER (WHERE upload_files.status <> ?) AS uploaded_file_count,
-			COALESCE(SUM(CASE WHEN upload_files.status <> ? THEN upload_files.file_size ELSE 0 END), 0) AS uploaded_bytes,
-			COUNT(*) FILTER (WHERE upload_files.status = ? AND upload_files.created_at < ?) AS stale_upload_count`,
-			model.FileStatusDeleted, model.FileStatusDeleted, model.FileStatusPending, cutoff).
+   COUNT(*) FILTER (WHERE upload_files.status = ? AND upload_files.created_at < ?) AS stale_upload_count`,
+			model.FileStatusPending, cutoff).
 		Where("upload_jobs.external_org_id IN ?", orgIDs).
 		Group("upload_jobs.external_org_id").
 		Scan(&uploadRows).Error; err != nil {
@@ -127,8 +147,6 @@ func (h *AdminTenantStatsHandler) GetTenantStats(c *gin.Context) {
 		if !ok {
 			continue
 		}
-		item.UploadedFileCount = row.UploadedFileCount
-		item.UploadedBytes = row.UploadedBytes
 		item.StaleUploadCount = row.StaleUploadCount
 		stats[row.OrgID] = item
 	}
