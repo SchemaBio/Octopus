@@ -1,0 +1,69 @@
+name: Release Octopus binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release 版本号，例如 v0.3.0 或 v0.3.0-rc.1
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-octopus-binaries
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Validate version
+        shell: bash
+        run: |
+          if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo '::error::请输入 vX.Y.Z 或 vX.Y.Z-rc.1 格式的版本号。'
+            exit 1
+          fi
+
+      - name: Check out
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+
+      - name: Build Linux binaries
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            binary="octopus-linux-$arch"
+            GOARCH="$arch" go build -mod=readonly -trimpath \
+              -ldflags='-s -w -buildid=' -o "dist/$binary" ./cmd/server
+            (cd dist && sha256sum "$binary" > "$binary.sha256")
+          done
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A non-forced push rejects an existing tag pointing to another commit.
+          git push origin "$GITHUB_SHA:refs/tags/$VERSION"
+
+          flags=(--verify-tag --generate-notes --title "Octopus $VERSION")
+          if [[ "$VERSION" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+
+          gh release create "$VERSION" "${flags[@]}" \
+            dist/octopus-linux-amd64 dist/octopus-linux-amd64.sha256 \
+            dist/octopus-linux-arm64 dist/octopus-linux-arm64.sha256
