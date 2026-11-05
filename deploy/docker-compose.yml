@@ -87,9 +87,6 @@ services:
       YIJIAN_API_URL: http://localhost:${OCTOPUS_PORT:-8080}/api
       YIJIAN_SERVER_API_URL: http://octopus:8080/api
       YIJIAN_DEFAULT_LOCALE: ${YIJIAN_DEFAULT_LOCALE:-zh-CN}
-    volumes:
-      # Set the source in .env and keep the container destination read-only.
-      - ${ASSESSMENT_REFERENCE_DIR}:/app/data:ro
     ports: ["127.0.0.1:${YIJIAN_PORT:-3000}:3000"]
     depends_on:
       octopus: {condition: service_healthy}

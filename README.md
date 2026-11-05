@@ -754,9 +754,3 @@ curl -X POST http://localhost:8080/api/v1/results/cnv-segment/{id}/report \
 3. Before the token expires, call `/auth/refresh`
 4. Load variant data, including review/report status, through the result APIs
 5. After the user acts, call the review/report APIs to sync status to the database
-
-## VCF2Anno
-
-VCF-first SNP/InDel annotation is supported. hg19 and hg38 share one workflow.
-SaaS bills it with the same WES compute-time rate. Self-hosted deployments do
-not charge credits.

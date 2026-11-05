@@ -8,8 +8,7 @@ YiJian with existing versioned images. It does not build images. Run in WSL:
 ```sh
 cd /mnt/d/WSL/Github/SchemaBio/Octopus/deploy
 bash ./deploy.sh init
-# Edit .env: set DATA_ROOT and ASSESSMENT_REFERENCE_DIR to existing absolute
-# WSL paths. The reference directory must be inside DATA_ROOT.
+# Edit .env: set DATA_ROOT to the absolute WSL path of your data directory.
 mkdir -p /mnt/e/SchemaBio/{output,archive,uploads,cache/parquet}
 docker compose --env-file .env --env-file .generated/runtime.env up -d --no-build --pull never
 docker compose --env-file .env --env-file .generated/runtime.env ps
