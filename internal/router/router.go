@@ -48,7 +48,6 @@ func New(cfg *config.Config) *gin.Engine {
 		auth.Use(publicRateLimit)
 		{
 			auth.POST("/login", authHandler.Login)
-			auth.POST("/register", authHandler.Register)
 			auth.POST("/refresh", authHandler.Refresh)
 			auth.POST("/logout", authHandler.Logout)
 			auth.POST("/forgot-password", authHandler.ForgotPassword)
@@ -57,7 +56,6 @@ func New(cfg *config.Config) *gin.Engine {
 
 		// Legacy auth routes (pre-/auth/ prefix) kept for older deploy scripts.
 		v1.POST("/login", redirectAuthLegacy("/api/v1/auth/login"))
-		v1.POST("/register", redirectAuthLegacy("/api/v1/auth/register"))
 		v1.POST("/refresh", redirectAuthLegacy("/api/v1/auth/refresh"))
 		v1.POST("/logout", redirectAuthLegacy("/api/v1/auth/logout"))
 		v1.POST("/forgot-password", redirectAuthLegacy("/api/v1/auth/forgot-password"))
