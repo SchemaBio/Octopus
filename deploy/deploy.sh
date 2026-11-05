@@ -45,15 +45,24 @@ existing_or_random() {
   printf '%s=%s\n' "$name" "$value"
 }
 
+set_private_mode() {
+  local mode="$1" path="$2"
+  if chmod "$mode" "$path" 2>/dev/null &&
+    { [ "$(uname -s)" != Linux ] || [ "$(stat -c %a "$path")" = "$mode" ]; }; then
+    return
+  fi
+  printf 'Warning: could not set mode 0%s on %s. WSL Windows-drive mounts may not support Linux permissions. Check who can access this path.\n' "$mode" "$path" >&2
+}
+
 init_config() {
   require_command openssl
   if [ ! -f "$USER_ENV" ]; then
     cp "$DEPLOY_DIR/.env.example" "$USER_ENV"
-    chmod 600 "$USER_ENV"
+    set_private_mode 600 "$USER_ENV"
     printf 'Created %s. Review the local paths before installing.\n' "$USER_ENV"
   fi
   mkdir -p "$GENERATED_DIR"
-  chmod 700 "$GENERATED_DIR"
+  set_private_mode 700 "$GENERATED_DIR"
   load_env
 
   local tmp="$RUNTIME_ENV.tmp"
@@ -79,7 +88,7 @@ init_config() {
     fi
   } >"$tmp"
   mv "$tmp" "$RUNTIME_ENV"
-  chmod 600 "$RUNTIME_ENV"
+  set_private_mode 600 "$RUNTIME_ENV"
 
   # shellcheck disable=SC1090
   source "$RUNTIME_ENV"
@@ -129,9 +138,6 @@ check_config() {
   [ -n "$MINIWDL_PATH" ] || die "miniwdl was not found; set MINIWDL_PATH"
   [ -x "$MINIWDL_PATH" ] || die "MINIWDL_PATH is not executable"
   [ -f "$RUNTIME_ENV" ] || die "runtime secrets are missing; run bash ./deploy.sh init"
-  if [ "$(uname -s)" = "Linux" ]; then
-    [ "$(stat -c %a "$RUNTIME_ENV")" = "600" ] || die "runtime secrets file must have mode 0600"
-  fi
   [ "${#OCTOPUS_JWT_SECRET}" -ge 32 ] || die "generated OCTOPUS_JWT_SECRET is too short"
   "$MINIWDL_PATH" --version >/dev/null
 
