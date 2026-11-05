@@ -100,9 +100,6 @@ docker compose -f compose.yaml \
 
 `RESULT_ENGINE_TEMP_DIR` defaults to the cache's `tmp` subdirectory. Both data
 directories must be writable; cache objects and existing assessments are retained.
-Resource limits, acceptance evidence and first-stage rollback instructions are in
-[migration](../docs/PARQUET_QUERY_GO_MIGRATION.md) and
-[acceptance](../docs/PARQUET_QUERY_GO_ACCEPTANCE.md).
 
 ## Reverse proxy contract
 

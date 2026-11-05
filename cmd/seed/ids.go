@@ -1,6 +1,6 @@
 package main
 
-// Stable IDs for YiJian frontend local dev. Documented in docs/dev-frontend.md.
+// Stable IDs for YiJian frontend local development.
 const (
 	seedMarker = "[seed]"
 

@@ -120,9 +120,6 @@ go run ./cmd/seed        # 幂等
 go run ./cmd/seed -reset # 清空 seed 后重插
 ```
 
-完整本地开发指南：[docs/local-development.md](docs/local-development.md)  
-前端联调速查：[docs/dev-frontend.md](docs/dev-frontend.md)
-
 ## API 接口
 
 ### 认证 (公开接口)
@@ -709,4 +706,4 @@ curl -X POST http://localhost:8080/api/v1/results/cnv-segment/{id}/report \
 
 ## VCF2Anno
 
-支持 VCF 起始的 SNP/InDel 注释，hg19/hg38 共用工作流。SaaS 沿用 WES 计算时间计费，自部署不扣积分。输入、部署、配置及验证见 [VCF2Anno 接入说明](docs/vcf2anno-integration.md)。
+支持 VCF 起始的 SNP/InDel 注释，hg19/hg38 共用工作流。SaaS 沿用 WES 计算时间计费，自部署不扣积分。

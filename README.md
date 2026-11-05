@@ -153,9 +153,6 @@ go run ./cmd/seed        # idempotent
 go run ./cmd/seed -reset # clear seed data, then reinsert
 ```
 
-Full local development guide: [docs/local-development.md](docs/local-development.md)  
-Frontend integration cheat sheet: [docs/dev-frontend.md](docs/dev-frontend.md)
-
 ## API
 
 ### Authentication (public)
@@ -762,5 +759,4 @@ curl -X POST http://localhost:8080/api/v1/results/cnv-segment/{id}/report \
 
 VCF-first SNP/InDel annotation is supported. hg19 and hg38 share one workflow.
 SaaS bills it with the same WES compute-time rate. Self-hosted deployments do
-not charge credits. Inputs, deployment, configuration, and verification are
-described in [VCF2Anno integration](docs/vcf2anno-integration.md).
+not charge credits.
