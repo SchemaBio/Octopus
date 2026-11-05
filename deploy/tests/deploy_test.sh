@@ -10,7 +10,9 @@ mkdir -p "$TEST_DIR/bin" "$TEST_DIR/workflows/conf"
 touch "$TEST_DIR/workflows/conf/local.cfg"
 cat >"$TEST_DIR/bin/docker" <<'EOF'
 #!/bin/sh
-exit 0
+if [ "${2:-}" != "version" ]; then
+  printf '%s\n' "$YIJIAN_BROWSER_API_URL" > "$PWD/browser-api-url"
+fi
 EOF
 cat >"$TEST_DIR/bin/miniwdl" <<'EOF'
 #!/bin/sh
@@ -45,12 +47,24 @@ while IFS='=' read -r name value; do
 done <"$TEST_DIR/.generated/runtime.env"
 
 sed -i \
-  -e 's|^PUBLIC_ORIGIN=.*|PUBLIC_ORIGIN=https://self-hosted.test|' \
   -e "s|^WORKFLOW_HOST_DIR=.*|WORKFLOW_HOST_DIR=$TEST_DIR/workflows|" \
   -e "s|^MINIWDL_PATH=.*|MINIWDL_PATH=$TEST_DIR/bin/miniwdl|" \
   "$TEST_DIR/.env"
 (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null)
 
+[ "$(cat "$TEST_DIR/browser-api-url")" = "http://localhost:8080/api" ]
+
+sed -i 's|^PUBLIC_ORIGIN=.*|PUBLIC_ORIGIN=https://self-hosted.test|' "$TEST_DIR/.env"
+(cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null)
+[ "$(cat "$TEST_DIR/browser-api-url")" = "/api" ]
+
+sed -i 's|^PUBLIC_ORIGIN=.*|PUBLIC_ORIGIN=http://self-hosted.test|' "$TEST_DIR/.env"
+if (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null 2>&1); then
+  echo "non-loopback HTTP origin unexpectedly passed" >&2
+  exit 1
+fi
+
+sed -i 's|^PUBLIC_ORIGIN=.*|PUBLIC_ORIGIN=|' "$TEST_DIR/.env"
 sed -i 's|^OCTOPUS_PORT=.*|OCTOPUS_PORT=70000|' "$TEST_DIR/.env"
 if (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null 2>&1); then
   echo "invalid service port unexpectedly passed" >&2

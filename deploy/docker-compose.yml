@@ -60,7 +60,7 @@ services:
     image: schemabio/yijian:latest
     restart: unless-stopped
     environment:
-      YIJIAN_API_URL: /api
+      YIJIAN_API_URL: ${YIJIAN_BROWSER_API_URL:-http://localhost:${OCTOPUS_PORT:-8080}/api}
       YIJIAN_SERVER_API_URL: http://host.docker.internal:${OCTOPUS_PORT:-8080}/api
       YIJIAN_DEFAULT_LOCALE: ${YIJIAN_DEFAULT_LOCALE:-zh-CN}
     ports: ["127.0.0.1:${YIJIAN_PORT:-3000}:3000"]

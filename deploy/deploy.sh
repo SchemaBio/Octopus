@@ -50,7 +50,7 @@ init_config() {
   if [ ! -f "$USER_ENV" ]; then
     cp "$DEPLOY_DIR/.env.example" "$USER_ENV"
     chmod 600 "$USER_ENV"
-    printf 'Created %s. Set PUBLIC_ORIGIN before installing.\n' "$USER_ENV"
+    printf 'Created %s. Review the local paths before installing.\n' "$USER_ENV"
   fi
   mkdir -p "$GENERATED_DIR"
   chmod 700 "$GENERATED_DIR"
@@ -109,10 +109,22 @@ check_config() {
   docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required"
   load_env
 
-  [[ "${PUBLIC_ORIGIN:-}" =~ ^https://[^/@?#[:space:]]+$ ]] || die "PUBLIC_ORIGIN must be an https origin without credentials, path, query, fragment, or trailing slash"
-  case "$PUBLIC_ORIGIN" in
-    *example.com*) die "PUBLIC_ORIGIN still contains a placeholder" ;;
-  esac
+  PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-http://localhost:${YIJIAN_PORT:-3000}}"
+  if [[ "$PUBLIC_ORIGIN" =~ ^http://(localhost|127[.]0[.]0[.]1)(:[0-9]+)?$ ]]; then
+    OCTOPUS_GIN_MODE=debug
+    OCTOPUS_ALLOW_INSECURE_DEV=true
+    OCTOPUS_COOKIE_SECURE=false
+    YIJIAN_BROWSER_API_URL="http://${BASH_REMATCH[1]}:${OCTOPUS_PORT:-8080}/api"
+  elif [[ "$PUBLIC_ORIGIN" =~ ^https://[^/@?#[:space:]]+$ ]]; then
+    [[ "$PUBLIC_ORIGIN" != *example.com* ]] || die "PUBLIC_ORIGIN still contains a placeholder"
+    OCTOPUS_GIN_MODE=release
+    OCTOPUS_ALLOW_INSECURE_DEV=false
+    OCTOPUS_COOKIE_SECURE=true
+    YIJIAN_BROWSER_API_URL=/api
+  else
+    die "PUBLIC_ORIGIN must be an HTTP loopback origin or an HTTPS origin without a path"
+  fi
+  export YIJIAN_BROWSER_API_URL
 
   resolve_paths
   [[ "$INSTALL_ROOT" = /* ]] || die "INSTALL_ROOT must be an absolute path"
@@ -150,7 +162,8 @@ write_host_environment() {
   mkdir -p /etc/schemabio
   cat > /etc/schemabio/octopus.env <<EOF
 SERVER_PORT=${OCTOPUS_PORT:-8080}
-GIN_MODE=release
+GIN_MODE=$OCTOPUS_GIN_MODE
+ALLOW_INSECURE_DEV=$OCTOPUS_ALLOW_INSECURE_DEV
 CORS_ALLOWED_ORIGINS=$PUBLIC_ORIGIN
 DB_DRIVER=postgres
 DB_DSN="host=127.0.0.1 user=octopus password=$OCTOPUS_DB_PASSWORD dbname=octopus port=${POSTGRES_PORT:-54320} sslmode=disable TimeZone=Asia/Shanghai"
@@ -177,7 +190,7 @@ IGV_HG19_FASTA_PATH=${IGV_HG19_FASTA_PATH:-}
 IGV_REFERENCE_PROXY_BASE_URL=${IGV_REFERENCE_PROXY_BASE_URL:-}
 PARQUET_ENABLED=${PARQUET_ENABLED:-true}
 JWT_SECRET=$OCTOPUS_JWT_SECRET
-JWT_COOKIE_SECURE=true
+JWT_COOKIE_SECURE=$OCTOPUS_COOKIE_SECURE
 CREATE_DEFAULT_ADMIN=true
 DEFAULT_ADMIN_EMAIL=${DEFAULT_ADMIN_EMAIL:-admin@schemabio.local}
 DEFAULT_ADMIN_PASSWORD=$DEFAULT_ADMIN_PASSWORD
@@ -270,12 +283,10 @@ install_host_services() {
   require_command runuser
   require_command getent
   require_command curl
-  load_env
-  resolve_paths
 
   local octopus_binary="${OCTOPUS_BINARY:-$GENERATED_DIR/octopus}"
   local agent_binary="${SEPIIDA_AGENT_BINARY:-$(command -v sepiida-agent || true)}"
-  [ -x "$octopus_binary" ] || die "build the native Octopus binary at $octopus_binary or set OCTOPUS_BINARY"
+  [ -x "$octopus_binary" ] || die "install an Octopus Release binary at $octopus_binary or set OCTOPUS_BINARY"
   [ -n "$agent_binary" ] && [ -x "$agent_binary" ] || die "install sepiida-agent on PATH or set SEPIIDA_AGENT_BINARY"
 
   if ! id schemabio >/dev/null 2>&1; then
