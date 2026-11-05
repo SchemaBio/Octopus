@@ -5,7 +5,7 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 
-cp "$SOURCE_DIR/deploy.sh" "$SOURCE_DIR/.env.example" "$SOURCE_DIR/docker-compose.yml" "$TEST_DIR/"
+cp "$SOURCE_DIR/deploy.sh" "$SOURCE_DIR/.env.example" "$SOURCE_DIR/docker-compose.host.yml" "$TEST_DIR/"
 mkdir -p "$TEST_DIR/bin" "$TEST_DIR/workflows/conf"
 touch "$TEST_DIR/workflows/conf/local.cfg"
 cat >"$TEST_DIR/bin/docker" <<'EOF'

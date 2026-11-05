@@ -5,7 +5,7 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 USER_ENV="$DEPLOY_DIR/.env"
 GENERATED_DIR="$DEPLOY_DIR/.generated"
 RUNTIME_ENV="$GENERATED_DIR/runtime.env"
-COMPOSE_FILE="$DEPLOY_DIR/docker-compose.yml"
+COMPOSE_FILE="$DEPLOY_DIR/docker-compose.host.yml"
 
 cd "$DEPLOY_DIR"
 umask 077
@@ -71,6 +71,12 @@ init_config() {
     fi
     existing_or_random SEPIIDA_QUERY_KEY 32
     existing_or_random SEPIIDA_AGENT_KEY 32
+    existing_or_random AI_ASSISTANCE_TOKEN 32
+    if [ -n "${AI_ASSISTANCE_MASTER_KEY:-}" ]; then
+      printf 'AI_ASSISTANCE_MASTER_KEY=%s\n' "$AI_ASSISTANCE_MASTER_KEY"
+    else
+      printf 'AI_ASSISTANCE_MASTER_KEY=%s\n' "$(openssl rand -base64 32)"
+    fi
   } >"$tmp"
   mv "$tmp" "$RUNTIME_ENV"
   chmod 600 "$RUNTIME_ENV"

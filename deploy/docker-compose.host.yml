@@ -1,0 +1,88 @@
+name: schemabio-self-hosted
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      OCTOPUS_DB_PASSWORD: ${OCTOPUS_DB_PASSWORD}
+      SEPIIDA_DB_PASSWORD: ${SEPIIDA_DB_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+      - ./postgres/init-databases.sql:/docker-entrypoint-initdb.d/10-init-databases.sql.template:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-54320}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  sepiida-keys:
+    image: alpine:3.22
+    user: "0:0"
+    restart: "no"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        cp /source/agent-keys.txt /keys/agent-keys.txt
+        cp /source/query-keys.txt /keys/query-keys.txt
+        chown -R 1000:1000 /keys
+        chmod 0700 /keys
+        chmod 0600 /keys/agent-keys.txt /keys/query-keys.txt
+    volumes:
+      - ./.generated/sepiida-agent-keys.txt:/source/agent-keys.txt:ro
+      - ./.generated/sepiida-query-keys.txt:/source/query-keys.txt:ro
+      - sepiida-keys:/keys
+
+  sepiida-server:
+    build:
+      context: ../../Sepiida
+    image: schemabio/sepiida-server:self-hosted
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://sepiida:${SEPIIDA_DB_PASSWORD}@postgres:5432/sepiida?sslmode=disable
+      SEPIIDA_AUTH_MODE: static
+      SEPIIDA_AGENT_KEY_FILE: /etc/sepiida/keys/agent-keys.txt
+      SEPIIDA_QUERY_KEY_FILE: /etc/sepiida/keys/query-keys.txt
+      SEPIIDA_KEY_REFRESH_SECONDS: "30"
+    volumes:
+      - sepiida-keys:/etc/sepiida/keys:ro
+    ports:
+      - "127.0.0.1:${SEPIIDA_PORT:-9090}:9090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sepiida-keys:
+        condition: service_completed_successfully
+
+  yijian:
+    build:
+      context: ../../YiJian
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_PASSWORD_HASH_ENABLED: "false"
+        NEXT_PUBLIC_PRIVACY_CONSENT_REQUIRED: "true"
+        NEXT_PUBLIC_ASSESSMENT_OPTIMIZED: ${NEXT_PUBLIC_ASSESSMENT_OPTIMIZED:-false}
+    image: schemabio/yijian:self-hosted
+    restart: unless-stopped
+    environment:
+      YIJIAN_API_URL: /api
+      YIJIAN_BACKEND: octopus
+      YIJIAN_DEFAULT_LOCALE: ${YIJIAN_DEFAULT_LOCALE:-zh-CN}
+      YIJIAN_SERVER_API_URL: http://octopus:8080/api
+      YIJIAN_SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support@schemabio.com}
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "127.0.0.1:${YIJIAN_PORT:-3000}:3000"
+
+volumes:
+  postgres-data:
+  sepiida-keys:

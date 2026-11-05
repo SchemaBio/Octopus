@@ -1,88 +1,107 @@
+# Local WSL stack. Edit .env for paths, image tags and host ports.
+# Load .generated/runtime.env as the second --env-file for credentials.
+# Keep the project name stable to keep using the same named data volumes.
 name: schemabio-self-hosted
-
 services:
   postgres:
-    image: postgres:16-alpine
+    # Keep the major version and volume layout paired. A new major needs its own
+    # initialization or a database migration.
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: postgres
-      OCTOPUS_DB_PASSWORD: ${OCTOPUS_DB_PASSWORD}
-      SEPIIDA_DB_PASSWORD: ${SEPIIDA_DB_PASSWORD}
-      TZ: Asia/Shanghai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run deploy.sh init}
+      OCTOPUS_DB_PASSWORD: ${OCTOPUS_DB_PASSWORD:?run deploy.sh init}
+      SEPIIDA_DB_PASSWORD: ${SEPIIDA_DB_PASSWORD:?run deploy.sh init}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18 expects the volume at this parent directory. The scripts
+      # below create both app databases and roles on first initialization only.
+      - postgres18-data:/var/lib/postgresql
       - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
       - ./postgres/init-databases.sql:/docker-entrypoint-initdb.d/10-init-databases.sql.template:ro
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-54320}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 30
 
-  sepiida-keys:
-    image: alpine:3.22
-    user: "0:0"
-    restart: "no"
-    command:
-      - /bin/sh
-      - -ec
-      - |
-        cp /source/agent-keys.txt /keys/agent-keys.txt
-        cp /source/query-keys.txt /keys/query-keys.txt
-        chown -R 1000:1000 /keys
-        chmod 0700 /keys
-        chmod 0600 /keys/agent-keys.txt /keys/query-keys.txt
-    volumes:
-      - ./.generated/sepiida-agent-keys.txt:/source/agent-keys.txt:ro
-      - ./.generated/sepiida-query-keys.txt:/source/query-keys.txt:ro
-      - sepiida-keys:/keys
-
+  # Keep internal hostnames, ports and database names aligned with the services.
   sepiida-server:
-    build:
-      context: ../../Sepiida
-    image: schemabio/sepiida-server:self-hosted
+    image: schemabio/sepiida-server:latest
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://sepiida:${SEPIIDA_DB_PASSWORD}@postgres:5432/sepiida?sslmode=disable
       SEPIIDA_AUTH_MODE: static
-      SEPIIDA_AGENT_KEY_FILE: /etc/sepiida/keys/agent-keys.txt
-      SEPIIDA_QUERY_KEY_FILE: /etc/sepiida/keys/query-keys.txt
-      SEPIIDA_KEY_REFRESH_SECONDS: "30"
-    volumes:
-      - sepiida-keys:/etc/sepiida/keys:ro
-    ports:
-      - "127.0.0.1:${SEPIIDA_PORT:-9090}:9090"
+      SEPIIDA_AGENT_KEY_FILE: /run/secrets/sepiida-agent-key
+      SEPIIDA_QUERY_KEY_FILE: /run/secrets/sepiida-query-key
+    # Compose mounts the generated keys as files under /run/secrets.
+    secrets: [sepiida-agent-key, sepiida-query-key]
+    ports: ["127.0.0.1:${SEPIIDA_PORT:-9090}:9090"]
     depends_on:
-      postgres:
-        condition: service_healthy
-      sepiida-keys:
-        condition: service_completed_successfully
+      postgres: {condition: service_healthy}
 
-  yijian:
-    build:
-      context: ../../YiJian
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_PASSWORD_HASH_ENABLED: "false"
-        NEXT_PUBLIC_PRIVACY_CONSENT_REQUIRED: "true"
-        NEXT_PUBLIC_ASSESSMENT_OPTIMIZED: ${NEXT_PUBLIC_ASSESSMENT_OPTIMIZED:-false}
-    image: schemabio/yijian:self-hosted
+  # Internal service. Keep the token and master key paired with Octopus.
+  sepilens:
+    image: schemabio/sepilens:latest
     restart: unless-stopped
     environment:
-      YIJIAN_API_URL: /api
-      YIJIAN_BACKEND: octopus
-      YIJIAN_DEFAULT_LOCALE: ${YIJIAN_DEFAULT_LOCALE:-zh-CN}
-      YIJIAN_SERVER_API_URL: http://octopus:8080/api
-      YIJIAN_SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support@schemabio.com}
-      PORT: "3000"
-      HOSTNAME: 0.0.0.0
-    ports:
-      - "127.0.0.1:${YIJIAN_PORT:-3000}:3000"
+      SEPILENS_PRINCIPALS: '{"${AI_ASSISTANCE_TOKEN}":{"tenant":"local","actor":"octopus","role":"admin","submit_evidence":true}}'
+      SEPILENS_MASTER_KEY: ${AI_ASSISTANCE_MASTER_KEY:?run deploy.sh init}
+    volumes: ["sepilens-data:/app/data"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "3", "--spider", "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
+  octopus:
+    image: schemabio/octopus:latest
+    restart: unless-stopped
+    # Keep this with the current WSL bind mount and Docker socket access.
+    user: "0:0"
+    env_file: ./octopus.compose.env
+    volumes:
+      # Keep the same path inside and outside so workflow paths resolve on both.
+      - ${DATA_ROOT}:${DATA_ROOT}
+      # Local Docker workflows use the host engine. This grants control of Docker.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # The stock YiJian image has no /api proxy, so the browser needs this port.
+    ports: ["127.0.0.1:${OCTOPUS_PORT:-8080}:8080"]
+    healthcheck:
+      # Keep the GET probe. Octopus v0.2.0 returns 404 for HEAD /health.
+      test: ["CMD-SHELL", "wget -q -T 2 -O /dev/null http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    depends_on:
+      postgres: {condition: service_healthy}
+      sepiida-server: {condition: service_healthy}
+      sepilens: {condition: service_healthy}
+
+  yijian:
+    image: schemabio/yijian:latest
+    restart: unless-stopped
+    environment:
+      # The browser uses the published host port. Server-side requests use Docker DNS.
+      YIJIAN_API_URL: http://localhost:${OCTOPUS_PORT:-8080}/api
+      YIJIAN_SERVER_API_URL: http://octopus:8080/api
+      YIJIAN_DEFAULT_LOCALE: ${YIJIAN_DEFAULT_LOCALE:-zh-CN}
+    volumes:
+      # Set the source in .env and keep the container destination read-only.
+      - ${ASSESSMENT_REFERENCE_DIR}:/app/data:ro
+    ports: ["127.0.0.1:${YIJIAN_PORT:-3000}:3000"]
+    depends_on:
+      octopus: {condition: service_healthy}
+
+# Persistent databases. A normal compose down preserves these volumes.
 volumes:
-  postgres-data:
-  sepiida-keys:
+  postgres18-data:
+  sepilens-data:
+
+# Names here must match the Sepiida file paths above. Values come from init.
+secrets:
+  sepiida-agent-key:
+    environment: SEPIIDA_AGENT_KEY
+  sepiida-query-key:
+    environment: SEPIIDA_QUERY_KEY

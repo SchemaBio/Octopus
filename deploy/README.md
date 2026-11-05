@@ -1,6 +1,37 @@
 # SchemaBio self-hosted deployment
 
-This is the production entry point for the self-hosted route. PostgreSQL,
+## Local WSL Docker Compose
+
+`docker-compose.yml` runs PostgreSQL 18, Sepiida Server, SepiLens, Octopus and
+YiJian with existing versioned images. It does not build images. Run in WSL:
+
+```sh
+cd /mnt/d/WSL/Github/SchemaBio/Octopus/deploy
+bash ./deploy.sh init
+# Edit .env: set DATA_ROOT and ASSESSMENT_REFERENCE_DIR to existing absolute
+# WSL paths. The reference directory must be inside DATA_ROOT.
+mkdir -p /mnt/e/SchemaBio/{output,archive,uploads,cache/parquet}
+docker compose --env-file .env --env-file .generated/runtime.env up -d --no-build --pull never
+docker compose --env-file .env --env-file .generated/runtime.env ps
+```
+
+Visit http://localhost:3000. `bash ./deploy.sh credentials` displays the
+initial administrator credentials. Compose mounts the Sepiida keys from the
+generated runtime environment as secret files. Database and SepiLens data use named
+volumes. `docker compose --env-file .env --env-file .generated/runtime.env down`
+stops the stack; adding `--volumes` deletes those databases.
+
+This local configuration exposes ports on loopback, disables secure cookies and
+mounts the Docker socket. It is intended for a trusted local machine. The stock
+Octopus v0.2.0 image does not contain miniwdl; launching workflows requires a
+compatible runtime image or a separately mounted miniwdl installation and its
+dependencies at `MINIWDL_CONTAINER_PATH`. Service health alone does not verify
+workflow execution. A Sepiida agent must also be deployed separately to report
+workflow progress. Image tags are configurable in `.env`.
+
+## Host systemd deployment
+
+The host systemd route uses `docker-compose.host.yml` through `deploy.sh`. PostgreSQL,
 Sepiida Server, and YiJian run in Docker Compose. Octopus and Sepiida Agent run
 as host systemd services so Octopus can call the operator-installed miniwdl
 and both processes can access the same workflow output tree.
