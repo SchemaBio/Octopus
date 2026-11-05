@@ -1,80 +1,41 @@
 # SchemaBio self-hosted deployment
 
-## Local WSL Docker Compose
-
-`docker-compose.yml` runs PostgreSQL 18, Sepiida Server, SepiLens, Octopus and
-YiJian with existing versioned images. It does not build images. Run in WSL:
-
-```sh
-cd /mnt/d/WSL/Github/SchemaBio/Octopus/deploy
-bash ./deploy.sh init
-# Edit .env: set DATA_ROOT to the absolute WSL path of your data directory.
-mkdir -p /mnt/e/SchemaBio/{output,archive,uploads,cache/parquet}
-docker compose --env-file .env --env-file .generated/runtime.env up -d --no-build --pull never
-docker compose --env-file .env --env-file .generated/runtime.env ps
-```
-
-Visit http://localhost:3000. `bash ./deploy.sh credentials` displays the
-initial administrator credentials. Compose mounts the Sepiida keys from the
-generated runtime environment as secret files. Database and SepiLens data use named
-volumes. `docker compose --env-file .env --env-file .generated/runtime.env down`
-stops the stack; adding `--volumes` deletes those databases.
-
-This local configuration exposes ports on loopback, disables secure cookies and
-mounts the Docker socket. It is intended for a trusted local machine. The stock
-Octopus v0.2.0 image does not contain miniwdl; launching workflows requires a
-compatible runtime image or a separately mounted miniwdl installation and its
-dependencies at `MINIWDL_CONTAINER_PATH`. Service health alone does not verify
-workflow execution. A Sepiida agent must also be deployed separately to report
-workflow progress. Image tags are configurable in `.env`.
-
-## Host systemd deployment
-
-The host systemd route uses `docker-compose.host.yml` through `deploy.sh`. PostgreSQL,
-Sepiida Server, and YiJian run in Docker Compose. Octopus and Sepiida Agent run
-as host systemd services so Octopus can call the operator-installed miniwdl
-and both processes can access the same workflow output tree.
-
-## YiJian interface language
-
-Set `YIJIAN_DEFAULT_LOCALE` in the deployment `.env` to `zh-CN` (default),
-`zh-Hant`, `en`, or `es-419`. Recreate the YiJian container after changing it;
-the image does not need rebuilding. A browser's saved language takes priority.
-Users choose their preference under Settings → Personal settings → Interface language
-and click Save. The preference is retained in that browser after logout.
-
-## Requirements
-
-- Linux with systemd, Docker Engine, Docker Compose v2, Bash, and OpenSSL
-- The Octopus, YiJian, and Sepiida repositories checked out as siblings
-- miniwdl installed on the host
-- A workflow catalog containing `conf/local.cfg`
-
-The `schemabio` service account is added to the Docker group. Docker group
-membership is effectively root-equivalent access; only trusted code and users
-may modify the workflow catalog, miniwdl executable, or service environment.
+Octopus and Sepiida Agent run as native Linux executables under systemd. Octopus
+executes MiniWDL directly on the host. Docker Compose runs YiJian, Sepiida
+Server, SepiLens and PostgreSQL 18.
 
 ## Install
 
+Prepare Docker Engine and Compose v2, Bash, OpenSSL, Go, MiniWDL and Sepiida
+Agent on the Linux host. The workflow checkout must contain `conf/local.cfg`.
+
 ```sh
-cd Octopus/deploy
-bash ./deploy.sh init
-# Edit .env: set PUBLIC_ORIGIN and, if needed, workflow/miniwdl paths.
+cd Octopus
+bash ./deploy/deploy.sh init
+CGO_ENABLED=0 go build -mod=readonly -trimpath -o deploy/.generated/octopus ./cmd/server
+cd deploy
+# Set PUBLIC_ORIGIN, DATA_ROOT and WORKFLOW_HOST_DIR in .env.
 bash ./deploy.sh check
 sudo bash ./deploy.sh install
 bash ./deploy.sh credentials
 ```
 
-`install` builds Octopus from its application image and compiles Sepiida Agent
-with the official Go toolchain container directly into `INSTALL_ROOT/bin`.
-Sepiida Agent is not packaged as an application image. The command then creates
-data directories, writes systemd units, starts the Compose dependencies, and
-starts the host services. Generated credentials are stored in
-`.generated/runtime.env` with mode `0600` and remain stable across repeated
-initialization.
+The installer uses the compiled Octopus binary and an existing Sepiida Agent.
+If sudo cannot find MiniWDL or Sepiida Agent on PATH, set their absolute paths
+in `.env`. The installer checks MiniWDL and Docker access as the systemd service
+user. That user needs access to the workflow, reference data and output paths.
+Docker group membership grants control over the host Docker engine.
 
-Use `sudo bash ./deploy.sh up|down`, `bash ./deploy.sh status`, and
-`bash ./deploy.sh credentials` for ongoing operation.
+For Slurm or LSF, install the relevant MiniWDL plugin and scheduler client on
+the host, prepare `conf/slurm.cfg` or `conf/lsf.cfg` and configure the service
+user's scheduler authentication and shared paths. Set `MINIWDL_SLURM_PATH` or
+`MINIWDL_LSF_PATH` only if the scheduler uses a separate MiniWDL installation.
+
+Keep `.env` and `.generated/runtime.env` with your deployment backups. Existing
+PostgreSQL 16 data requires a migration before upgrading to 18. Use
+`sudo bash ./deploy.sh up|down` or `bash ./deploy.sh status` to manage services.
+Set `YIJIAN_DEFAULT_LOCALE` in `.env` and recreate YiJian to change its default
+interface language.
 
 ## COS Parquet and SVC engines
 
@@ -102,7 +63,8 @@ directories must be writable; cache objects and existing assessments are retaine
 
 ## Reverse proxy contract
 
-The deployment does not manage DNS, TLS, or a reverse proxy. Route `/api/*` to
+The deployment does not manage DNS, TLS, or a reverse proxy. Use the HTTPS origin configured in `PUBLIC_ORIGIN`. Route `/api/*` to
 `127.0.0.1:8080` without rewriting the path and route all other application
-paths to `127.0.0.1:3000`. Sepiida binds to `127.0.0.1:9090` and is not public
+paths to `127.0.0.1:3000`. Allow Octopus API access from the Compose bridge
+for YiJian server-side calls and restrict direct external access to that port. Sepiida binds to `127.0.0.1:9090` and is not public
 in the self-hosted route.

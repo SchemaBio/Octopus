@@ -5,7 +5,7 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 USER_ENV="$DEPLOY_DIR/.env"
 GENERATED_DIR="$DEPLOY_DIR/.generated"
 RUNTIME_ENV="$GENERATED_DIR/runtime.env"
-COMPOSE_FILE="$DEPLOY_DIR/docker-compose.host.yml"
+COMPOSE_FILE="$DEPLOY_DIR/docker-compose.yml"
 
 cd "$DEPLOY_DIR"
 umask 077
@@ -83,15 +83,11 @@ init_config() {
 
   # shellcheck disable=SC1090
   source "$RUNTIME_ENV"
-  printf '%s\n' "$SEPIIDA_QUERY_KEY" >"$GENERATED_DIR/sepiida-query-keys.txt"
-  printf '%s\n' "$SEPIIDA_AGENT_KEY" >"$GENERATED_DIR/sepiida-agent-keys.txt"
-  chmod 600 "$GENERATED_DIR/sepiida-query-keys.txt" "$GENERATED_DIR/sepiida-agent-keys.txt"
   # A sudo install must preserve the operator's ability to read credentials.
   if [ "${EUID:-$(id -u)}" -eq 0 ]; then
     local config_owner
     config_owner="$(stat -c '%u:%g' "$USER_ENV")"
-    chown "$config_owner" "$GENERATED_DIR" "$RUNTIME_ENV" \
-      "$GENERATED_DIR/sepiida-query-keys.txt" "$GENERATED_DIR/sepiida-agent-keys.txt"
+    chown "$config_owner" "$GENERATED_DIR" "$RUNTIME_ENV"
   fi
   printf 'Self-hosted configuration initialized.\n'
 }
@@ -134,7 +130,7 @@ check_config() {
   "$MINIWDL_PATH" --version >/dev/null
 
   local port
-  for port in "${POSTGRES_PORT:-54320}" "${OCTOPUS_PORT:-8080}" "${SEPIIDA_PORT:-9090}" "${YIJIAN_PORT:-3000}"; do
+  for port in "${POSTGRES_PORT:-54320}" "${OCTOPUS_PORT:-8080}" "${SEPIIDA_PORT:-9090}" "${SEPILENS_PORT:-18081}" "${YIJIAN_PORT:-3000}"; do
     [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || die "service ports must be integers from 1 to 65535"
   done
 
@@ -148,35 +144,6 @@ compose() {
 
 require_root() {
   [ "${EUID:-$(id -u)}" -eq 0 ] || die "this command must run as root"
-}
-
-extract_binary() {
-  local image="$1"
-  local source_path="$2"
-  local destination="$3"
-  local container_id
-  container_id="$(docker create "$image")"
-  if ! docker cp "$container_id:$source_path" "$destination"; then
-    docker rm "$container_id" >/dev/null || true
-    return 1
-  fi
-  docker rm "$container_id" >/dev/null
-  chmod 0755 "$destination"
-}
-
-build_sepiida_agent() {
-  local source_dir="$DEPLOY_DIR/../../Sepiida"
-  [ -f "$source_dir/go.mod" ] || die "Sepiida repository is missing at $source_dir"
-
-  docker run --rm \
-    -e CGO_ENABLED=0 \
-    -e GOPROXY=https://mirrors.tencent.com/go/,direct \
-    -v "$source_dir:/src:ro" \
-    -v "$INSTALL_ROOT/bin:/out" \
-    -w /src \
-    golang:1.25-alpine3.22 \
-    go build -mod=readonly -trimpath -ldflags="-s -w -buildid=" -o /out/sepiida-agent ./cmd/agent
-  chmod 0755 "$INSTALL_ROOT/bin/sepiida-agent"
 }
 
 write_host_environment() {
@@ -193,6 +160,9 @@ ARCHIVE_DIR=$DATA_ROOT/archive
 ARCHIVE_CLEANUP=${ARCHIVE_CLEANUP:-false}
 DEFAULT_EXECUTOR=local
 MINIWDL_PATH=$MINIWDL_PATH
+MINIWDL_SLURM_PATH=${MINIWDL_SLURM_PATH:-$MINIWDL_PATH}
+MINIWDL_LSF_PATH=${MINIWDL_LSF_PATH:-$MINIWDL_PATH}
+MINIWDL__DOCKER_SWARM__AUTO_INIT=true
 STORAGE_PROVIDER=local
 STORAGE_LOCAL_DIR=$DATA_ROOT/uploads
 UPLOAD_MAX_SIZE_MB=${UPLOAD_MAX_SIZE_MB:-20480}
@@ -200,6 +170,10 @@ DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-0}
 SEPIIDA_ENABLED=true
 SEPIIDA_URL=http://127.0.0.1:${SEPIIDA_PORT:-9090}
 SEPIIDA_QUERY_KEY=$SEPIIDA_QUERY_KEY
+AI_ASSISTANCE_BASE_URL=http://127.0.0.1:${SEPILENS_PORT:-18081}
+AI_ASSISTANCE_TOKEN=$AI_ASSISTANCE_TOKEN
+AI_ASSISTANCE_MASTER_KEY=$AI_ASSISTANCE_MASTER_KEY
+IGV_HG19_FASTA_PATH=${IGV_HG19_FASTA_PATH:-}
 IGV_REFERENCE_PROXY_BASE_URL=${IGV_REFERENCE_PROXY_BASE_URL:-}
 PARQUET_ENABLED=${PARQUET_ENABLED:-true}
 JWT_SECRET=$OCTOPUS_JWT_SECRET
@@ -299,6 +273,11 @@ install_host_services() {
   load_env
   resolve_paths
 
+  local octopus_binary="${OCTOPUS_BINARY:-$GENERATED_DIR/octopus}"
+  local agent_binary="${SEPIIDA_AGENT_BINARY:-$(command -v sepiida-agent || true)}"
+  [ -x "$octopus_binary" ] || die "build the native Octopus binary at $octopus_binary or set OCTOPUS_BINARY"
+  [ -n "$agent_binary" ] && [ -x "$agent_binary" ] || die "install sepiida-agent on PATH or set SEPIIDA_AGENT_BINARY"
+
   if ! id schemabio >/dev/null 2>&1; then
     useradd --system --user-group --create-home --shell /usr/sbin/nologin schemabio
   fi
@@ -306,9 +285,12 @@ install_host_services() {
   usermod -aG docker schemabio
   mkdir -p "$INSTALL_ROOT/bin" "$DATA_ROOT/output" "$DATA_ROOT/archive" "$DATA_ROOT/uploads"
 
-  docker build -t schemabio/octopus-host:local "$DEPLOY_DIR/.."
-  extract_binary schemabio/octopus-host:local /app/octopus "$INSTALL_ROOT/bin/octopus"
-  build_sepiida_agent
+  if [[ ! "$octopus_binary" -ef "$INSTALL_ROOT/bin/octopus" ]]; then
+    install -m 0755 "$octopus_binary" "$INSTALL_ROOT/bin/octopus"
+  fi
+  if [[ ! "$agent_binary" -ef "$INSTALL_ROOT/bin/sepiida-agent" ]]; then
+    install -m 0755 "$agent_binary" "$INSTALL_ROOT/bin/sepiida-agent"
+  fi
   write_health_waiter
   chown -R schemabio:schemabio "$INSTALL_ROOT" "$DATA_ROOT"
 
@@ -338,14 +320,14 @@ case "$command_name" in
     init_config
     check_config
     install_host_services
-    compose up -d --build
+    compose up -d --no-build
     systemctl restart schemabio-octopus.service schemabio-sepiida-agent.service
     ;;
   up)
     require_root
     init_config
     check_config
-    compose up -d
+    compose up -d --no-build
     systemctl start schemabio-octopus.service schemabio-sepiida-agent.service
     ;;
   down)

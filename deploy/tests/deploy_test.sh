@@ -5,7 +5,7 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 
-cp "$SOURCE_DIR/deploy.sh" "$SOURCE_DIR/.env.example" "$SOURCE_DIR/docker-compose.host.yml" "$TEST_DIR/"
+cp "$SOURCE_DIR/deploy.sh" "$SOURCE_DIR/.env.example" "$SOURCE_DIR/docker-compose.yml" "$TEST_DIR/"
 mkdir -p "$TEST_DIR/bin" "$TEST_DIR/workflows/conf"
 touch "$TEST_DIR/workflows/conf/local.cfg"
 cat >"$TEST_DIR/bin/docker" <<'EOF'
@@ -32,7 +32,6 @@ if [ "$(uname -s)" = "Linux" ]; then
     chown 1000:1000 "$TEST_DIR/.env"
     (cd "$TEST_DIR" && bash ./deploy.sh init >/dev/null)
     [ "$(stat -c '%u:%g' "$TEST_DIR/.generated/runtime.env")" = "1000:1000" ]
-    [ "$(stat -c '%u:%g' "$TEST_DIR/.generated/sepiida-agent-keys.txt")" = "1000:1000" ]
     cmp "$TEST_DIR/first-runtime.env" "$TEST_DIR/.generated/runtime.env"
   fi
 fi

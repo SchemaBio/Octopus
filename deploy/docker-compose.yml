@@ -1,7 +1,7 @@
-# Local WSL stack. Edit .env for paths, image tags and host ports.
+# Supporting services for the native Octopus deployment.
 # Load .generated/runtime.env as the second --env-file for credentials.
 # Keep the project name stable to keep using the same named data volumes.
-name: schemabio-self-hosted
+name: schemabio-yijian
 services:
   postgres:
     # Keep the major version and volume layout paired. A new major needs its own
@@ -18,6 +18,7 @@ services:
       - postgres18-data:/var/lib/postgresql
       - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
       - ./postgres/init-databases.sql:/docker-entrypoint-initdb.d/10-init-databases.sql.template:ro
+    ports: ["127.0.0.1:${POSTGRES_PORT:-54320}:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
@@ -47,6 +48,7 @@ services:
       SEPILENS_PRINCIPALS: '{"${AI_ASSISTANCE_TOKEN}":{"tenant":"local","actor":"octopus","role":"admin","submit_evidence":true}}'
       SEPILENS_MASTER_KEY: ${AI_ASSISTANCE_MASTER_KEY:?run deploy.sh init}
     volumes: ["sepilens-data:/app/data"]
+    ports: ["127.0.0.1:${SEPILENS_PORT:-18081}:8080"]
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "3", "--spider", "http://127.0.0.1:8080/readyz"]
       interval: 10s
@@ -54,42 +56,15 @@ services:
       retries: 12
       start_period: 10s
 
-  octopus:
-    image: schemabio/octopus:latest
-    restart: unless-stopped
-    # Keep this with the current WSL bind mount and Docker socket access.
-    user: "0:0"
-    env_file: ./octopus.compose.env
-    volumes:
-      # Keep the same path inside and outside so workflow paths resolve on both.
-      - ${DATA_ROOT}:${DATA_ROOT}
-      # Local Docker workflows use the host engine. This grants control of Docker.
-      - /var/run/docker.sock:/var/run/docker.sock
-    # The stock YiJian image has no /api proxy, so the browser needs this port.
-    ports: ["127.0.0.1:${OCTOPUS_PORT:-8080}:8080"]
-    healthcheck:
-      # Keep the GET probe. Octopus v0.2.0 returns 404 for HEAD /health.
-      test: ["CMD-SHELL", "wget -q -T 2 -O /dev/null http://127.0.0.1:8080/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 12
-      start_period: 20s
-    depends_on:
-      postgres: {condition: service_healthy}
-      sepiida-server: {condition: service_healthy}
-      sepilens: {condition: service_healthy}
-
   yijian:
     image: schemabio/yijian:latest
     restart: unless-stopped
     environment:
-      # The browser uses the published host port. Server-side requests use Docker DNS.
-      YIJIAN_API_URL: http://localhost:${OCTOPUS_PORT:-8080}/api
-      YIJIAN_SERVER_API_URL: http://octopus:8080/api
+      YIJIAN_API_URL: /api
+      YIJIAN_SERVER_API_URL: http://host.docker.internal:${OCTOPUS_PORT:-8080}/api
       YIJIAN_DEFAULT_LOCALE: ${YIJIAN_DEFAULT_LOCALE:-zh-CN}
     ports: ["127.0.0.1:${YIJIAN_PORT:-3000}:3000"]
-    depends_on:
-      octopus: {condition: service_healthy}
+    extra_hosts: ["host.docker.internal:host-gateway"]
 
 # Persistent databases. A normal compose down preserves these volumes.
 volumes:
