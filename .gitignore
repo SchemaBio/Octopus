@@ -43,3 +43,4 @@ go.work.sum
 .agents/
 deploy/.env
 deploy/.generated/
+deploy/data/

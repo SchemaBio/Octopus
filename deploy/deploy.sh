@@ -83,19 +83,13 @@ init_config() {
 
   # shellcheck disable=SC1090
   source "$RUNTIME_ENV"
-  # A sudo install must preserve the operator's ability to read credentials.
-  if [ "${EUID:-$(id -u)}" -eq 0 ]; then
-    local config_owner
-    config_owner="$(stat -c '%u:%g' "$USER_ENV")"
-    chown "$config_owner" "$GENERATED_DIR" "$RUNTIME_ENV"
-  fi
   printf 'Self-hosted configuration initialized.\n'
 }
 
 resolve_paths() {
   WORKFLOW_HOST_DIR="$(realpath "${WORKFLOW_HOST_DIR:-$DEPLOY_DIR/workflows}")"
-  INSTALL_ROOT="${INSTALL_ROOT:-/opt/schemabio}"
-  DATA_ROOT="${DATA_ROOT:-/var/lib/schemabio}"
+  INSTALL_ROOT="${INSTALL_ROOT:-$GENERATED_DIR/host}"
+  DATA_ROOT="${DATA_ROOT:-$DEPLOY_DIR/data}"
   if [ -z "${MINIWDL_PATH:-}" ]; then
     MINIWDL_PATH="$(command -v miniwdl || true)"
   fi
@@ -154,163 +148,182 @@ compose() {
   docker compose --env-file "$USER_ENV" --env-file "$RUNTIME_ENV" -f "$COMPOSE_FILE" "$@"
 }
 
-require_root() {
-  [ "${EUID:-$(id -u)}" -eq 0 ] || die "this command must run as root"
+wait_for_sepiida() {
+  require_command curl
+  local url="http://127.0.0.1:${SEPIIDA_PORT:-9090}/health"
+  local attempt
+  for ((attempt = 0; attempt < 60; attempt++)); do
+    if curl --fail --silent --max-time 2 "$url" >/dev/null; then
+      return
+    fi
+    sleep 2
+  done
+  die "timed out waiting for $url"
 }
 
-write_host_environment() {
-  mkdir -p /etc/schemabio
-  cat > /etc/schemabio/octopus.env <<EOF
-SERVER_PORT=${OCTOPUS_PORT:-8080}
-GIN_MODE=$OCTOPUS_GIN_MODE
-ALLOW_INSECURE_DEV=$OCTOPUS_ALLOW_INSECURE_DEV
-CORS_ALLOWED_ORIGINS=$PUBLIC_ORIGIN
-DB_DRIVER=postgres
-DB_DSN="host=127.0.0.1 user=octopus password=$OCTOPUS_DB_PASSWORD dbname=octopus port=${POSTGRES_PORT:-54320} sslmode=disable TimeZone=Asia/Shanghai"
-OUTPUT_DIR=$DATA_ROOT/output
-TEMPLATE_DIR=$WORKFLOW_HOST_DIR
-ARCHIVE_DIR=$DATA_ROOT/archive
-ARCHIVE_CLEANUP=${ARCHIVE_CLEANUP:-false}
-DEFAULT_EXECUTOR=local
-MINIWDL_PATH=$MINIWDL_PATH
-MINIWDL_SLURM_PATH=${MINIWDL_SLURM_PATH:-$MINIWDL_PATH}
-MINIWDL_LSF_PATH=${MINIWDL_LSF_PATH:-$MINIWDL_PATH}
-MINIWDL__DOCKER_SWARM__AUTO_INIT=true
-STORAGE_PROVIDER=local
-STORAGE_LOCAL_DIR=$DATA_ROOT/uploads
-UPLOAD_MAX_SIZE_MB=${UPLOAD_MAX_SIZE_MB:-20480}
-DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-0}
-SEPIIDA_ENABLED=true
-SEPIIDA_URL=http://127.0.0.1:${SEPIIDA_PORT:-9090}
-SEPIIDA_QUERY_KEY=$SEPIIDA_QUERY_KEY
-AI_ASSISTANCE_BASE_URL=http://127.0.0.1:${SEPILENS_PORT:-18081}
-AI_ASSISTANCE_TOKEN=$AI_ASSISTANCE_TOKEN
-AI_ASSISTANCE_MASTER_KEY=$AI_ASSISTANCE_MASTER_KEY
-IGV_HG19_FASTA_PATH=${IGV_HG19_FASTA_PATH:-}
-IGV_REFERENCE_PROXY_BASE_URL=${IGV_REFERENCE_PROXY_BASE_URL:-}
-PARQUET_ENABLED=${PARQUET_ENABLED:-true}
-JWT_SECRET=$OCTOPUS_JWT_SECRET
-JWT_COOKIE_SECURE=$OCTOPUS_COOKIE_SECURE
-CREATE_DEFAULT_ADMIN=true
-DEFAULT_ADMIN_EMAIL=${DEFAULT_ADMIN_EMAIL:-admin@schemabio.local}
-DEFAULT_ADMIN_PASSWORD=$DEFAULT_ADMIN_PASSWORD
-EXTERNAL_AUTH_ENABLED=false
-OVERLAY_ENABLED=false
-EOF
-  cat > /etc/schemabio/sepiida-agent.env <<EOF
-SEPIIDA_SERVER_URL=http://127.0.0.1:${SEPIIDA_PORT:-9090}
-SEPIIDA_AGENT_KEY=$SEPIIDA_AGENT_KEY
-SEPIIDA_AGENT_ID=self-hosted-agent
-SEPIIDA_AGENT_INTERVAL=60
-SEPIIDA_WATCH_DIRS=$DATA_ROOT/output
-SEPIIDA_ARCHIVE_URL=
-EOF
-  chmod 600 /etc/schemabio/octopus.env /etc/schemabio/sepiida-agent.env
+process_start_time() {
+  local pid="$1" stat
+  local -a fields
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  IFS= read -r stat 2>/dev/null <"/proc/$pid/stat" || return 1
+  # Strip PID and the parenthesized command name. Field 22 is the start time.
+  read -r -a fields <<<"${stat##*) }"
+  [[ "${fields[0]:-}" != Z && -n "${fields[19]:-}" ]] || return 1
+  printf '%s\n' "${fields[19]}"
 }
 
-write_health_waiter() {
-  cat >"$INSTALL_ROOT/bin/wait-for-http" <<'EOF'
-#!/bin/sh
-set -eu
-url="$1"
-attempt=0
-while [ "$attempt" -lt 60 ]; do
-  if curl --fail --silent --show-error "$url" >/dev/null; then
-    exit 0
+running_pid() {
+  local pid started
+  local record="$GENERATED_DIR/$1.pid"
+  [ -f "$record" ] && read -r pid started <"$record" || return 1
+  [ -n "$started" ] && [ "$(process_start_time "$pid")" = "$started" ] || return 1
+  printf '%s\n' "$pid"
+}
+
+run_host_service() {
+  local service="$1"
+  cd "$DATA_ROOT/output" || return 1
+  export -n POSTGRES_PASSWORD OCTOPUS_DB_PASSWORD SEPIIDA_DB_PASSWORD OCTOPUS_JWT_SECRET
+  export -n DEFAULT_ADMIN_PASSWORD SEPIIDA_QUERY_KEY SEPIIDA_AGENT_KEY
+  export -n AI_ASSISTANCE_TOKEN AI_ASSISTANCE_MASTER_KEY
+  if [ "$service" = octopus ]; then
+    export SERVER_PORT="${OCTOPUS_PORT:-8080}"
+    export GIN_MODE="$OCTOPUS_GIN_MODE"
+    export ALLOW_INSECURE_DEV="$OCTOPUS_ALLOW_INSECURE_DEV"
+    export CORS_ALLOWED_ORIGINS="$PUBLIC_ORIGIN"
+    export DB_DRIVER="postgres"
+    export DB_DSN="host=127.0.0.1 user=octopus password=$OCTOPUS_DB_PASSWORD dbname=octopus port=${POSTGRES_PORT:-54320} sslmode=disable TimeZone=Asia/Shanghai"
+    export OUTPUT_DIR="$DATA_ROOT/output"
+    export TEMPLATE_DIR="$WORKFLOW_HOST_DIR"
+    export ARCHIVE_DIR="$DATA_ROOT/archive"
+    export ARCHIVE_CLEANUP="${ARCHIVE_CLEANUP:-false}"
+    export DEFAULT_EXECUTOR="local"
+    export MINIWDL_PATH="$MINIWDL_PATH"
+    export MINIWDL_SLURM_PATH="${MINIWDL_SLURM_PATH:-$MINIWDL_PATH}"
+    export MINIWDL_LSF_PATH="${MINIWDL_LSF_PATH:-$MINIWDL_PATH}"
+    export MINIWDL__DOCKER_SWARM__AUTO_INIT="true"
+    export STORAGE_PROVIDER="local"
+    export STORAGE_LOCAL_DIR="$DATA_ROOT/uploads"
+    export UPLOAD_MAX_SIZE_MB="${UPLOAD_MAX_SIZE_MB:-20480}"
+    export DATA_RETENTION_DAYS="${DATA_RETENTION_DAYS:-0}"
+    export SEPIIDA_ENABLED="true"
+    export SEPIIDA_URL="http://127.0.0.1:${SEPIIDA_PORT:-9090}"
+    export SEPIIDA_QUERY_KEY="$SEPIIDA_QUERY_KEY"
+    export AI_ASSISTANCE_BASE_URL="http://127.0.0.1:${SEPILENS_PORT:-18081}"
+    export AI_ASSISTANCE_TOKEN="$AI_ASSISTANCE_TOKEN"
+    export AI_ASSISTANCE_MASTER_KEY="$AI_ASSISTANCE_MASTER_KEY"
+    export IGV_HG19_FASTA_PATH="${IGV_HG19_FASTA_PATH:-}"
+    export IGV_REFERENCE_PROXY_BASE_URL="${IGV_REFERENCE_PROXY_BASE_URL:-}"
+    export PARQUET_ENABLED="${PARQUET_ENABLED:-true}"
+    export JWT_SECRET="$OCTOPUS_JWT_SECRET"
+    export JWT_COOKIE_SECURE="$OCTOPUS_COOKIE_SECURE"
+    export CREATE_DEFAULT_ADMIN="true"
+    export DEFAULT_ADMIN_EMAIL="${DEFAULT_ADMIN_EMAIL:-admin@schemabio.local}"
+    export DEFAULT_ADMIN_PASSWORD="$DEFAULT_ADMIN_PASSWORD"
+    export EXTERNAL_AUTH_ENABLED="false"
+    export OVERLAY_ENABLED="false"
+  else
+    export SEPIIDA_SERVER_URL="http://127.0.0.1:${SEPIIDA_PORT:-9090}"
+    export SEPIIDA_AGENT_KEY="$SEPIIDA_AGENT_KEY"
+    export SEPIIDA_AGENT_ID="self-hosted-agent"
+    export SEPIIDA_AGENT_INTERVAL="60"
+    export SEPIIDA_WATCH_DIRS="$DATA_ROOT/output"
+    export SEPIIDA_ARCHIVE_URL=""
   fi
-  attempt=$((attempt + 1))
-  sleep 2
-done
-echo "timed out waiting for $url" >&2
-exit 1
-EOF
-  chmod 0755 "$INSTALL_ROOT/bin/wait-for-http"
+  exec nohup "$INSTALL_ROOT/bin/$service"
 }
 
-write_systemd_units() {
-  cat > /etc/systemd/system/schemabio-octopus.service <<EOF
-[Unit]
-Description=SchemaBio Octopus backend
-Wants=network-online.target docker.service
-After=network-online.target docker.service
+start_host_service() {
+  local service="$1" pid started
+  local log="$GENERATED_DIR/$service.log"
+  if running_pid "$service" >/dev/null; then
+    return
+  fi
+  (run_host_service "$service") 9>&- </dev/null >>"$log" 2>&1 &
+  pid=$!
+  sleep 1
+  if ! started="$(process_start_time "$pid")"; then
+    rm -f "$GENERATED_DIR/$service.pid"
+    printf 'Error: %s exited during startup. See %s\n' "$service" "$log" >&2
+    return 1
+  fi
+  if ! printf '%s %s\n' "$pid" "$started" >"$GENERATED_DIR/$service.pid"; then
+    kill -TERM "$pid" 2>/dev/null || true
+    return 1
+  fi
+}
 
-[Service]
-Type=simple
-User=schemabio
-Group=schemabio
-SupplementaryGroups=docker
-WorkingDirectory=$DATA_ROOT/output
-EnvironmentFile=/etc/schemabio/octopus.env
-ExecStartPre=$INSTALL_ROOT/bin/wait-for-http http://127.0.0.1:${SEPIIDA_PORT:-9090}/health
-ExecStart=$INSTALL_ROOT/bin/octopus
-Restart=on-failure
-RestartSec=5s
-NoNewPrivileges=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  cat > /etc/systemd/system/schemabio-sepiida-agent.service <<EOF
-[Unit]
-Description=SchemaBio Sepiida Agent
-Wants=network-online.target docker.service
-After=network-online.target docker.service
-
-[Service]
-Type=simple
-User=schemabio
-Group=schemabio
-SupplementaryGroups=docker
-WorkingDirectory=$DATA_ROOT/output
-EnvironmentFile=/etc/schemabio/sepiida-agent.env
-ExecStartPre=$INSTALL_ROOT/bin/wait-for-http http://127.0.0.1:${SEPIIDA_PORT:-9090}/health
-ExecStart=$INSTALL_ROOT/bin/sepiida-agent
-Restart=on-failure
-RestartSec=5s
-NoNewPrivileges=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  chmod 644 /etc/systemd/system/schemabio-octopus.service /etc/systemd/system/schemabio-sepiida-agent.service
+stop_host_service() {
+  local service="$1" pid attempt
+  if pid="$(running_pid "$service")"; then
+    kill -TERM "$pid" 2>/dev/null || true
+    for ((attempt = 0; attempt < 100; attempt++)); do
+      if ! running_pid "$service" >/dev/null; then
+        break
+      fi
+      sleep 0.1
+    done
+    if running_pid "$service" >/dev/null; then
+      die "$service (PID $pid) did not stop after SIGTERM"
+    fi
+  fi
+  rm -f "$GENERATED_DIR/$service.pid"
 }
 
 install_host_services() {
-  require_root
-  require_command systemctl
-  require_command useradd
-  require_command usermod
-  require_command runuser
-  require_command getent
-  require_command curl
-
   local octopus_binary="${OCTOPUS_BINARY:-$GENERATED_DIR/octopus}"
   local agent_binary="${SEPIIDA_AGENT_BINARY:-$(command -v sepiida-agent || true)}"
   [ -x "$octopus_binary" ] || die "install an Octopus Release binary at $octopus_binary or set OCTOPUS_BINARY"
   [ -n "$agent_binary" ] && [ -x "$agent_binary" ] || die "install sepiida-agent on PATH or set SEPIIDA_AGENT_BINARY"
+  docker info >/dev/null || die "the current user must have access to the host Docker engine"
 
-  if ! id schemabio >/dev/null 2>&1; then
-    useradd --system --user-group --create-home --shell /usr/sbin/nologin schemabio
-  fi
-  getent group docker >/dev/null || die "Docker group does not exist"
-  usermod -aG docker schemabio
   mkdir -p "$INSTALL_ROOT/bin" "$DATA_ROOT/output" "$DATA_ROOT/archive" "$DATA_ROOT/uploads"
+  local directory
+  for directory in "$INSTALL_ROOT/bin" "$DATA_ROOT/output" "$DATA_ROOT/archive" "$DATA_ROOT/uploads"; do
+    [ -w "$directory" ] && [ -x "$directory" ] || die "the current user needs write and search access to $directory"
+  done
 
+  stop_host_service sepiida-agent
+  stop_host_service octopus
   if [[ ! "$octopus_binary" -ef "$INSTALL_ROOT/bin/octopus" ]]; then
     install -m 0755 "$octopus_binary" "$INSTALL_ROOT/bin/octopus"
   fi
   if [[ ! "$agent_binary" -ef "$INSTALL_ROOT/bin/sepiida-agent" ]]; then
     install -m 0755 "$agent_binary" "$INSTALL_ROOT/bin/sepiida-agent"
   fi
-  write_health_waiter
-  chown -R schemabio:schemabio "$INSTALL_ROOT" "$DATA_ROOT"
+}
 
-  runuser -u schemabio -- "$MINIWDL_PATH" --version >/dev/null
-  runuser -u schemabio -- docker info >/dev/null
-  write_host_environment
-  write_systemd_units
-  systemctl daemon-reload
-  systemctl enable schemabio-octopus.service schemabio-sepiida-agent.service >/dev/null
+start_deployment() {
+  local service
+  for service in octopus sepiida-agent; do
+    [ -x "$INSTALL_ROOT/bin/$service" ] || die "missing $service; run bash ./deploy.sh install"
+  done
+  compose up -d --no-build
+  wait_for_sepiida
+  local octopus_was_running=false
+  if running_pid octopus >/dev/null; then
+    octopus_was_running=true
+  fi
+  start_host_service octopus || return 1
+  if ! start_host_service sepiida-agent; then
+    if [ "$octopus_was_running" = false ]; then
+      stop_host_service octopus
+    fi
+    return 1
+  fi
+}
+
+show_host_status() {
+  local service pid result=0
+  for service in octopus sepiida-agent; do
+    if pid="$(running_pid "$service")"; then
+      printf '%s running (PID %s)\n' "$service" "$pid"
+    else
+      printf '%s stopped\n' "$service"
+      result=1
+    fi
+  done
+  return "$result"
 }
 
 show_credentials() {
@@ -320,6 +333,15 @@ show_credentials() {
 
 command_name="${1:-}"
 case "$command_name" in
+  init|check|install|up|down|status)
+    require_command flock
+    mkdir -p "$GENERATED_DIR"
+    exec 9>"$GENERATED_DIR/deploy.lock"
+    flock 9
+    ;;
+esac
+
+case "$command_name" in
   init)
     init_config
     ;;
@@ -327,30 +349,24 @@ case "$command_name" in
     init_config
     check_config
     ;;
-  install)
+  install|up)
     init_config
     check_config
-    install_host_services
-    compose up -d --no-build
-    systemctl restart schemabio-octopus.service schemabio-sepiida-agent.service
-    ;;
-  up)
-    require_root
-    init_config
-    check_config
-    compose up -d --no-build
-    systemctl start schemabio-octopus.service schemabio-sepiida-agent.service
+    if [ "$command_name" = install ]; then
+      install_host_services
+    fi
+    start_deployment
     ;;
   down)
-    require_root
-    systemctl stop schemabio-sepiida-agent.service schemabio-octopus.service
     load_env
+    stop_host_service sepiida-agent
+    stop_host_service octopus
     compose down
     ;;
   status)
     load_env
     compose ps
-    systemctl --no-pager status schemabio-octopus.service schemabio-sepiida-agent.service
+    show_host_status
     ;;
   credentials)
     show_credentials

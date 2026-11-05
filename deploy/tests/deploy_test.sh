@@ -30,12 +30,6 @@ admin_password="$(sed -n 's/^DEFAULT_ADMIN_PASSWORD=//p' "$TEST_DIR/.generated/r
 
 if [ "$(uname -s)" = "Linux" ]; then
   [ "$(stat -c %a "$TEST_DIR/.generated/runtime.env")" = "600" ]
-  if [ "${EUID:-$(id -u)}" -eq 0 ]; then
-    chown 1000:1000 "$TEST_DIR/.env"
-    (cd "$TEST_DIR" && bash ./deploy.sh init >/dev/null)
-    [ "$(stat -c '%u:%g' "$TEST_DIR/.generated/runtime.env")" = "1000:1000" ]
-    cmp "$TEST_DIR/first-runtime.env" "$TEST_DIR/.generated/runtime.env"
-  fi
 fi
 
 while IFS='=' read -r name value; do

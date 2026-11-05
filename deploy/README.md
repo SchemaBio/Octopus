@@ -1,6 +1,6 @@
 # SchemaBio self-hosted deployment
 
-Octopus and Sepiida Agent run as native Linux executables under systemd. Octopus
+Octopus and Sepiida Agent run as background processes owned by the deploying user. Octopus
 executes MiniWDL directly on the host. Docker Compose runs YiJian, Sepiida
 Server, SepiLens and PostgreSQL 18.
 
@@ -34,28 +34,36 @@ bash ./deploy.sh init
 )
 ```
 
-Set `DATA_ROOT` and `WORKFLOW_HOST_DIR` in `.env`, then run:
+Set `WORKFLOW_HOST_DIR` in `.env` and optionally set `DATA_ROOT`, then run:
 
 ```sh
 bash ./deploy.sh check
-sudo bash ./deploy.sh install
+bash ./deploy.sh install
 bash ./deploy.sh credentials
 ```
 
-The installer uses the downloaded Octopus binary and an existing Sepiida Agent.
-If sudo cannot find MiniWDL or Sepiida Agent on PATH, set their absolute paths
-in `.env`. The installer checks MiniWDL and Docker access as the systemd service
-user. That user needs access to the workflow, reference data and output paths.
-Docker group membership grants control over the host Docker engine.
+The deploying user needs access to Docker Engine, the workflow and reference
+files, and write access to the data and installation directories. The script
+uses curl and flock (from util-linux). Set absolute paths in `.env` if MiniWDL
+or Sepiida Agent is outside your PATH. Application data defaults to `deploy/data`
+and installed binaries to `deploy/.generated/host/bin`. Process IDs and logs are
+stored in `deploy/.generated`.
+
+For an existing systemd deployment, stop and disable
+`schemabio-octopus.service` and `schemabio-sepiida-agent.service` using the
+original administrator account before switching. Keep the existing `DATA_ROOT`
+and make it writable by the deploying user to reuse the data. If the old
+`INSTALL_ROOT` is protected, clear it in `.env` to use the new local default.
 
 For Slurm or LSF, install the relevant MiniWDL plugin and scheduler client on
 the host, prepare `conf/slurm.cfg` or `conf/lsf.cfg` and configure the service
-user's scheduler authentication and shared paths. Set `MINIWDL_SLURM_PATH` or
+deploying user's scheduler authentication and shared paths. Set `MINIWDL_SLURM_PATH` or
 `MINIWDL_LSF_PATH` only if the scheduler uses a separate MiniWDL installation.
 
 Keep `.env` and `.generated/runtime.env` with your deployment backups. Existing
 PostgreSQL 16 data requires a migration before upgrading to 18. Use
-`sudo bash ./deploy.sh up|down` or `bash ./deploy.sh status` to manage services.
+the `up`, `down`, and `status` subcommands to manage the deployment. Run
+`bash ./deploy.sh up` after a host reboot or to relaunch an exited process.
 Set `YIJIAN_DEFAULT_LOCALE` in `.env` and recreate YiJian to change its default
 interface language.
 
