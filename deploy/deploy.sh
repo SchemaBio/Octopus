@@ -130,16 +130,24 @@ check_config() {
   export YIJIAN_BROWSER_API_URL
 
   resolve_paths
+  DEFAULT_EXECUTOR="${DEFAULT_EXECUTOR:-local}"
+  local executor_binary executor_path_var
+  case "$DEFAULT_EXECUTOR" in
+    local) executor_path_var=MINIWDL_PATH; executor_binary="$MINIWDL_PATH" ;;
+    slurm) executor_path_var=MINIWDL_SLURM_PATH; executor_binary="${MINIWDL_SLURM_PATH:-$MINIWDL_PATH}" ;;
+    lsf) executor_path_var=MINIWDL_LSF_PATH; executor_binary="${MINIWDL_LSF_PATH:-$MINIWDL_PATH}" ;;
+    *) die "DEFAULT_EXECUTOR must be local, slurm, or lsf" ;;
+  esac
   [[ "$INSTALL_ROOT" = /* ]] || die "INSTALL_ROOT must be an absolute path"
   [[ "$DATA_ROOT" = /* ]] || die "DATA_ROOT must be an absolute path"
-  [[ "$MINIWDL_PATH" = /* ]] || die "MINIWDL_PATH must resolve to an absolute path"
   [ -d "$WORKFLOW_HOST_DIR" ] || die "WORKFLOW_HOST_DIR does not exist"
-  [ -f "$WORKFLOW_HOST_DIR/conf/local.cfg" ] || die "WORKFLOW_HOST_DIR/conf/local.cfg is required"
-  [ -n "$MINIWDL_PATH" ] || die "miniwdl was not found; set MINIWDL_PATH"
-  [ -x "$MINIWDL_PATH" ] || die "MINIWDL_PATH is not executable"
+  [ -r "$WORKFLOW_HOST_DIR/conf/$DEFAULT_EXECUTOR.cfg" ] && [ -f "$WORKFLOW_HOST_DIR/conf/$DEFAULT_EXECUTOR.cfg" ] ||
+    die "WORKFLOW_HOST_DIR/conf/$DEFAULT_EXECUTOR.cfg must be a readable file"
+  [[ "$executor_binary" = /* ]] || die "$executor_path_var must resolve to an absolute path"
+  [ -x "$executor_binary" ] || die "$executor_path_var is not executable"
   [ -f "$RUNTIME_ENV" ] || die "runtime secrets are missing; run bash ./deploy.sh init"
   [ "${#OCTOPUS_JWT_SECRET}" -ge 32 ] || die "generated OCTOPUS_JWT_SECRET is too short"
-  "$MINIWDL_PATH" --version >/dev/null
+  "$executor_binary" --version >/dev/null
 
   local port
   for port in "${POSTGRES_PORT:-54320}" "${OCTOPUS_PORT:-8080}" "${SEPIIDA_PORT:-9090}" "${SEPILENS_PORT:-18081}" "${YIJIAN_PORT:-3000}"; do
@@ -215,7 +223,7 @@ run_host_service() {
     export WORKFLOW_REFERENCE_DIR="${WORKFLOW_REFERENCE_DIR:-$(dirname "$WORKFLOW_HOST_DIR")/database}"
     export ARCHIVE_DIR="$DATA_ROOT/archive"
     export ARCHIVE_CLEANUP="${ARCHIVE_CLEANUP:-false}"
-    export DEFAULT_EXECUTOR="local"
+    export DEFAULT_EXECUTOR
     export MINIWDL_PATH="$MINIWDL_PATH"
     export MINIWDL_SLURM_PATH="${MINIWDL_SLURM_PATH:-$MINIWDL_PATH}"
     export MINIWDL_LSF_PATH="${MINIWDL_LSF_PATH:-$MINIWDL_PATH}"

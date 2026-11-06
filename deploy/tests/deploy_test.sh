@@ -49,6 +49,33 @@ sed -i \
 [ "$(cat "$TEST_DIR/browser-api-url")" = "http://localhost:8080/api" ]
 [ "$(cat "$TEST_DIR/.generated/miniwdl-docker/config.json")" = '{}' ]
 
+printf 'DEFAULT_EXECUTOR=slurm\n' >>"$TEST_DIR/.env"
+if (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >check.log 2>&1); then
+  echo "missing Slurm config unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq 'conf/slurm.cfg must be a readable file' "$TEST_DIR/check.log"
+touch "$TEST_DIR/workflows/conf/slurm.cfg"
+(cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null)
+
+printf 'MINIWDL_SLURM_PATH=%s\n' "$TEST_DIR/bin/miniwdl-slurm" >>"$TEST_DIR/.env"
+if (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >check.log 2>&1); then
+  echo "missing Slurm executable unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq 'MINIWDL_SLURM_PATH is not executable' "$TEST_DIR/check.log"
+cp "$TEST_DIR/bin/miniwdl" "$TEST_DIR/bin/miniwdl-slurm"
+chmod +x "$TEST_DIR/bin/miniwdl-slurm"
+(cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null)
+
+sed -i 's/^DEFAULT_EXECUTOR=.*/DEFAULT_EXECUTOR=invalid/' "$TEST_DIR/.env"
+if (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >check.log 2>&1); then
+  echo "invalid executor unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq 'DEFAULT_EXECUTOR must be local, slurm, or lsf' "$TEST_DIR/check.log"
+sed -i '/^DEFAULT_EXECUTOR=/d; /^MINIWDL_SLURM_PATH=/d' "$TEST_DIR/.env"
+
 mkdir "$TEST_DIR/private-docker"
 printf 'MINIWDL_DOCKER_CONFIG=%s\n' "$TEST_DIR/private-docker" >>"$TEST_DIR/.env"
 if (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null 2>&1); then

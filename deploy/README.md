@@ -7,7 +7,8 @@ Server, SepiLens and PostgreSQL 18.
 ## Install
 
 Prepare Docker Engine and Compose v2, Bash, OpenSSL, curl, MiniWDL and Sepiida
-Agent on the Linux host. The workflow checkout must contain `conf/local.cfg`.
+Agent on the Linux host. The workflow checkout must contain the config for
+the selected executor, which defaults to `conf/local.cfg`.
 Choose a version from [Octopus Releases](https://github.com/SchemaBio/Octopus/releases).
 Use the current deployment files for local HTTP support.
 
@@ -61,10 +62,14 @@ original administrator account before switching. Keep the existing `DATA_ROOT`
 and make it writable by the deploying user to reuse the data. If the old
 `INSTALL_ROOT` is protected, clear it in `.env` to use the new local default.
 
-For Slurm or LSF, install the relevant MiniWDL plugin and scheduler client on
-the host, prepare `conf/slurm.cfg` or `conf/lsf.cfg` and configure the service
+Set `DEFAULT_EXECUTOR=slurm` or `DEFAULT_EXECUTOR=lsf` in `.env` to select a
+scheduler for new tasks. An unset or empty value selects `local`. For Slurm or
+LSF, install the relevant MiniWDL plugin and scheduler client on the host,
+prepare `conf/slurm.cfg` or `conf/lsf.cfg` and configure the service
 deploying user's scheduler authentication and shared paths. Set `MINIWDL_SLURM_PATH` or
 `MINIWDL_LSF_PATH` only if the scheduler uses a separate MiniWDL installation.
+Run `bash ./deploy.sh check` to validate the selection, then restart the host
+processes to apply it. Existing tasks keep their saved executor and config path.
 
 Keep `.env` and `.generated/runtime.env` with your deployment backups. Existing
 PostgreSQL 16 data requires a migration before upgrading to 18. Use
