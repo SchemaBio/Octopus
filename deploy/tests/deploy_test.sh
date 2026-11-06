@@ -44,7 +44,21 @@ sed -i \
   -e "s|^WORKFLOW_HOST_DIR=.*|WORKFLOW_HOST_DIR=$TEST_DIR/workflows|" \
   -e "s|^MINIWDL_PATH=.*|MINIWDL_PATH=$TEST_DIR/bin/miniwdl|" \
   "$TEST_DIR/.env"
-(cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null)
+mkdir "$TEST_DIR/database"
+for assembly in GRCh37 GRCh38; do
+  reference="$TEST_DIR/database/Homo_sapiens.$assembly.dna.primary_assembly.fa"
+  printf '>1\nA\n' >"$reference"
+  printf '1\t1\t3\t1\t2\n' >"$reference.fai"
+done
+(cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null 2>check.log)
+! grep -Fq 'reference FASTA or FAI is unavailable' "$TEST_DIR/check.log"
+printf 'IGV_HG38_FASTA_PATH=%s\n' "$TEST_DIR/database/missing.fa" >>"$TEST_DIR/.env"
+if (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >check.log 2>&1); then
+  echo "missing IGV override unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq 'IGV_HG38_FASTA_PATH must point to' "$TEST_DIR/check.log"
+sed -i '/^IGV_HG38_FASTA_PATH=/d' "$TEST_DIR/.env"
 
 [ "$(cat "$TEST_DIR/browser-api-url")" = "http://localhost:8080/api" ]
 [ "$(cat "$TEST_DIR/.generated/miniwdl-docker/config.json")" = '{}' ]

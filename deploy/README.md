@@ -41,6 +41,10 @@ default. If the reference files live elsewhere, set `WORKFLOW_REFERENCE_DIR`
 to their absolute directory. This also resolves saved catalog defaults when
 an older task starts or retries.
 
+IGV uses the GRCh37 (hg19) and GRCh38 (hg38) primary assembly FASTAs in that
+directory, each with an adjacent `.fa.fai` index. Set `IGV_HG19_FASTA_PATH`
+or `IGV_HG38_FASTA_PATH` if you use different FASTA filenames or paths.
+
 Then run:
 
 ```sh

@@ -105,6 +105,21 @@ resolve_paths() {
   export WORKFLOW_HOST_DIR INSTALL_ROOT DATA_ROOT MINIWDL_PATH
 }
 
+resolve_igv_reference() {
+  local variable="$1" assembly="$2"
+  local override="${!variable:-}"
+  local fasta="${override:-$WORKFLOW_REFERENCE_DIR/Homo_sapiens.$assembly.dna.primary_assembly.fa}"
+  if [[ "$fasta" = /* ]] && [ -f "$fasta" ] && [ -r "$fasta" ] && [ -s "$fasta" ] &&
+     [ -f "$fasta.fai" ] && [ -r "$fasta.fai" ] && [ -s "$fasta.fai" ]; then
+    printf -v "$variable" '%s' "$fasta"
+  elif [ -n "$override" ]; then
+    die "$variable must point to an absolute, readable FASTA with an adjacent .fai index"
+  else
+    printf 'Warning: IGV %s reference FASTA or FAI is unavailable at %s\n' "$assembly" "$fasta" >&2
+    printf -v "$variable" '%s' ""
+  fi
+}
+
 check_config() {
   require_command docker
   require_command openssl
@@ -141,6 +156,9 @@ check_config() {
   [[ "$INSTALL_ROOT" = /* ]] || die "INSTALL_ROOT must be an absolute path"
   [[ "$DATA_ROOT" = /* ]] || die "DATA_ROOT must be an absolute path"
   [ -d "$WORKFLOW_HOST_DIR" ] || die "WORKFLOW_HOST_DIR does not exist"
+  WORKFLOW_REFERENCE_DIR="${WORKFLOW_REFERENCE_DIR:-$(dirname "$WORKFLOW_HOST_DIR")/database}"
+  resolve_igv_reference IGV_HG19_FASTA_PATH GRCh37
+  resolve_igv_reference IGV_HG38_FASTA_PATH GRCh38
   [ -r "$WORKFLOW_HOST_DIR/conf/$DEFAULT_EXECUTOR.cfg" ] && [ -f "$WORKFLOW_HOST_DIR/conf/$DEFAULT_EXECUTOR.cfg" ] ||
     die "WORKFLOW_HOST_DIR/conf/$DEFAULT_EXECUTOR.cfg must be a readable file"
   [[ "$executor_binary" = /* ]] || die "$executor_path_var must resolve to an absolute path"
@@ -227,7 +245,7 @@ run_host_service() {
     export DB_DSN="host=127.0.0.1 user=octopus password=$OCTOPUS_DB_PASSWORD dbname=octopus port=${POSTGRES_PORT:-54320} sslmode=disable TimeZone=Asia/Shanghai"
     export OUTPUT_DIR="$DATA_ROOT/output"
     export TEMPLATE_DIR="$WORKFLOW_HOST_DIR"
-    export WORKFLOW_REFERENCE_DIR="${WORKFLOW_REFERENCE_DIR:-$(dirname "$WORKFLOW_HOST_DIR")/database}"
+    export WORKFLOW_REFERENCE_DIR
     export ARCHIVE_DIR="$DATA_ROOT/archive"
     export ARCHIVE_CLEANUP="${ARCHIVE_CLEANUP:-false}"
     export DEFAULT_EXECUTOR
@@ -246,7 +264,7 @@ run_host_service() {
     export AI_ASSISTANCE_BASE_URL="http://127.0.0.1:${SEPILENS_PORT:-18081}"
     export AI_ASSISTANCE_TOKEN="$AI_ASSISTANCE_TOKEN"
     export AI_ASSISTANCE_MASTER_KEY="$AI_ASSISTANCE_MASTER_KEY"
-    export IGV_HG19_FASTA_PATH="${IGV_HG19_FASTA_PATH:-}"
+    export IGV_HG19_FASTA_PATH IGV_HG38_FASTA_PATH
     export IGV_REFERENCE_PROXY_BASE_URL="${IGV_REFERENCE_PROXY_BASE_URL:-}"
     export PARQUET_ENABLED="${PARQUET_ENABLED:-true}"
     export PARQUET_CACHE_DIR
