@@ -116,6 +116,25 @@ func (h *ResultHandler) ActivateAssessmentContext(c *gin.Context) {
 	Success(c, value)
 }
 
+func (h *ResultHandler) PreviewMTACMG(c *gin.Context) {
+	if _, ok := requireTaskAccess(c, h.taskRepo, c.Param("id")); !ok {
+		return
+	}
+	var request struct {
+		Evidence []service.ACMGEvidenceEntry `json:"evidence"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		ErrorBadRequest(c, "invalid mtDNA ACMG evidence")
+		return
+	}
+	assessment, err := service.CalculateMTACMG(request.Evidence)
+	if err != nil {
+		ErrorBadRequest(c, err.Error())
+		return
+	}
+	Success(c, assessment)
+}
+
 func (h *ResultHandler) GetBrowserDataset(c *gin.Context) {
 	task, ok := requireTaskAccess(c, h.taskRepo, c.Param("id"))
 	if !ok {

@@ -36,10 +36,11 @@ var mtACMGStrengths = map[string][]string{
 type mtACMGAssessment struct {
 	Profile        string              `json:"profile"`
 	Classification string              `json:"classification"`
+	Basis          string              `json:"basis"`
 	Evidence       []ACMGEvidenceEntry `json:"evidence"`
 }
 
-func calculateMTACMG(raw interface{}) (*mtACMGAssessment, error) {
+func CalculateMTACMG(raw interface{}) (*mtACMGAssessment, error) {
 	data, err := json.Marshal(raw)
 	if err != nil {
 		return nil, fmt.Errorf("invalid mtDNA ACMG evidence")
@@ -73,9 +74,11 @@ func calculateMTACMG(raw interface{}) (*mtACMGAssessment, error) {
 	vs, s, m, p := pathogenic["very_strong"], pathogenic["strong"], pathogenic["moderate"], pathogenic["supporting"]
 	bs, bp := benign["strong"], benign["supporting"]
 	classification := "VUS"
+	basis := "insufficient"
 	switch {
 	case len(pathogenic) > 0 && len(benign) > 0:
 		// Discordant directions require review.
+		basis = "conflicting"
 	case seen["BA1"] || bs >= 2:
 		classification = "Benign"
 	case (bs >= 1 && bp >= 1) || bp >= 2:
@@ -87,5 +90,8 @@ func calculateMTACMG(raw interface{}) (*mtACMGAssessment, error) {
 		m >= 3 || (m >= 2 && p >= 2) || (m >= 1 && p >= 4):
 		classification = "Likely_Pathogenic"
 	}
-	return &mtACMGAssessment{Profile: "clingen-mtdna-v1", Classification: classification, Evidence: evidence}, nil
+	if classification != "VUS" {
+		basis = "combination"
+	}
+	return &mtACMGAssessment{Profile: "clingen-mtdna-v1", Classification: classification, Basis: basis, Evidence: evidence}, nil
 }

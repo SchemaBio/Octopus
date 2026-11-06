@@ -189,7 +189,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			if table != "mt" {
 				return nil, nil, fmt.Errorf("mtDNA ACMG assessment is only valid for mitochondrial rows")
 			}
-			assessment, err := calculateMTACMG(value)
+			assessment, err := CalculateMTACMG(value)
 			if err != nil {
 				return nil, nil, err
 			}

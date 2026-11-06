@@ -21,7 +21,7 @@ func TestCalculateMTACMG(t *testing.T) {
 		{"duplicate", "", []ACMGEvidenceEntry{evidence("PM2", "supporting"), evidence("PM2", "supporting")}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			result, err := calculateMTACMG(test.in)
+			result, err := CalculateMTACMG(test.in)
 			if test.want == "" {
 				if err == nil {
 					t.Fatal("invalid evidence accepted")
