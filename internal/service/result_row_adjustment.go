@@ -173,7 +173,7 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 	if len(request.Adjustments) == 0 {
 		return nil, nil, fmt.Errorf("at least one adjustment is required")
 	}
-	allowed := map[string]bool{"acmgAIResult": true, "svcv4AIResult": true, "svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "focused": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true, "adoptedACMG": true, "adoptedCNV": true, "cnvAIResult": true}
+	allowed := map[string]bool{"acmgAIResult": true, "svcv4AIResult": true, "svcv4Assessment": true, "activeAcmgVersion": true, "assessmentVersion": true, "resetAcmg": true, "pinned": true, "reviewed": true, "focused": true, "interpretation": true, "acmgEvidence": true, "acmgOverride": true, "acmgOverrideReason": true, "cnvAssessment": true, "adoptedACMG": true, "adoptedCNV": true, "cnvAIResult": true, "mtAssessment": true}
 	if _, has := request.Adjustments["cnvAssessment"]; has && strings.TrimSpace(request.Reason) == "" {
 		return nil, nil, fmt.Errorf("CNV evidence changes require an adjustment reason")
 	}
@@ -185,6 +185,15 @@ func (s *ResultService) SaveParquetRowAdjustment(ctx context.Context, task *mode
 			return nil, nil, fmt.Errorf("unsupported adjustment field")
 		}
 		switch key {
+		case "mtAssessment":
+			if table != "mt" {
+				return nil, nil, fmt.Errorf("mtDNA ACMG assessment is only valid for mitochondrial rows")
+			}
+			assessment, err := calculateMTACMG(value)
+			if err != nil {
+				return nil, nil, err
+			}
+			request.Adjustments[key] = assessment
 		case "svcv4AIResult", "acmgAIResult":
 			if table != "snv-indel" {
 				return nil, nil, fmt.Errorf("SVC AI result is only valid for SNP/InDel")

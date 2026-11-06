@@ -231,6 +231,10 @@ func (s *ResultService) historyDatasetCache(ctx context.Context, d *model.Result
 }
 
 func historyEffectiveClassification(tx *gorm.DB, d *model.ResultDataset, rowID string, payload map[string]interface{}) (string, error) {
+	if d.Table == "mt" {
+		assessment, _ := payload["mtAssessment"].(map[string]interface{})
+		return stringAdjustment(assessment, "classification"), nil
+	}
 	if snap, ok := payload["adoptedACMG"].(map[string]interface{}); ok {
 		if snap["automatic"] != true {
 			return stringAdjustment(snap, "classification"), nil
