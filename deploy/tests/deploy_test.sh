@@ -47,6 +47,18 @@ sed -i \
 (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null)
 
 [ "$(cat "$TEST_DIR/browser-api-url")" = "http://localhost:8080/api" ]
+[ "$(cat "$TEST_DIR/.generated/miniwdl-docker/config.json")" = '{}' ]
+
+mkdir "$TEST_DIR/private-docker"
+printf 'MINIWDL_DOCKER_CONFIG=%s\n' "$TEST_DIR/private-docker" >>"$TEST_DIR/.env"
+if (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null 2>&1); then
+  echo "missing private Docker config unexpectedly passed" >&2
+  exit 1
+fi
+printf '{"credsStore":"test-helper"}\n' >"$TEST_DIR/private-docker/config.json"
+(cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null)
+[ "$(cat "$TEST_DIR/private-docker/config.json")" = '{"credsStore":"test-helper"}' ]
+sed -i '/^MINIWDL_DOCKER_CONFIG=/d' "$TEST_DIR/.env"
 
 sed -i 's|^PUBLIC_ORIGIN=.*|PUBLIC_ORIGIN=https://self-hosted.test|' "$TEST_DIR/.env"
 (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >/dev/null)

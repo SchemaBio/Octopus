@@ -34,7 +34,13 @@ bash ./deploy.sh init
 )
 ```
 
-Set `WORKFLOW_HOST_DIR` in `.env` and optionally set `DATA_ROOT`, then run:
+Set `WORKFLOW_HOST_DIR` in `.env` and optionally set `DATA_ROOT`. Host
+workflows use the `database` directory next to the workflow checkout by
+default. If the reference files live elsewhere, set `WORKFLOW_REFERENCE_DIR`
+to their absolute directory. This also resolves saved catalog defaults when
+an older task starts or retries.
+
+Then run:
 
 ```sh
 bash ./deploy.sh check
@@ -66,6 +72,15 @@ the `up`, `down`, and `status` subcommands to manage the deployment. Run
 `bash ./deploy.sh up` after a host reboot or to relaunch an exited process.
 Set `YIJIAN_DEFAULT_LOCALE` in `.env` and recreate YiJian to change its default
 interface language.
+
+MiniWDL defaults to the generated Docker config at
+`.generated/miniwdl-docker/config.json`, which uses anonymous registry access.
+For private workflow images, set `MINIWDL_DOCKER_CONFIG` in `.env` to an
+absolute directory containing a readable Docker `config.json`. Any credential
+helper in that config must work from the background Linux process. Compose
+continues to use the deploying user's Docker configuration. For an existing
+deployment, apply the updated script with `bash ./deploy.sh install` while no
+workflows are running so the host services pick up the new environment.
 
 ## COS Parquet and SVC engines
 

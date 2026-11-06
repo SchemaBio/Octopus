@@ -42,6 +42,7 @@ type DatabaseConfig struct {
 }
 
 type TaskConfig struct {
+	ReferenceDir   string // reference database directory for host execution
 	OutputDir      string // default output directory (UUID directories parent)
 	TemplateDir    string // WDL templates directory
 	ArchiveDir     string // archive directory for completed results
@@ -235,6 +236,7 @@ func Load() *Config {
 			DSN:    getEnv("DB_DSN", "host=localhost user=octopus password=octopus dbname=octopus port=5432 sslmode=disable TimeZone=Asia/Shanghai"),
 		},
 		Task: TaskConfig{
+			ReferenceDir:   getEnv("WORKFLOW_REFERENCE_DIR", ""),
 			OutputDir:      getEnv("OUTPUT_DIR", "/mnt/data/output"),
 			TemplateDir:    getEnv("TEMPLATE_DIR", "/home/ubuntu/schema-germline"),
 			ArchiveDir:     getEnv("ARCHIVE_DIR", "/mnt/data/archive"),

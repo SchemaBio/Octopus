@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -187,6 +188,28 @@ func InputsForGenome(shortName, genome string) (map[string]interface{}, error) {
 		}
 	}
 	return nil, fmt.Errorf("unsupported workflow template: %s", shortName)
+}
+
+// UseLocalReferenceDir relocates catalog defaults for host execution, including
+// defaults saved in older tasks. Paths supplied for custom resources are retained.
+func UseLocalReferenceDir(inputs map[string]interface{}, template, genome, referenceDir string) {
+	if referenceDir == "" {
+		return
+	}
+	defaults, err := InputsForGenome(template, genome)
+	if err != nil {
+		return
+	}
+	const catalogDir = "/mnt/data/database"
+	for key, value := range defaults {
+		defaultPath, ok := value.(string)
+		if !ok || inputs[key] != defaultPath {
+			continue
+		}
+		if defaultPath == catalogDir || strings.HasPrefix(defaultPath, catalogDir+"/") {
+			inputs[key] = filepath.Join(referenceDir, strings.TrimPrefix(defaultPath, catalogDir))
+		}
+	}
 }
 
 // IsSupported returns true if the template name is a known workflow.

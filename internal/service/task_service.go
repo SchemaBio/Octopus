@@ -1051,6 +1051,9 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 		if _, err := cvmAnalysisBEDInput(req.Template, inputs); err != nil {
 			return nil, err
 		}
+	} else {
+		genome, _ := inputs["reference_genome"].(string)
+		workflow.UseLocalReferenceDir(inputs, req.Template, genome, s.cfg.Task.ReferenceDir)
 	}
 	inputJSON, err := json.Marshal(inputs)
 	if err != nil {
@@ -1531,6 +1534,8 @@ func (s *TaskService) launchTask(task *model.Task) {
 		s.updateTaskError(task, fmt.Sprintf("Failed to prepare workflow inputs: %v", err))
 		return
 	}
+	genome, _ := executionInputs["reference_genome"].(string)
+	workflow.UseLocalReferenceDir(wdlInputs, task.Template, genome, s.cfg.Task.ReferenceDir)
 	encoded, err := json.Marshal(wdlInputs)
 	if err != nil {
 		s.updateTaskError(task, "Failed to encode workflow inputs")
@@ -2400,6 +2405,10 @@ func (s *TaskService) checkDataReady(task *model.Task) (ready bool, reason strin
 	}
 	if err := json.Unmarshal([]byte(task.InputJSON), &inputs); err != nil {
 		return false, err.Error()
+	}
+	if task.Executor != model.ExecutorCVM {
+		genome, _ := inputs["reference_genome"].(string)
+		workflow.UseLocalReferenceDir(inputs, task.Template, genome, s.cfg.Task.ReferenceDir)
 	}
 	if task.SampleIDRef != 0 && task.Template != "vcf2anno" && task.Template != "trio" {
 		if r1, ok := inputs["fastq_r1"].(string); !ok || strings.TrimSpace(r1) == "" {

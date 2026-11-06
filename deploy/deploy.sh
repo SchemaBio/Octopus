@@ -147,6 +147,17 @@ check_config() {
   done
 
   docker compose --env-file "$USER_ENV" --env-file "$RUNTIME_ENV" -f "$COMPOSE_FILE" config --quiet
+  if [ -z "${MINIWDL_DOCKER_CONFIG:-}" ]; then
+    MINIWDL_DOCKER_CONFIG="$GENERATED_DIR/miniwdl-docker"
+    mkdir -p "$MINIWDL_DOCKER_CONFIG"
+    # Docker SDK falls back to the user's config if this file is absent.
+    if [ ! -e "$MINIWDL_DOCKER_CONFIG/config.json" ]; then
+      printf '{}\n' >"$MINIWDL_DOCKER_CONFIG/config.json"
+    fi
+  fi
+  [[ "$MINIWDL_DOCKER_CONFIG" = /* ]] || die "MINIWDL_DOCKER_CONFIG must be an absolute directory"
+  local docker_config="$MINIWDL_DOCKER_CONFIG/config.json"
+  [ -f "$docker_config" ] && [ -r "$docker_config" ] || die "MINIWDL_DOCKER_CONFIG must contain a readable config.json"
   printf 'Self-hosted configuration is valid.\n'
 }
 
@@ -201,12 +212,14 @@ run_host_service() {
     export DB_DSN="host=127.0.0.1 user=octopus password=$OCTOPUS_DB_PASSWORD dbname=octopus port=${POSTGRES_PORT:-54320} sslmode=disable TimeZone=Asia/Shanghai"
     export OUTPUT_DIR="$DATA_ROOT/output"
     export TEMPLATE_DIR="$WORKFLOW_HOST_DIR"
+    export WORKFLOW_REFERENCE_DIR="${WORKFLOW_REFERENCE_DIR:-$(dirname "$WORKFLOW_HOST_DIR")/database}"
     export ARCHIVE_DIR="$DATA_ROOT/archive"
     export ARCHIVE_CLEANUP="${ARCHIVE_CLEANUP:-false}"
     export DEFAULT_EXECUTOR="local"
     export MINIWDL_PATH="$MINIWDL_PATH"
     export MINIWDL_SLURM_PATH="${MINIWDL_SLURM_PATH:-$MINIWDL_PATH}"
     export MINIWDL_LSF_PATH="${MINIWDL_LSF_PATH:-$MINIWDL_PATH}"
+    export DOCKER_CONFIG="$MINIWDL_DOCKER_CONFIG"
     export MINIWDL__DOCKER_SWARM__AUTO_INIT="true"
     export STORAGE_PROVIDER="local"
     export STORAGE_LOCAL_DIR="$DATA_ROOT/uploads"
