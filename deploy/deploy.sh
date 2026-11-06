@@ -155,6 +155,13 @@ check_config() {
   done
 
   docker compose --env-file "$USER_ENV" --env-file "$RUNTIME_ENV" -f "$COMPOSE_FILE" config --quiet
+  PARQUET_CACHE_DIR="${PARQUET_CACHE_DIR:-$DATA_ROOT/parquet-cache}"
+  if [ "${PARQUET_ENABLED:-true}" = true ]; then
+    [[ "$PARQUET_CACHE_DIR" = /* ]] || die "PARQUET_CACHE_DIR must be an absolute path"
+    mkdir -p "$PARQUET_CACHE_DIR" || die "could not create PARQUET_CACHE_DIR"
+    [ -w "$PARQUET_CACHE_DIR" ] && [ -x "$PARQUET_CACHE_DIR" ] ||
+      die "PARQUET_CACHE_DIR must be writable and searchable"
+  fi
   if [ -z "${MINIWDL_DOCKER_CONFIG:-}" ]; then
     MINIWDL_DOCKER_CONFIG="$GENERATED_DIR/miniwdl-docker"
     mkdir -p "$MINIWDL_DOCKER_CONFIG"
@@ -242,6 +249,7 @@ run_host_service() {
     export IGV_HG19_FASTA_PATH="${IGV_HG19_FASTA_PATH:-}"
     export IGV_REFERENCE_PROXY_BASE_URL="${IGV_REFERENCE_PROXY_BASE_URL:-}"
     export PARQUET_ENABLED="${PARQUET_ENABLED:-true}"
+    export PARQUET_CACHE_DIR
     export JWT_SECRET="$OCTOPUS_JWT_SECRET"
     export JWT_COOKIE_SECURE="$OCTOPUS_COOKIE_SECURE"
     export CREATE_DEFAULT_ADMIN="true"

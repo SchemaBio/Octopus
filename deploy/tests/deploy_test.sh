@@ -48,6 +48,7 @@ sed -i \
 
 [ "$(cat "$TEST_DIR/browser-api-url")" = "http://localhost:8080/api" ]
 [ "$(cat "$TEST_DIR/.generated/miniwdl-docker/config.json")" = '{}' ]
+[ -d "$TEST_DIR/data/parquet-cache" ]
 
 printf 'DEFAULT_EXECUTOR=slurm\n' >>"$TEST_DIR/.env"
 if (cd "$TEST_DIR" && PATH="$TEST_DIR/bin:$PATH" bash ./deploy.sh check >check.log 2>&1); then
