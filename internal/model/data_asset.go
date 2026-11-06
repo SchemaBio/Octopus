@@ -13,6 +13,7 @@ const (
 // DataAsset is the organization-scoped identity for one stored data file.
 // StorageKey is deliberately omitted from all browser response models.
 type DataAsset struct {
+	LocalImportPairID         *string         `json:"-" gorm:"size:36;index"`
 	ValidationStatus          string          `json:"validation_status" gorm:"size:32;not null;default:'pending'"`
 	ValidationCode            string          `json:"validation_code" gorm:"size:80;not null;default:''"`
 	ValidationSHA256          string          `json:"-" gorm:"size:64;not null;default:''"`
@@ -100,7 +101,7 @@ func DataAssetToResponse(asset *DataAsset) DataAssetResponse {
 
 func (DataAsset) TableName() string { return "data_assets" }
 
-// Each request registers one fully validated pair; the browser batches CSV rows.
+// Each request registers one FASTQ pair for background validation, or a VCF.
 type LocalDataImportRequest struct {
 	InternalID string `json:"internal_id" binding:"required,max=100"`
 	VCFPath    string `json:"vcf_path" binding:"omitempty,max=1000"`

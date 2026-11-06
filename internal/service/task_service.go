@@ -913,7 +913,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *model.TaskCreateReque
 			return nil, err
 		}
 		req.SampleID, req.InternalID = proband.UUID, proband.InternalID
-		sampleIDRef, sampleDataReady = proband.ID, true
+		sampleIDRef, sampleDataReady = proband.ID, len(trioAssets) == 6
 		directAssets = append(directAssets, trioAssets...)
 	} else if req.SampleID != "" {
 		sample, err := s.sampleRepo.FindScopedByUUID(req.SampleID, actor)
@@ -1372,6 +1372,9 @@ func (s *TaskService) RetryTask(ctx context.Context, id string, actor model.Over
 
 	if task.Executor == model.ExecutorCVM {
 		return s.enqueueCVM(ctx, id, actor)
+	}
+	if task.Template == "trio" && task.Status == model.TaskStatusWaitingData && s.supportsWaitingTrio() {
+		return s.StartTask(ctx, id, actor)
 	}
 
 	if task.Status != model.TaskStatusFailed &&
@@ -2323,6 +2326,13 @@ func (s *TaskService) checkWaitingDataTasks() {
 	}
 
 	for _, task := range tasks {
+		if task.Template == "trio" && task.Executor != model.ExecutorCVM && s.supportsWaitingTrio() {
+			actor := model.OverlayActor{UserID: task.CreatedBy, SharedInstance: true}
+			// Local start checks and binds all six FASTQs under the task lock.
+			// If data is still missing, the claim rolls back and the next poll retries.
+			_, _ = s.StartTask(context.Background(), task.UUID, actor)
+			continue
+		}
 		ready, _ := s.checkDataReady(&task)
 		if ready {
 			actor := model.OverlayActor{UserID: task.CreatedBy, OrgID: task.ExternalOrgID}
@@ -2992,6 +3002,10 @@ func buildCVMWDLInputs(template, genome string, taskInputs map[string]interface{
 			if value, ok := taskInputs[key]; ok {
 				inputs[key] = value
 			}
+		}
+		if taskInputs[trioWaitingForFASTQ] == true {
+			inputs[trioWaitingForFASTQ] = true
+			delete(inputs, "TrioWES.meta_info")
 		}
 	}
 

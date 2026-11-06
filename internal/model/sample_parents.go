@@ -42,6 +42,7 @@ type TrioMemberSnapshot struct {
 
 type TrioContext struct {
 	Ready            bool                 `json:"ready"`
+	WaitingForData   bool                 `json:"waiting_for_data,omitempty"`
 	Members          []TrioMemberSnapshot `json:"members"`
 	Errors           []string             `json:"errors"`
 	Warnings         []string             `json:"warnings"`

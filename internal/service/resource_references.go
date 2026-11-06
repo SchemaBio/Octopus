@@ -22,12 +22,12 @@ func (e *ResourceInUseError) Error() string {
 }
 
 func lockTaskAssets(tx *gorm.DB, links []model.TaskDataAsset) error {
-	ids := map[uint]bool{}
+	trioByID := map[uint]bool{}
 	for _, l := range links {
-		ids[l.AssetID] = true
+		trioByID[l.AssetID] = trioByID[l.AssetID] || l.InputRole == model.TaskAssetRoleTrioRead1 || l.InputRole == model.TaskAssetRoleTrioRead2
 	}
-	ordered := make([]int, 0, len(ids))
-	for id := range ids {
+	ordered := make([]int, 0, len(trioByID))
+	for id := range trioByID {
 		ordered = append(ordered, int(id))
 	}
 	sort.Ints(ordered)
@@ -38,6 +38,9 @@ func lockTaskAssets(tx *gorm.DB, links []model.TaskDataAsset) error {
 		}
 		if a.ReadType == model.ReadTypeVCF && (a.Status != model.FileStatusCompleted || (a.ExpiresAt != nil && !a.ExpiresAt.After(time.Now()))) {
 			return errors.New("VCF data asset is not ready or expired")
+		}
+		if trioByID[uint(id)] && (a.Status != model.FileStatusCompleted || (a.ExpiresAt != nil && !a.ExpiresAt.After(time.Now()))) {
+			return errors.New("trio FASTQ data asset is not ready or expired")
 		}
 		if a.Status == model.FileStatusDeleted || a.Status == model.FileStatusDeleting {
 			return errors.New("referenced asset was deleted")

@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/SchemaBio/Octopus/internal/config"
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
-	"os"
-	"path/filepath"
-	"testing"
 )
 
 func localPairFixture(t *testing.T) (string, string, string) {
@@ -86,7 +87,9 @@ func TestLocalImportRejectsCorruptionUnpairedFilesAndInvalidPaths(t *testing.T) 
 func TestLocalImportRechecksGrantsAndRegistersPairAtomically(t *testing.T) {
 	for _, scenario := range []string{"success", "revoked", "duplicate"} {
 		t.Run(scenario, func(t *testing.T) {
-			root, one, two := localPairFixture(t)
+			root := t.TempDir()
+			one := filepath.Join(root, "future", "r1.fastq.gz")
+			two := filepath.Join(root, "future", "r2.fastq.gz")
 			db, mock := newUploadTransactionTestDB(t)
 			previous := database.DB
 			database.DB = db
@@ -118,13 +121,85 @@ func TestLocalImportRechecksGrantsAndRegistersPairAtomically(t *testing.T) {
 			if (err == nil) != (scenario == "success") {
 				t.Fatalf("%s: %v", scenario, err)
 			}
-			if scenario == "success" && (len(assets) != 2 || assets[0].InternalID != "INT-001") {
-				t.Fatal("missing pair metadata")
+			if scenario == "success" {
+				if len(assets) != 2 || assets[0].InternalID != "INT-001" {
+					t.Fatal("missing pair metadata")
+				}
+				for _, asset := range assets {
+					if asset.Status != model.FileStatusPending || asset.ValidationStatus != "pending" || asset.FileSize != 0 {
+						t.Fatalf("missing file must stay pending: %#v", asset)
+					}
+				}
 			}
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestLocalFASTQWaitPublishesBothFilesOnlyAfterValidation(t *testing.T) {
+	root, one, two := localPairFixture(t)
+	validRead2, err := os.ReadFile(two)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(two); err != nil {
+		t.Fatal(err)
+	}
+	pair, err := registerLocalFASTQPair(root, one, two)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, mock := newUploadTransactionTestDB(t)
+	previous := database.DB
+	database.DB = db
+	t.Cleanup(func() { database.DB = previous })
+	svc := NewDataAssetService(&config.Config{Storage: config.StorageConfig{LocalDir: root}})
+	observations := make(map[string]localFASTQObservation)
+	poll := func(validation string) {
+		t.Helper()
+		rows := sqlmock.NewRows([]string{"id", "local_import_pair_id", "storage_key", "read_type"})
+		for i, asset := range pair {
+			rows.AddRow(i+1, *asset.LocalImportPairID, asset.StorageKey, asset.ReadType)
+		}
+		mock.ExpectQuery(`SELECT .*FROM "data_assets".*local_import_pair_id IS NOT NULL`).WillReturnRows(rows)
+		if validation != "" {
+			mock.ExpectBegin()
+			for range pair {
+				pattern := `UPDATE "data_assets" SET .*"validation_status"`
+				if validation == "valid" {
+					pattern = `UPDATE "data_assets" SET .*"status".*"validation_sha256"`
+				}
+				mock.ExpectExec(pattern).WillReturnResult(sqlmock.NewResult(0, 1))
+			}
+			mock.ExpectCommit()
+		}
+		observations = svc.checkLocalFASTQPairs(context.Background(), observations)
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	poll("") // Only R1 is present.
+	if len(observations) != 0 {
+		t.Fatal("observed a pair while R2 was missing")
+	}
+	if err := os.WriteFile(two, validRead2[:len(validRead2)-5], 0600); err != nil {
+		t.Fatal(err)
+	}
+	poll("") // First observation of the pair.
+	poll("invalid")
+	if !observations[*pair[0].LocalImportPairID].checked {
+		t.Fatal("unchanged corrupt data should not be repeatedly validated")
+	}
+	poll("")
+	if err := os.WriteFile(two, validRead2, 0600); err != nil {
+		t.Fatal(err)
+	}
+	poll("") // The replacement must settle too.
+	poll("valid")
+	if len(observations) != 0 {
+		t.Fatal("completed pair is no longer pending")
 	}
 }
 func TestSaaSLocalImportAlwaysDisabled(t *testing.T) {

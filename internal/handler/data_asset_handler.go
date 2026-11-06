@@ -94,6 +94,14 @@ func (h *DataAssetHandler) Download(c *gin.Context) {
 }
 
 func (h *DataAssetHandler) Delete(c *gin.Context) {
+	if c.Query("pending_registration") == "true" {
+		if err := h.svc.CancelLocalFASTQRegistration(c.Request.Context(), c.Param("uuid"), taskActorFromContext(c)); err != nil {
+			ErrorNotFound(c, "Pending FASTQ registration not found")
+			return
+		}
+		c.Status(http.StatusNoContent)
+		return
+	}
 	if err := h.svc.Delete(c.Request.Context(), c.Param("uuid"), taskActorFromContext(c)); err != nil {
 		var inUse *service.ResourceInUseError
 		if errors.As(err, &inUse) {

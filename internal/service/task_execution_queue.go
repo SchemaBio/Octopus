@@ -41,6 +41,11 @@ func (s *TaskService) claimLocalStart(ctx context.Context, id string) (*model.Ta
 		if err := validateSavedTaskResources(tx, &task); err != nil {
 			return err
 		}
+		if task.Template == "trio" && s.supportsWaitingTrio() {
+			if err := s.bindWaitingTrio(tx, &task); err != nil {
+				return err
+			}
+		}
 		previous = task.Status
 		if task.ExecutionAttemptID == "" || previous == model.TaskStatusFailed || previous == model.TaskStatusCancelled {
 			task.ExecutionAttemptID = uuid.New().String()

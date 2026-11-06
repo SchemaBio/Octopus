@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/SchemaBio/Octopus/internal/database"
 	"github.com/SchemaBio/Octopus/internal/model"
+	"github.com/SchemaBio/Octopus/internal/pathsafe"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -48,8 +50,7 @@ func openLocalFASTQ(root, path string) (*localFASTQ, error) {
 	if err != nil {
 		return nil, localImportError("path")
 	}
-	name := strings.ToLower(resolved)
-	if !strings.HasSuffix(name, ".fastq") && !strings.HasSuffix(name, ".fq") && !strings.HasSuffix(name, ".fastq.gz") && !strings.HasSuffix(name, ".fq.gz") {
+	if !hasLocalFASTQExtension(resolved) {
 		return nil, localImportError("format")
 	}
 	file, err := os.Open(resolved)
@@ -64,7 +65,7 @@ func openLocalFASTQ(root, path string) (*localFASTQ, error) {
 	digest := sha256.New()
 	var reader io.Reader = io.TeeReader(file, digest)
 	var compressed *gzip.Reader
-	if strings.HasSuffix(name, ".gz") {
+	if strings.HasSuffix(strings.ToLower(resolved), ".gz") {
 		compressed, err = gzip.NewReader(reader)
 		if err != nil {
 			file.Close()
@@ -75,6 +76,12 @@ func openLocalFASTQ(root, path string) (*localFASTQ, error) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	return &localFASTQ{file: file, before: before, scanner: scanner, path: resolved, digest: digest, gzip: compressed}, nil
+}
+
+func hasLocalFASTQExtension(path string) bool {
+	name := strings.ToLower(path)
+	return strings.HasSuffix(name, ".fastq") || strings.HasSuffix(name, ".fq") ||
+		strings.HasSuffix(name, ".fastq.gz") || strings.HasSuffix(name, ".fq.gz")
 }
 func (f *localFASTQ) close() {
 	if f.gzip != nil {
@@ -144,6 +151,11 @@ func (f *localFASTQ) unchanged(root string) bool {
 	return err == nil && os.SameFile(f.before, now) && now.Size() == f.before.Size() && now.ModTime().Equal(f.before.ModTime())
 }
 
+func sameLocalPath(left, right string) bool {
+	relative, err := filepath.Rel(left, right)
+	return err == nil && relative == "."
+}
+
 func validateLocalPair(ctx context.Context, root, read1, read2 string) ([]model.DataAsset, error) {
 	first, err := openLocalFASTQ(root, read1)
 	if err != nil {
@@ -202,6 +214,55 @@ func validateLocalPair(ctx context.Context, root, read1, read2 string) ([]model.
 	return result, nil
 }
 
+func registerLocalFASTQPair(root, read1, read2 string) ([]model.DataAsset, error) {
+	root, err := pathsafe.RealPath(root)
+	if err != nil {
+		return nil, localImportError("path")
+	}
+	pairID := uuid.NewString()
+	assets := make([]model.DataAsset, 0, 2)
+	for i, path := range []string{read1, read2} {
+		path = strings.TrimSpace(path)
+		if !filepath.IsAbs(path) {
+			return nil, localImportError("absolute_path")
+		}
+		path = filepath.Clean(path)
+		if strings.ContainsRune(path, 0) || ensurePathInsideBase(root, path) != nil || sameLocalPath(path, root) {
+			return nil, localImportError("path")
+		}
+		if !hasLocalFASTQExtension(path) {
+			return nil, localImportError("format")
+		}
+		// A future file may have missing parent directories. Check the first
+		// existing ancestor and keep one storage key per physical path.
+		for candidate := path; ; candidate = filepath.Dir(candidate) {
+			info, err := os.Lstat(candidate)
+			if errors.Is(err, fs.ErrNotExist) && !sameLocalPath(candidate, root) {
+				continue
+			}
+			resolved, resolveErr := pathsafe.ResolveExistingWithin(root, candidate)
+			if err != nil || resolveErr != nil || !sameLocalPath(resolved, candidate) ||
+				(candidate == path && !info.Mode().IsRegular()) || (candidate != path && !info.IsDir()) {
+				return nil, localImportError("path")
+			}
+			break
+		}
+		readType := model.ReadTypeRead1
+		if i == 1 {
+			if sameLocalPath(path, assets[0].StorageKey) {
+				return nil, localImportError("same_file")
+			}
+			readType = model.ReadTypeRead2
+		}
+		assets = append(assets, model.DataAsset{
+			UUID: uuid.NewString(), LocalImportPairID: &pairID, Provider: model.UploadProviderLocal,
+			StorageKey: path, FileName: filepath.Base(path), ReadType: readType,
+			Status: model.FileStatusPending, Source: model.DataAssetSourceLocalImport, ValidationStatus: "pending",
+		})
+	}
+	return assets, nil
+}
+
 func (s *DataAssetService) ImportLocalPair(ctx context.Context, req *model.LocalDataImportRequest, actor model.OverlayActor) ([]model.DataAssetResponse, error) {
 	if s.cfg == nil || s.cfg.Edition != "opensource" || s.cfg.Storage.Provider != "local" || !actor.SharedInstance || actor.UserID == 0 {
 		return nil, localImportError("disabled")
@@ -210,21 +271,21 @@ func (s *DataAssetService) ImportLocalPair(ctx context.Context, req *model.Local
 	if internalID == "" || len([]rune(internalID)) > 100 {
 		return nil, localImportError("internal_id")
 	}
-	select {
-	case localImportSlots <- struct{}{}:
-		defer func() { <-localImportSlots }()
-	default:
-		return nil, localImportError("busy")
-	}
 	var assets []model.DataAsset
 	var err error
 	if req.VCFPath != "" {
 		if req.Read1Path != "" || req.Read2Path != "" {
 			return nil, localImportError("format")
 		}
+		select {
+		case localImportSlots <- struct{}{}:
+			defer func() { <-localImportSlots }()
+		default:
+			return nil, localImportError("busy")
+		}
 		assets, err = validateLocalVCF(ctx, s.cfg.Storage.LocalDir, req.VCFPath)
 	} else {
-		assets, err = validateLocalPair(ctx, s.cfg.Storage.LocalDir, strings.TrimSpace(req.Read1Path), strings.TrimSpace(req.Read2Path))
+		assets, err = registerLocalFASTQPair(s.cfg.Storage.LocalDir, req.Read1Path, req.Read2Path)
 	}
 	if err != nil {
 		return nil, err

@@ -76,6 +76,9 @@ func (s *DataAssetService) Update(uuid string, req *model.DataAssetUpdateRequest
 	if !canMutateDataAsset(asset, actor) {
 		return nil, fmt.Errorf("data asset not found")
 	}
+	if asset.LocalImportPairID != nil && asset.Status == model.FileStatusPending {
+		return nil, fmt.Errorf("cancel the pending FASTQ registration and register the pair with the new internal ID")
+	}
 	asset.InternalID = strings.TrimSpace(req.InternalID)
 	if err := s.repo.Update(asset); err != nil {
 		return nil, err
@@ -117,6 +120,28 @@ func (s *DataAssetService) Delete(ctx context.Context, uuid string, actor model.
 	return s.deleteAsset(ctx, asset)
 }
 
+func (s *DataAssetService) CancelLocalFASTQRegistration(ctx context.Context, uuid string, actor model.OverlayActor) error {
+	asset, err := s.Get(uuid, actor)
+	if err != nil || !canMutateDataAsset(asset, actor) || asset.LocalImportPairID == nil || asset.Status != model.FileStatusPending {
+		return fmt.Errorf("pending FASTQ registration not found")
+	}
+	return cancelLocalFASTQPair(database.GetDB().WithContext(ctx), *asset.LocalImportPairID)
+}
+
+func cancelLocalFASTQPair(db *gorm.DB, pairID string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("local_import_pair_id = ? AND status = ?", pairID, model.FileStatusPending).
+			Delete(&model.DataAsset{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 2 {
+			return fmt.Errorf("FASTQ registration changed; refresh the data list and try again")
+		}
+		return nil
+	})
+}
+
 // canMutateDataAsset mirrors the scope used by data-asset reads. Assets are
 // shared within a SaaS organization, while standalone deployments remain
 // isolated by the user that created the asset.
@@ -154,6 +179,9 @@ func (s *DataAssetService) deleteAsset(ctx context.Context, asset *model.DataAss
 	db := database.GetDB()
 	if db == nil {
 		return fmt.Errorf("database is not initialized")
+	}
+	if asset.LocalImportPairID != nil && asset.Status == model.FileStatusPending {
+		return cancelLocalFASTQPair(db.WithContext(ctx), *asset.LocalImportPairID)
 	}
 	var uploadJobID uint
 	if asset.UploadFileID != nil {

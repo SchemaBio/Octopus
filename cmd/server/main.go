@@ -166,6 +166,7 @@ func main() {
 	fmt.Println("Data wait sync started (interval: 30s)")
 
 	assetSvc := service.NewDataAssetService(cfg)
+	assetSvc.StartLocalFASTQWait(ctx, 30*time.Second)
 	assetSvc.StartRetentionCleanup(ctx, time.Hour)
 	if cfg.Storage.RetentionDays > 0 {
 		fmt.Printf("Data retention cleanup started (retention: %d days)\n", cfg.Storage.RetentionDays)
