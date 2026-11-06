@@ -255,7 +255,7 @@ run_host_service() {
     export SEPIIDA_AGENT_ID="self-hosted-agent"
     export SEPIIDA_AGENT_INTERVAL="60"
     export SEPIIDA_WATCH_DIRS="$DATA_ROOT/output"
-    export SEPIIDA_ARCHIVE_URL=""
+    export SEPIIDA_ARCHIVE_URL="$DATA_ROOT/archive"
   fi
   exec nohup "$INSTALL_ROOT/bin/$service"
 }

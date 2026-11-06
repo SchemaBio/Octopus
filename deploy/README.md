@@ -53,8 +53,9 @@ The deploying user needs access to Docker Engine, the workflow and reference
 files, and write access to the data and installation directories. The script
 uses curl and flock (from util-linux). Set absolute paths in `.env` if MiniWDL
 or Sepiida Agent is outside your PATH. Application data defaults to `deploy/data`
-and installed binaries to `deploy/.generated/host/bin`. Process IDs and logs are
-stored in `deploy/.generated`.
+and installed binaries to `deploy/.generated/host/bin`. Sepiida Agent writes
+workflow results to `$DATA_ROOT/archive` and reports archive completion so
+Octopus can import them. Process IDs and logs are stored in `deploy/.generated`.
 
 For an existing systemd deployment, stop and disable
 `schemabio-octopus.service` and `schemabio-sepiida-agent.service` using the
