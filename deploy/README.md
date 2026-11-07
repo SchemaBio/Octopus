@@ -92,30 +92,6 @@ continues to use the deploying user's Docker configuration. For an existing
 deployment, apply the updated script with `bash ./deploy.sh install` while no
 workflows are running so the host services pick up the new environment.
 
-## COS Parquet and SVC engines
-
-SaaS deployments can merge `saas-parquet-query.override.yaml` with their
-existing Compose file. The override mounts writable Parquet cache and assessment
-directories for Octopus UID/GID 1000 and initializes their permissions. Query,
-preparation, export, schema and pinned SVC scoring run inside Octopus's pure Go
-process. Python and DuckDB are not runtime dependencies. The override filename
-is retained for existing deployment commands; it no longer adds a query service
-or dedicated network. Ordinary SaaS auth/workflow dependencies remain unchanged.
-
-Build and apply it from the SaaS deployment directory with
-`OCTOPUS_IMAGE` set to the image tag built from this repository. Remove
-`PARQUET_QUERY_URL`, `RESULT_ENGINE_BACKEND` and `SVC_ENGINE_BACKEND` from
-Octopus's environment; startup rejects obsolete runtime settings explicitly:
-
-```sh
-docker compose -f compose.yaml \
-  -f ../Octopus/deploy/saas-parquet-query.override.yaml \
-  up -d octopus
-```
-
-`RESULT_ENGINE_TEMP_DIR` defaults to the cache's `tmp` subdirectory. Both data
-directories must be writable; cache objects and existing assessments are retained.
-
 ## Local access
 
 Open `http://localhost:3000`, or use the configured `YIJIAN_PORT`. The browser

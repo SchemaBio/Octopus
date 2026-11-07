@@ -6,13 +6,11 @@
 > Server 和 YiJian，并用 systemd 在宿主机运行 Octopus 与 Sepiida Agent。
 > 根目录 `.env.example` 仅用于 Octopus 单服务开发。
 
-生物信息分析平台后端服务。默认社区模式面向本地自部署；启用 SaaS Overlay 后，Octopus 也可通过腾讯云 COS 的 S3 兼容接口管理数据，并把受限的 CVM 执行规格交给 Squid 调度。
+开源自部署生物信息分析平台后端，执行 MiniWDL 工作流，管理样本与结果，并对接 YiJian、Sepiida 和 SepiLens。
 
 ## 产品定位与使用边界
 
 Octopus 是从 FASTQ 到分析结果的生物信息工作流与变异注释后端。开源自部署版由部署者自行决定工作流、使用场景、数据保留和结果用途，并负责数据授权、安全保护、结果验证及适用的资质和监管要求。软件及输出不自动构成经过验证的医疗产品或诊断结论；本说明不新增开源许可的用途限制。
-
-通过 Squid 提供的 SaaS 托管服务仅用于科研分析与注释（RUO）。ACMG、HPO 及 AI 功能整理证据并筛选研究候选，不提供个人疾病诊断、健康风险结论、治疗或用药建议。托管服务不提供诊断报告签发、长期保藏或历史检出档案；任务期间的结果与操作记录按服务保留规则处理。开源功能清单不等同于 SaaS 开放功能清单。
 
 ## 功能特性
 
@@ -32,44 +30,12 @@ Octopus 是从 FASTQ 到分析结果的生物信息工作流与变异注释后�
 - **报告生成**：从 COS/S3 归档按 execution attempt 生成并缓存完整结果 ZIP，再通过用户配置的 Bearer Key FastAPI 端点同步生成报告
 - **WDL 模板管理**：内置工作流目录 + 文件系统模板，支持默认输入值
 - **资源访问控制**：基于任务的访问验证，防止跨任务数据泄露
+- **业务权限**：平台管理员可逐项授权本地用户，普通用户默认只读
 - **启动配置验证**：release 模式下自动检查 JWT 密钥强度和配置一致性
 
-### 社区版边界
+### 自部署
 
-Octopus 的社区默认值仍是本地存储和本地 executor。它只提供通用的 `cos`/S3 数据面和 `cvm_spot` Overlay 协议，不持有腾讯云 CVM 控制权限，也不实现积分计费、平台组织管理或并发策略；这些 SaaS 控制面能力属于 Squid。
-
-在 `cvm_spot` 模式下，Octopus 为每次执行生成独立的 `attempt_id`。任务重试不会复用旧实例、Sepiida 工作流或 COS 归档前缀；社区版 executor 继续以任务 UUID 工作，不依赖 Squid。
-
-### SaaS Overlay 扩展点（默认关闭）
-
-Octopus 仍然是完整可部署的开源社区版，不包含 Squid 的闭源计费、云调度或多租户控制面。为了避免同时维护两套后端，Octopus 提供一组通用扩展点：部署方可以先部署开源 Octopus，再让 Squid 作为外部 SaaS Overlay 负责租户认证、任务准入和生命周期计费。
-
-启用方式是显式配置环境变量。社区部署保持 `EXTERNAL_AUTH_ENABLED=false` 和 `OVERLAY_ENABLED=false` 即可，不需要 Squid。
-
-| 能力 | 方向 | 说明 |
-|------|------|------|
-| Trusted external auth | Squid -> Octopus | Squid 验证 SaaS 用户后，用共享密钥和身份头调用 Octopus API |
-| Task admission webhook | Octopus -> Squid | 创建、启动、重试任务前询问外部策略面是否允许 |
-| Task event webhook | Octopus -> Squid | 任务 created/running/queued/completed/failed/cancelled/start_failed 时发送事件 |
-| CVM dispatch/cancel | Octopus -> Squid | 计费准入后投递执行规格，停止或取消时请求销毁实例 |
-| CVM state callback | Squid -> Octopus | 更新实例状态；异常终态将运行中任务置为失败 |
-
-Trusted external auth 默认头：
-
-| Header | 说明 |
-|--------|------|
-| `X-Octopus-External-Auth` | `Bearer <EXTERNAL_AUTH_SHARED_SECRET>` |
-| `X-Octopus-User-ID` | 已认证用户 ID |
-| `X-Octopus-User-Email` | 已认证用户邮箱 |
-| `X-Octopus-User-Role` | 用户角色，缺省为普通用户 |
-| `X-Octopus-Org-ID` | 可选组织 ID，由 SaaS Overlay 使用 |
-
-Overlay webhook 默认路径：
-
-| Endpoint | Payload | 用途 |
-|----------|---------|------|
-| `POST /api/v1/overlay/tasks/admit` | `OverlayTaskAdmissionRequest` | 返回 `{ "allowed": true }` 或 `{ "allowed": false, "reason": "..." }` |
-| `POST /api/v1/overlay/tasks/events` | `OverlayTaskEventRequest` | 接收任务生命周期事件；Octopus 以 best-effort 方式发送 |
+本地执行器在宿主机运行 MiniWDL。[部署指南](deploy/README.md)介绍完整部署。
 
 ## 目录结构
 
@@ -297,23 +263,6 @@ go run ./cmd/seed -reset # 清空 seed 后重插
 | JWT_ISSUER | octopus | JWT Issuer |
 | JWT_EXPIRE | 24h | Access Token 有效期 |
 | JWT_REFRESH | 168h | Refresh Token 有效期 (7天) |
-| EXTERNAL_AUTH_ENABLED | false | 启用可信外部认证头，供 Squid 等网关转发已认证用户 |
-| EXTERNAL_AUTH_SHARED_SECRET | | 外部认证共享密钥，启用时必填 |
-| EXTERNAL_AUTH_SHARED_SECRET_FILE | | 从文件读取外部认证共享密钥 |
-| EXTERNAL_AUTH_HEADER | X-Octopus-External-Auth | 承载外部认证共享密钥的请求头 |
-| EXTERNAL_AUTH_USER_ID_HEADER | X-Octopus-User-ID | 外部认证用户 ID 请求头 |
-| EXTERNAL_AUTH_EMAIL_HEADER | X-Octopus-User-Email | 外部认证用户邮箱请求头 |
-| EXTERNAL_AUTH_ROLE_HEADER | X-Octopus-User-Role | 外部认证用户角色请求头 |
-| EXTERNAL_AUTH_ORG_ID_HEADER | X-Octopus-Org-ID | 外部认证组织 ID 请求头 |
-| OVERLAY_ENABLED | false | 启用任务准入和生命周期事件 Overlay |
-| OVERLAY_BASE_URL | | Overlay 服务根地址，例如 Squid API 地址 |
-| OVERLAY_SHARED_SECRET | | Octopus 调用 Overlay webhook 的共享密钥，启用时必填 |
-| OVERLAY_SHARED_SECRET_FILE | | 从文件读取 Overlay 共享密钥 |
-| OVERLAY_TIMEOUT | 5s | Overlay HTTP 调用超时时间 |
-| OVERLAY_DISPATCH_TIMEOUT | 30s | CVM 创建/幂等查询调用超时时间；应覆盖云厂商实例申请延迟 |
-| OVERLAY_FAIL_OPEN | false | 准入 webhook 失败时是否放行；社区/生产建议保持 false |
-| OVERLAY_TASK_ADMISSION_PATH | /api/v1/overlay/tasks/admit | 任务准入 webhook 路径 |
-| OVERLAY_TASK_EVENT_PATH | /api/v1/overlay/tasks/events | 任务事件 webhook 路径 |
 | LLM_ENABLED | false | 启用 AI 评估 |
 | LLM_BASE_URL | | LLM API Base URL |
 | LLM_API_KEY | | LLM API Key |

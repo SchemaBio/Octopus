@@ -7,10 +7,7 @@
 > Octopus and the Sepiida Agent. The root `.env.example` is only for
 > single-service Octopus development.
 
-Backend service for a bioinformatics analysis platform. The default community
-mode is for local self-hosting. With the SaaS Overlay enabled, Octopus can also
-manage data through Tencent Cloud COS's S3-compatible API and hand constrained
-CVM execution specs to Squid for scheduling.
+Backend service for a self-hosted bioinformatics analysis platform. Octopus runs MiniWDL workflows and integrates with YiJian, Sepiida, and SepiLens.
 
 ## Product scope and usage boundary
 
@@ -22,15 +19,6 @@ any applicable qualifications or regulatory requirements. The software and its
 outputs do not automatically constitute a validated medical product or a
 diagnostic conclusion. This statement does not add use restrictions to the
 open-source license.
-
-The hosted SaaS service provided through Squid is for research use only (RUO).
-ACMG, HPO, and AI features organize evidence and screen research candidates.
-They do not provide personal disease diagnosis, health-risk conclusions, or
-treatment or medication advice. The hosted service does not issue diagnostic
-reports, provide long-term archival storage, or maintain a historical finding
-record. Results and operation logs during a task are handled under the
-service retention rules. The open-source feature list is not the same as the
-SaaS feature list.
 
 ## Features
 
@@ -50,58 +38,12 @@ SaaS feature list.
 - **Report generation**: Build and cache a full result ZIP from the COS/S3 archive per execution attempt, then synchronously generate a report through a user-configured Bearer Key FastAPI endpoint
 - **WDL template management**: Built-in workflow catalog plus filesystem templates, with default input values
 - **Resource access control**: Task-based access checks to prevent cross-task data leakage
+- **Business permissions**: Platform administrators grant individual permissions to local users; ordinary users start read-only
 - **Startup config validation**: In release mode, automatically check JWT secret strength and config consistency
 
-### Community edition boundary
+### Self-hosted deployment
 
-Octopus community defaults remain local storage and a local executor. It only
-provides a generic `cos`/S3 data plane and the `cvm_spot` Overlay protocol. It
-does not hold Tencent Cloud CVM control privileges, and it does not implement
-credit billing, platform organization management, or concurrency policy. Those
-SaaS control-plane capabilities belong to Squid.
-
-In `cvm_spot` mode, Octopus generates an independent `attempt_id` for each
-execution. A task retry does not reuse the old instance, Sepiida workflow, or
-COS archive prefix. The community executor continues to work with the task
-UUID and does not depend on Squid.
-
-### SaaS Overlay extension points (off by default)
-
-Octopus remains a complete, deployable open-source community edition. It does
-not include Squid's closed-source billing, cloud scheduling, or multi-tenant
-control plane. To avoid maintaining two backends, Octopus exposes a set of
-generic extension points: deploy open-source Octopus first, then let Squid act
-as an external SaaS Overlay for tenant authentication, task admission, and
-lifecycle billing.
-
-Enable them by setting environment variables explicitly. Community deployments
-keep `EXTERNAL_AUTH_ENABLED=false` and `OVERLAY_ENABLED=false` and do not need
-Squid.
-
-| Capability | Direction | Description |
-|------------|-----------|-------------|
-| Trusted external auth | Squid -> Octopus | After Squid authenticates a SaaS user, it calls the Octopus API with a shared secret and identity headers |
-| Task admission webhook | Octopus -> Squid | Before creating, starting, or retrying a task, ask the external policy plane whether it is allowed |
-| Task event webhook | Octopus -> Squid | Send events when a task is created/running/queued/completed/failed/cancelled/start_failed |
-| CVM dispatch/cancel | Octopus -> Squid | After billing admission, submit an execution spec; on stop or cancel, request instance destruction |
-| CVM state callback | Squid -> Octopus | Update instance state; an abnormal terminal state marks a running task as failed |
-
-Default trusted external auth headers:
-
-| Header | Description |
-|--------|-------------|
-| `X-Octopus-External-Auth` | `Bearer <EXTERNAL_AUTH_SHARED_SECRET>` |
-| `X-Octopus-User-ID` | Authenticated user ID |
-| `X-Octopus-User-Email` | Authenticated user email |
-| `X-Octopus-User-Role` | User role; defaults to a regular user |
-| `X-Octopus-Org-ID` | Optional organization ID, used by the SaaS Overlay |
-
-Default Overlay webhook paths:
-
-| Endpoint | Payload | Purpose |
-|----------|---------|---------|
-| `POST /api/v1/overlay/tasks/admit` | `OverlayTaskAdmissionRequest` | Return `{ "allowed": true }` or `{ "allowed": false, "reason": "..." }` |
-| `POST /api/v1/overlay/tasks/events` | `OverlayTaskEventRequest` | Receive task lifecycle events; Octopus sends them best-effort |
+The local executor runs MiniWDL on the host. See the [deployment guide](deploy/README.md) for the complete stack.
 
 ## Directory layout
 
@@ -342,23 +284,6 @@ returned to the frontend through query APIs.
 | JWT_ISSUER | octopus | JWT issuer |
 | JWT_EXPIRE | 24h | Access token lifetime |
 | JWT_REFRESH | 168h | Refresh token lifetime (7 days) |
-| EXTERNAL_AUTH_ENABLED | false | Enable trusted external auth headers so Squid or another gateway can forward an authenticated user |
-| EXTERNAL_AUTH_SHARED_SECRET | | Shared secret for external auth; required when enabled |
-| EXTERNAL_AUTH_SHARED_SECRET_FILE | | Read the external-auth shared secret from a file |
-| EXTERNAL_AUTH_HEADER | X-Octopus-External-Auth | Header that carries the external-auth shared secret |
-| EXTERNAL_AUTH_USER_ID_HEADER | X-Octopus-User-ID | External-auth user ID header |
-| EXTERNAL_AUTH_EMAIL_HEADER | X-Octopus-User-Email | External-auth user email header |
-| EXTERNAL_AUTH_ROLE_HEADER | X-Octopus-User-Role | External-auth user role header |
-| EXTERNAL_AUTH_ORG_ID_HEADER | X-Octopus-Org-ID | External-auth organization ID header |
-| OVERLAY_ENABLED | false | Enable task admission and lifecycle-event Overlay |
-| OVERLAY_BASE_URL | | Overlay service base URL, for example the Squid API address |
-| OVERLAY_SHARED_SECRET | | Shared secret Octopus uses to call Overlay webhooks; required when enabled |
-| OVERLAY_SHARED_SECRET_FILE | | Read the Overlay shared secret from a file |
-| OVERLAY_TIMEOUT | 5s | Overlay HTTP call timeout |
-| OVERLAY_DISPATCH_TIMEOUT | 30s | Timeout for CVM create / idempotent lookup calls; should cover cloud instance provisioning delay |
-| OVERLAY_FAIL_OPEN | false | Whether to allow the request when the admission webhook fails; keep false for community and production |
-| OVERLAY_TASK_ADMISSION_PATH | /api/v1/overlay/tasks/admit | Task admission webhook path |
-| OVERLAY_TASK_EVENT_PATH | /api/v1/overlay/tasks/events | Task event webhook path |
 | LLM_ENABLED | false | Enable AI evaluation |
 | LLM_BASE_URL | | LLM API base URL |
 | LLM_API_KEY | | LLM API key |
