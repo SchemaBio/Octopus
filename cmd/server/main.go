@@ -85,6 +85,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "FATAL: %v\n", err)
 		os.Exit(1)
 	}
+	if err := loadManagedStorage(cfg); err != nil {
+		log.Fatal(err)
+	}
 	if err := config.ValidateStartup(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: %v\n", err)
 		os.Exit(1)
@@ -241,4 +244,19 @@ func normalizeServerError(err error) error {
 		return nil
 	}
 	return err
+}
+
+
+// SaaS operations and maintenance commands use the same applied storage.
+func loadManagedStorage(cfg *config.Config) error {
+	if !cfg.IsSaaS() || os.Getenv("SAAS_MANAGED_STORAGE") != "true" {
+		return nil
+	}
+	overlay := service.NewOverlayClient(cfg.Overlay)
+	if overlay == nil {
+		return errors.New("managed storage requires the SaaS overlay")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return overlay.LoadManagedStorage(ctx, &cfg.Storage)
 }

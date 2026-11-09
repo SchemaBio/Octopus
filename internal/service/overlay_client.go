@@ -230,6 +230,37 @@ func (c *OverlayClient) RefundCredits(ctx context.Context, req model.OverlayCred
 	return nil
 }
 
+// LoadManagedStorage reads the startup configuration over the existing signed
+// SaaS channel. An older Squid may still supply storage via the deployment.
+func (c *OverlayClient) LoadManagedStorage(ctx context.Context, storage *config.StorageConfig) error {
+	var managed struct {
+		Region          string `json:"region"`
+		Bucket          string `json:"bucket"`
+		SecretID        string `json:"secret_id"`
+		SecretKey       string `json:"secret_key"`
+		ReferenceBucket string `json:"reference_bucket"`
+	}
+	status, _, err := c.postJSON(ctx, "/api/v1/overlay/config/storage", struct{}{}, &managed)
+	if err != nil {
+		return fmt.Errorf("could not load managed SaaS storage")
+	}
+	if status == http.StatusNotFound && storage.S3Bucket != "" {
+		return nil
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("could not load managed SaaS storage (HTTP %d)", status)
+	}
+	if managed.Bucket == "" || managed.Region == "" || managed.SecretID == "" || managed.SecretKey == "" {
+		return fmt.Errorf("configure shared COS storage in Cuttlefish and apply the settings in Squid")
+	}
+	endpoint := "https://cos." + managed.Region + ".myqcloud.com"
+	storage.S3Bucket, storage.S3Region = managed.Bucket, managed.Region
+	storage.S3AccessKey, storage.S3SecretKey = managed.SecretID, managed.SecretKey
+	storage.S3Endpoint, storage.S3PublicEndpoint = endpoint, endpoint
+	storage.CVMReferenceBucket = managed.ReferenceBucket
+	return nil
+}
+
 func (c *OverlayClient) postJSON(ctx context.Context, path string, payload interface{}, out interface{}) (int, []byte, error) {
 	return c.postJSONWithClient(ctx, c.client, path, payload, out)
 }

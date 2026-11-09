@@ -15,6 +15,9 @@ import (
 
 func runExampleTemplateCommand(args []string) error {
 	cfg := config.Load()
+	if err := loadManagedStorage(cfg); err != nil {
+		return err
+	}
 	if !cfg.IsSaaS() {
 		return fmt.Errorf("example templates are SaaS-only")
 	}

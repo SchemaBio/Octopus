@@ -23,6 +23,9 @@ func runResultsAssessmentCommand(args []string) error {
 		return fmt.Errorf("--task and --attempt are required")
 	}
 	cfg := config.Load()
+	if err := loadManagedStorage(cfg); err != nil {
+		return err
+	}
 	if err := database.InitDB(cfg); err != nil {
 		return err
 	}

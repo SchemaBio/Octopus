@@ -30,6 +30,9 @@ func runResultsImportCommand(args []string) error {
 	}
 
 	cfg := config.Load()
+	if err := loadManagedStorage(cfg); err != nil {
+		return err
+	}
 	if err := database.InitDB(cfg); err != nil {
 		return fmt.Errorf("initialize database: %w", err)
 	}

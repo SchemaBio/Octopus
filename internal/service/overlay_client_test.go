@@ -27,6 +27,26 @@ func testOverlayClient(serverURL string, failOpen bool) *OverlayClient {
 	})
 }
 
+func TestOverlayClientLoadsManagedStorage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/overlay/config/storage" ||
+			r.Header.Get("Authorization") != "Bearer overlay-secret" || r.Header.Get("X-Overlay-Signature") == "" {
+			t.Error("storage read must use the authenticated overlay")
+		}
+		_, _ = w.Write([]byte(`{"region":"ap-guangzhou","bucket":"user-data-1250000000","secret_id":"fixture-id","secret_key":"fixture-key","reference_bucket":"reference-1250000000"}`))
+	}))
+	defer server.Close()
+	storage := config.StorageConfig{}
+	if err := testOverlayClient(server.URL, false).LoadManagedStorage(context.Background(), &storage); err != nil {
+		t.Fatal(err)
+	}
+	if storage.S3Bucket != "user-data-1250000000" || storage.S3AccessKey != "fixture-id" ||
+		storage.S3SecretKey != "fixture-key" || storage.S3PublicEndpoint != "https://cos.ap-guangzhou.myqcloud.com" ||
+		storage.CVMReferenceBucket != "reference-1250000000" {
+		t.Fatal("applied storage configuration was incomplete")
+	}
+}
+
 func TestOverlayClientDispatchUsesDedicatedCloudTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(40 * time.Millisecond)

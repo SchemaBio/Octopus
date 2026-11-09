@@ -23,6 +23,9 @@ func runHistoryBackfill(args []string) error {
 		return fmt.Errorf("unexpected arguments")
 	}
 	cfg := config.Load()
+	if err := loadManagedStorage(cfg); err != nil {
+		return err
+	}
 	if err := database.InitDB(cfg); err != nil {
 		return err
 	}

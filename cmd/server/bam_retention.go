@@ -25,6 +25,9 @@ func runBAMRetentionCommand(args []string) error {
 		return fmt.Errorf("--task and --attempt required")
 	}
 	cfg := config.Load()
+	if err := loadManagedStorage(cfg); err != nil {
+		return err
+	}
 	if err := database.InitDB(cfg); err != nil {
 		return fmt.Errorf("database unavailable")
 	}
