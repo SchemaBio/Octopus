@@ -32,6 +32,7 @@ func aiIdentity(c *gin.Context) (string, string, uint) {
 	return model.TenantIDForIdentity(org, user), org, user
 }
 func (h *AIAssistanceHandler) Settings(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	_, _, role, _ := middleware.GetCurrentUser(c)
 	out, err := h.svc.Settings(c.Request.Context(), role == string(model.SystemRoleSuperAdmin))
 	if err != nil {
@@ -62,6 +63,7 @@ func (h *AIAssistanceHandler) CachedHPO(c *gin.Context) {
 	Success(c, result)
 }
 func (h *AIAssistanceHandler) SaveSettings(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	var draft assistance.Draft
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
 	if c.ShouldBindJSON(&draft) != nil {

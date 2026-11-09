@@ -126,6 +126,7 @@ type PublicSettings struct {
 	BaseURL        string                `json:"baseUrl,omitempty"`
 	Model          string                `json:"model,omitempty"`
 	Protocol       string                `json:"protocol"`
+	APIKey         string                `json:"apiKey,omitempty"`
 	KeyConfigured  bool                  `json:"keyConfigured"`
 	BillingEnabled bool                  `json:"billingEnabled"`
 	Capabilities   map[string]Capability `json:"capabilities"`

@@ -238,8 +238,12 @@ func TestPersistentRequestsIdempotencyScopeAndNoCharges(t *testing.T) {
 func TestConfigKeyPreservationAndDisabledCapability(t *testing.T) {
 	s, _ := integrationService(t)
 	settings, e := s.Settings(context.Background(), true)
-	if e != nil || !settings.Connected || settings.Capabilities["svcv4"].Enabled || !settings.KeyConfigured || settings.BillingEnabled {
+	if e != nil || !settings.Connected || settings.Capabilities["svcv4"].Enabled || !settings.KeyConfigured || settings.APIKey != "secret-key" || settings.BillingEnabled {
 		t.Fatal(settings, e)
+	}
+	public, e := s.Settings(context.Background(), false)
+	if e != nil || public.APIKey != "" {
+		t.Fatal("non-admin settings must not expose the provider key")
 	}
 	if _, e = s.SaveSettings(context.Background(), Draft{Enabled: true, BaseURL: "https://provider.example/v1", Model: "new", Protocol: "openai_chat"}); e != nil {
 		t.Fatal(e)

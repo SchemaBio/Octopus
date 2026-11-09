@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -15,6 +16,27 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+func TestCVMDispatchQueuePaused(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+		paused bool
+	}{
+		{"production pause response", http.StatusBadGateway, `{"accepted":false,"attempt_id":"","reason":"new execution submissions are temporarily paused"}`, true},
+		{"generic upstream failure", http.StatusBadGateway, `{"accepted":false,"reason":"upstream unavailable"}`, false},
+		{"proxy error page", http.StatusBadGateway, "<html>Bad Gateway</html>", false},
+		{"permanent rejection", http.StatusUnprocessableEntity, `{"accepted":false,"reason":"new execution submissions are temporarily paused"}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := &OverlayHTTPError{Status: tc.status, Body: tc.body}
+			if got := cvmDispatchQueuePaused(err); got != tc.paused {
+				t.Fatalf("cvmDispatchQueuePaused = %t, want %t", got, tc.paused)
+			}
+		})
+	}
+}
 
 func TestCVMPhaseNeedsSubmission(t *testing.T) {
 	for _, phase := range []string{"dispatching", "waiting_quota", "waiting_capacity", " WAITING_CAPACITY "} {

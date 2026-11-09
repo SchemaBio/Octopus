@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -353,6 +354,13 @@ func (s *TaskService) deliverExecutions(ctx context.Context) {
 		}
 		if err != nil {
 			_ = db.Model(&job).Updates(map[string]interface{}{"last_error": err.Error(), "next_retry_at": time.Now().UTC().Add(15 * time.Second)}).Error
+			if cvmDispatchQueuePaused(err) {
+				_ = db.Model(&model.Task{}).
+					Where("uuid = ? AND execution_attempt_id = ? AND status = ? AND execution_phase = ? AND COALESCE(execution_reason_code, '') = ''",
+						task.UUID, job.AttemptID, model.TaskStatusQueued, "dispatching").
+					Update("execution_reason_code", cvmQueuePausedReason).Error
+				continue
+			}
 			if !OverlayDispatchOutcomeUnknown(err) {
 				// A cancellation may win while the HTTP request is in flight. Do
 				// not turn that newer terminal intent into a dispatch failure when
@@ -385,9 +393,25 @@ func (s *TaskService) deliverExecutions(ctx context.Context) {
 		// Squid's versioned outbox is authoritative; this response only acknowledges
 		// durable receipt, and cannot roll back a callback which arrived first.
 		if response != nil && response.Accepted {
+			_ = db.Model(&model.Task{}).
+				Where("uuid = ? AND execution_attempt_id = ? AND status = ? AND execution_phase = ? AND execution_reason_code = ?",
+					task.UUID, job.AttemptID, model.TaskStatusQueued, "dispatching", cvmQueuePausedReason).
+				Update("execution_reason_code", "").Error
 			_ = db.Model(&job).Update("delivered", true).Error
 		}
 	}
+}
+
+const cvmQueuePausedReason = "CVM_QUEUE_PAUSED"
+
+func cvmDispatchQueuePaused(err error) bool {
+	var httpErr *OverlayHTTPError
+	if !errors.As(err, &httpErr) || httpErr.Status != http.StatusBadGateway {
+		return false
+	}
+	var response model.CVMDispatchResponse
+	return json.Unmarshal([]byte(httpErr.Body), &response) == nil && !response.Accepted &&
+		response.Reason == "new execution submissions are temporarily paused"
 }
 
 func cvmDispatchFailureReason(err error) string {

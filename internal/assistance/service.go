@@ -86,6 +86,7 @@ func (s *Service) Settings(ctx context.Context, admin bool) (PublicSettings, err
 	}
 	if admin {
 		out.BaseURL = draft.BaseURL
+		out.APIKey = draft.APIKey
 	}
 	out.Model = draft.Model
 	for feature := range Engines {
