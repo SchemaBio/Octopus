@@ -241,7 +241,7 @@ func resultReferenceForTask(cfg *config.Config, task *model.Task) model.ResultRe
 		ref := local.localIGVReference(task)
 		return model.ResultReference{DeclaredID: ref.ID, Available: ref.Available, Reason: ref.Reason}
 	}
-	if cfg.IGV.ReferenceProxyBaseURL == "" && (strings.TrimSpace(reference.FASTAURL) == "" || strings.TrimSpace(reference.FAIURL) == "") {
+	if igvReferenceProxyBase(cfg, reference) == "" && !hasIGVReferenceURLs(reference) {
 		return model.ResultReference{DeclaredID: declared, Reason: "该执行的参考 FASTA 与 FAI 尚未配置"}
 	}
 	return model.ResultReference{DeclaredID: declared, Available: true}

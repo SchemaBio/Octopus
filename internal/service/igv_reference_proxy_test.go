@@ -98,3 +98,32 @@ func TestIGVReferenceProxyUsesExecutionIdentity(t *testing.T) {
 		t.Fatal("unknown reference accepted")
 	}
 }
+
+func TestSaaSIGVReferenceDefaultsToTaskProxy(t *testing.T) {
+	cfg := &config.Config{Edition: "saas", Storage: config.StorageConfig{Provider: "s3"}}
+	const base = "/v1/tasks/task-1/results/igv/reference/"
+	for _, assembly := range []struct{ declared, id string }{{"hg19", "hg19"}, {"GRCh38", "hg38"}} {
+		t.Run(assembly.id, func(t *testing.T) {
+			task := &model.Task{UUID: "task-1", InputJSON: `{"reference_genome":"` + assembly.declared + `"}`}
+			contextRef := resultReferenceForTask(cfg, task)
+			ref := igvReferenceForTask(cfg, task)
+			if !contextRef.Available || contextRef.DeclaredID != assembly.id || !ref.Available || ref.ID != assembly.id ||
+				ref.FASTAURL != base+"fasta?attempt=task-1" || ref.IndexURL != base+"fai?attempt=task-1" {
+				t.Fatalf("unexpected SaaS reference: context=%#v session=%#v", contextRef, ref)
+			}
+		})
+	}
+
+	task := &model.Task{UUID: "task-1", InputJSON: `{"reference_genome":"GRCh38"}`}
+	cfg.IGV.HG38 = config.IGVReferenceConfig{FASTAURL: "https://reference.example/hg38.fa", FAIURL: "https://reference.example/hg38.fa.fai"}
+	ref := igvReferenceForTask(cfg, task)
+	if !ref.Available || ref.FASTAURL != cfg.IGV.HG38.FASTAURL || ref.IndexURL != cfg.IGV.HG38.FAIURL {
+		t.Fatalf("explicit reference URLs were overridden: %#v", ref)
+	}
+
+	cfg.Edition = "self-hosted"
+	cfg.IGV.HG38 = config.IGVReferenceConfig{}
+	if ref := igvReferenceForTask(cfg, task); ref.Available {
+		t.Fatalf("unconfigured self-hosted reference was advertised: %#v", ref)
+	}
+}

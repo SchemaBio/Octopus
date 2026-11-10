@@ -285,6 +285,21 @@ func readIGVManifest(ctx context.Context, storage *s3Storage, key string) (map[s
 	return manifest, nil
 }
 
+func hasIGVReferenceURLs(reference config.IGVReferenceConfig) bool {
+	return strings.TrimSpace(reference.FASTAURL) != "" && strings.TrimSpace(reference.FAIURL) != ""
+}
+
+func igvReferenceProxyBase(cfg *config.Config, reference config.IGVReferenceConfig) string {
+	if cfg.IGV.ReferenceProxyBaseURL != "" {
+		return cfg.IGV.ReferenceProxyBaseURL
+	}
+	if cfg.IsSaaS() && cfg.Storage.Provider == "s3" && !hasIGVReferenceURLs(reference) {
+		// YiJian resolves this task-scoped route through its configured API.
+		return "/v1"
+	}
+	return ""
+}
+
 func igvReferenceForTask(cfg *config.Config, task *model.Task) model.IGVReferenceResponse {
 	base := resultReferenceForTask(cfg, task)
 	response := model.IGVReferenceResponse{ID: base.DeclaredID, Available: base.Available, Reason: base.Reason}
@@ -299,8 +314,8 @@ func igvReferenceForTask(cfg *config.Config, task *model.Task) model.IGVReferenc
 	}
 	response.FASTAURL = reference.FASTAURL
 	response.IndexURL = reference.FAIURL
-	if cfg.IGV.ReferenceProxyBaseURL != "" {
-		base := cfg.IGV.ReferenceProxyBaseURL + "/tasks/" + url.PathEscape(task.UUID) + "/results/igv/reference/"
+	if proxyBase := igvReferenceProxyBase(cfg, reference); proxyBase != "" {
+		base := proxyBase + "/tasks/" + url.PathEscape(task.UUID) + "/results/igv/reference/"
 		attempt := task.ExecutionAttemptID
 		if attempt == "" {
 			attempt = task.UUID
