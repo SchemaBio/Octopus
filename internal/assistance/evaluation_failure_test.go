@@ -3,7 +3,7 @@ package assistance
 import "testing"
 
 func TestEvaluationFailurePreservesKnownCauseWithoutDeliveringBaseline(t *testing.T) {
-	for _, code := range []string{"AI_OUTPUT_INVALID", "AI_PROVIDER_UNAVAILABLE", "AI_TOOL_BUDGET_EXCEEDED"} {
+	for _, code := range []string{"AI_OUTPUT_INVALID", "AI_PROVIDER_UNAVAILABLE", "AI_PROVIDER_TIMEOUT", "AI_TOOL_BUDGET_EXCEEDED"} {
 		raw := map[string]any{"delivery_status": "failed", "failure_code": code, "local_baseline": map[string]any{"classification": "Pathogenic"}}
 		if evaluationFailureCode(raw) != code {
 			t.Fatal(code)

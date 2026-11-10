@@ -7,7 +7,7 @@ func evaluationFailureCode(raw map[string]any) string {
 		return ""
 	}
 	switch code := text(raw["failure_code"]); code {
-	case "AI_OUTPUT_INVALID", "AI_PROVIDER_UNAVAILABLE", "AI_TOOL_BUDGET_EXCEEDED":
+	case "AI_OUTPUT_INVALID", "AI_PROVIDER_UNAVAILABLE", "AI_PROVIDER_TIMEOUT", "AI_TOOL_BUDGET_EXCEEDED":
 		return code
 	default:
 		return "invalid_result"
