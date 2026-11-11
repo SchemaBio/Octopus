@@ -1,0 +1,145 @@
+name: Release Octopus
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 版本号，例如 v0.3.0 或 v0.3.0-rc.1。同时发布 GitHub Release 二进制和 GHCR 镜像，并更新 latest。
+        required: true
+        type: string
+
+concurrency:
+  group: release-octopus
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Validate version
+        id: version
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo '::error::请输入 vX.Y.Z 或 vX.Y.Z-rc.1 格式的版本号。'
+            exit 1
+          fi
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+
+  binaries:
+    name: Publish GitHub Release
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+
+      - name: Build Linux binaries
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            binary="octopus-linux-$arch"
+            GOARCH="$arch" go build -mod=readonly -trimpath \
+              -ldflags='-s -w -buildid=' -o "dist/$binary" ./cmd/server
+            (cd dist && sha256sum "$binary" > "$binary.sha256")
+          done
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A non-forced push rejects an existing tag pointing to another commit.
+          git push origin "$GITHUB_SHA:refs/tags/$VERSION"
+
+          flags=(--verify-tag --generate-notes --title "Octopus $VERSION")
+          if [[ "$VERSION" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+
+          gh release create "$VERSION" "${flags[@]}" \
+            dist/octopus-linux-amd64 dist/octopus-linux-amd64.sha256 \
+            dist/octopus-linux-arm64 dist/octopus-linux-arm64.sha256
+
+          {
+            echo "### GitHub Release"
+            echo ""
+            echo "- \`${VERSION}\`"
+            echo "- \`octopus-linux-amd64\`"
+            echo "- \`octopus-linux-arm64\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  image:
+    name: Publish GHCR image
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+
+      - name: Set image name
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "IMAGE=${image}" >> "$GITHUB_ENV"
+          echo "Image: ${image}"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.IMAGE }}:${{ env.VERSION }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Write summary
+        shell: bash
+        run: |
+          {
+            echo "### GHCR"
+            echo ""
+            echo "- \`${IMAGE}:${VERSION}\`"
+            echo "- \`${IMAGE}:latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
