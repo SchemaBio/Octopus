@@ -63,6 +63,23 @@ func TestCalculateAnalysisProgressCompletionAndUnknownTemplate(t *testing.T) {
 	}
 }
 
+func TestTrioProbandFamilyPreparationSharesExistingProgressWeight(t *testing.T) {
+	legacyTasks := []model.SepiidaTask{{JobName: "call-GLNexus", Status: model.SepiidaStatusSuccess}}
+	legacy := CalculateAnalysisProgress("trio", legacyTasks, false)
+	running := CalculateAnalysisProgress("trio", append(legacyTasks, model.SepiidaTask{
+		JobName: "call-ProbandFamilyVCF", Status: model.SepiidaStatusRunning,
+	}), false)
+	if running.Stages[3].Status != "running" || len(running.ActiveStages) != 1 || running.ActiveStages[0] != "family_variants" {
+		t.Fatalf("proband family preparation is not visible: %+v", running)
+	}
+	done := CalculateAnalysisProgress("trio", append(legacyTasks, model.SepiidaTask{
+		JobName: "call-ProbandFamilyVCF", Status: model.SepiidaStatusSuccess,
+	}), false)
+	if done.Percent != legacy.Percent || done.Stages[3].Percent != legacy.Stages[3].Percent {
+		t.Fatalf("new preparation changed the legacy stage weight: legacy=%+v new=%+v", legacy, done)
+	}
+}
+
 func TestNormalizeCallAlias(t *testing.T) {
 	for input, want := range map[string]string{
 		"call-Fastp_2":         "Fastp",

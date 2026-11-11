@@ -87,6 +87,14 @@ func CalculateAnalysisProgress(template string, tasks []model.SepiidaTask, workf
 			observed[alias] = append(observed[alias], task.Status)
 		}
 	}
+	// New trio workflows prepare the proband-centred VCF independently of
+	// GLNexus. Share the existing family preparation weight between both calls
+	// when observed, retaining the denominator used by historical workflows.
+	if normalizeProgressTemplate(template) == "germline_trio" {
+		if statuses := observed["ProbandFamilyVCF"]; len(statuses) > 0 {
+			observed["GLNexus"] = append(observed["GLNexus"], statuses...)
+		}
+	}
 	// ReferenceBins replaces antitarget generation and, for calibration,
 	// target rebinning. Keep progress weights compatible with older workflows.
 	if statuses := observed["ReferenceBins"]; len(statuses) > 0 {
