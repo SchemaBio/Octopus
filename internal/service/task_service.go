@@ -1643,13 +1643,17 @@ func localMiniWDLInputs(template string, stored map[string]interface{}) (map[str
 	if err != nil {
 		return nil, err
 	}
+	stripWorkflowMetadata(inputs)
+	return inputs, nil
+}
+
+func stripWorkflowMetadata(inputs map[string]interface{}) {
 	for _, key := range []string{
 		"reference_genome", "trio_members", "trio_input_bytes", "TrioWES.ped_content",
-		"fastq_r1", "fastq_r2", "bed_file", "cnv_baseline",
+		trioWaitingForFASTQ, "fastq_r1", "fastq_r2", "bed_file", "cnv_baseline",
 	} {
 		delete(inputs, key)
 	}
-	return inputs, nil
 }
 
 func (s *TaskService) miniWDLCommand(task *model.Task, inputFile string) *exec.Cmd {
@@ -2951,7 +2955,7 @@ func (s *TaskService) buildCVMDispatchRequestForContract(ctx context.Context, ac
 		}
 		applyWorkflowThresholds(inputs, thresholds)
 	}
-	delete(inputs, "reference_genome")
+	stripWorkflowMetadata(inputs)
 	encoded, err := json.Marshal(inputs)
 	if err != nil {
 		return model.CVMDispatchRequest{}, err

@@ -222,6 +222,15 @@ func TestTrioWDLConversionPreservesAdmissionEstimateAndMemberSnapshot(t *testing
 			if trioEstimatedMinutes(persisted) != 168 {
 				t.Fatal("persisted estimate changed")
 			}
+			stripWorkflowMetadata(inputs)
+			for key := range inputs {
+				if !strings.HasPrefix(key, "TrioWES.") {
+					t.Fatalf("task metadata leaked into cloud WDL input: %s", key)
+				}
+			}
+			if len(inputs) == 0 || inputs["TrioWES.fasta"] == nil {
+				t.Fatal("workflow inputs were stripped")
+			}
 		})
 	}
 }

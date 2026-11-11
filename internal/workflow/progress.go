@@ -87,6 +87,14 @@ func CalculateAnalysisProgress(template string, tasks []model.SepiidaTask, workf
 			observed[alias] = append(observed[alias], task.Status)
 		}
 	}
+	// ReferenceBins replaces antitarget generation and, for calibration,
+	// target rebinning. Keep progress weights compatible with older workflows.
+	if statuses := observed["ReferenceBins"]; len(statuses) > 0 {
+		observed["CNVKitAntitarget"] = statuses
+		if normalizeProgressTemplate(template) == "germline_baseline_fix" {
+			observed["TargetBed"] = statuses
+		}
+	}
 
 	result := &model.AnalysisProgress{ProfileVersion: ProgressProfileVersion, ActiveStages: []string{}}
 	weighted := 0.0

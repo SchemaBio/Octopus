@@ -18,6 +18,17 @@ func TestProgressProfilesCoverKnownWDLCallsExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestReferenceBinPreparationKeepsCalibrationProgress(t *testing.T) {
+	progress := CalculateAnalysisProgress("baseline_fix", []model.SepiidaTask{
+		{JobName: "call-ValidateInputs", Status: model.SepiidaStatusSuccess},
+		{JobName: "call-FixBed", Status: model.SepiidaStatusSuccess},
+		{JobName: "call-ReferenceBins", Status: model.SepiidaStatusSuccess},
+	}, false)
+	if progress.Stages[0].Percent != 100 || progress.Stages[0].Status != "success" {
+		t.Fatalf("consolidated reference preparation was not counted: %+v", progress.Stages[0])
+	}
+}
+
 func TestCalculateAnalysisProgressUsesFixedWeightsAndScatterAverage(t *testing.T) {
 	progress := CalculateAnalysisProgress("germline_single", []model.SepiidaTask{
 		{JobName: "SingleWES.Fastp_0", Status: model.SepiidaStatusSuccess},
