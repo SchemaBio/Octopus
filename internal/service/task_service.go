@@ -2937,6 +2937,11 @@ func (s *TaskService) buildCVMDispatchRequestForContract(ctx context.Context, ac
 	if err := validateCVMStagedBED(task.Template, inputs, downloads); err != nil {
 		return model.CVMDispatchRequest{}, err
 	}
+	bucketHost := strings.TrimSpace(s.cfg.Storage.S3Bucket) + ".cos." + strings.TrimSpace(s.cfg.Storage.S3Region) + ".myqcloud.com"
+	downloads, err = stageCustomCNVReferences(ctx, storage, task.ExternalOrgID, bucketHost, inputs, downloads, cvmInputExpiry)
+	if err != nil {
+		return model.CVMDispatchRequest{}, err
+	}
 	inlineFiles := make([]model.CVMInlineFile, 0, 1)
 	if task.Template == "trio" {
 		content, _ := inputs["TrioWES.ped_content"].(string)
@@ -3023,6 +3028,7 @@ func buildCVMWDLInputs(template, genome string, taskInputs map[string]interface{
 		copyCVMInput(inputs, "SingleWES.cnvkit_reference", taskInputs, "cnv_baseline")
 	case "trio":
 		copyCVMInput(inputs, "TrioWES.bed", taskInputs, "bed_file")
+		copyCVMInput(inputs, "TrioWES.cnvkit_reference", taskInputs, "cnv_baseline")
 	case "baseline_fix":
 		copyCVMInput(inputs, "CNVBaselineFix.bed", taskInputs, "bed_file")
 	}
