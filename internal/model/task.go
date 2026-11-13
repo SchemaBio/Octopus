@@ -164,8 +164,6 @@ type TaskBatchInputRow struct {
 	PedigreeID       string   `json:"pedigree_id"`
 	PipelineID       string   `json:"pipeline_id"`
 	Remark           string   `json:"remark"`
-	EnableCNV        bool     `json:"enable_cnv"`
-	EnableSV         bool     `json:"enable_sv"`
 	ParseErrors      []string `json:"-"`
 }
 

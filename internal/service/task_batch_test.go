@@ -34,10 +34,10 @@ func taskBatchWorkbook(t *testing.T, sheetName string, rows [][]interface{}) *by
 
 func TestParseTaskBatchWorkbook(t *testing.T) {
 	reader := taskBatchWorkbook(t, taskBatchSheetName, [][]interface{}{
-		{"样本ID", "家系ID", "流程ID", "任务备注", "启用CNV", "启用SV"},
-		{"TEST-001", "", "builtin-wes-single", "首批测试", "是", "否"},
-		{"", "pedigree-1", "builtin-wes-family", "", "", "TRUE"},
-		{"", "", "", "", "", ""},
+		{"样本ID", "家系ID", "流程ID", "任务备注"},
+		{"TEST-001", "", "builtin-wes-single", "首批测试"},
+		{"", "pedigree-1", "builtin-wes-family", ""},
+		{"", "", "", ""},
 	})
 	rows, err := ParseTaskBatchWorkbook(reader)
 	if err != nil {
@@ -46,33 +46,33 @@ func TestParseTaskBatchWorkbook(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("got %d rows, want 2", len(rows))
 	}
-	if rows[0].RowNumber != 2 || rows[0].SampleIdentifier != "TEST-001" || !rows[0].EnableCNV || rows[0].EnableSV {
+	if rows[0].RowNumber != 2 || rows[0].SampleIdentifier != "TEST-001" || rows[0].Remark != "首批测试" {
 		t.Fatalf("unexpected first row: %+v", rows[0])
 	}
-	if rows[1].RowNumber != 3 || rows[1].PedigreeID != "pedigree-1" || !rows[1].EnableCNV || !rows[1].EnableSV {
+	if rows[1].RowNumber != 3 || rows[1].PedigreeID != "pedigree-1" {
 		t.Fatalf("unexpected second row: %+v", rows[1])
 	}
 }
 
 func TestParseTrioBatchUsesProbandWithoutPedigreeColumn(t *testing.T) {
-	reader := taskBatchWorkbook(t, taskBatchSheetName, [][]interface{}{{"样本ID", "流程ID", "任务备注", "启用CNV", "启用SV"}, {"PROBAND-001", "builtin-wes-family", "", "TRUE", "FALSE"}})
+	reader := taskBatchWorkbook(t, taskBatchSheetName, [][]interface{}{{"样本ID", "流程ID", "任务备注"}, {"PROBAND-001", "builtin-wes-family", ""}})
 	rows, err := ParseTaskBatchWorkbook(reader)
 	if err != nil || len(rows) != 1 || rows[0].SampleIdentifier != "PROBAND-001" || rows[0].PedigreeID != "" {
 		t.Fatalf("new Trio template rejected: %+v %v", rows, err)
 	}
 }
 
-func TestParseTaskBatchWorkbookReportsInvalidBoolean(t *testing.T) {
+func TestParseTaskBatchWorkbookIgnoresLegacyCNVAndSVColumns(t *testing.T) {
 	reader := taskBatchWorkbook(t, taskBatchSheetName, [][]interface{}{
 		{"样本ID", "家系ID", "流程ID", "任务备注", "启用CNV", "启用SV"},
-		{"TEST-001", "", "builtin-wes-single", "", "随便", "否"},
+		{"TEST-001", "", "builtin-wes-single", "", "随便", "TRUE"},
 	})
 	rows, err := ParseTaskBatchWorkbook(reader)
 	if err != nil {
 		t.Fatalf("ParseTaskBatchWorkbook returned error: %v", err)
 	}
-	if len(rows) != 1 || len(rows[0].ParseErrors) != 1 || !strings.Contains(rows[0].ParseErrors[0], "启用CNV") {
-		t.Fatalf("expected one CNV parse error, got %+v", rows)
+	if len(rows) != 1 || len(rows[0].ParseErrors) != 0 || rows[0].SampleIdentifier != "TEST-001" {
+		t.Fatalf("legacy CNV/SV columns should be ignored, got %+v", rows)
 	}
 }
 
@@ -84,9 +84,9 @@ func TestParseTaskBatchWorkbookRequiresTemplateSheet(t *testing.T) {
 }
 
 func TestParseTaskBatchWorkbookEnforcesRowLimit(t *testing.T) {
-	rows := [][]interface{}{{"样本ID", "家系ID", "流程ID", "任务备注", "启用CNV", "启用SV"}}
+	rows := [][]interface{}{{"样本ID", "家系ID", "流程ID", "任务备注"}}
 	for index := 0; index < maxTaskBatchRows+1; index++ {
-		rows = append(rows, []interface{}{fmt.Sprintf("sample-%d", index), "", "builtin-wes-single", "", "是", "否"})
+		rows = append(rows, []interface{}{fmt.Sprintf("sample-%d", index), "", "builtin-wes-single", ""})
 	}
 	reader := taskBatchWorkbook(t, taskBatchSheetName, rows)
 	if _, err := ParseTaskBatchWorkbook(reader); err == nil || !strings.Contains(err.Error(), "最多") {

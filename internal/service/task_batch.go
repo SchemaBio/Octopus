@@ -28,28 +28,11 @@ var taskBatchHeaders = map[string]string{
 	"pipelineid":       "pipeline",
 	"任务备注":             "remark",
 	"remark":           "remark",
-	"启用cnv":            "enable_cnv",
-	"enablecnv":        "enable_cnv",
-	"启用sv":             "enable_sv",
-	"enablesv":         "enable_sv",
 }
 
 func normalizeTaskBatchHeader(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	return strings.NewReplacer(" ", "", "_", "", "-", "", "\u3000", "").Replace(value)
-}
-
-func parseTaskBatchBool(value string, defaultValue bool) (bool, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "":
-		return defaultValue, nil
-	case "是", "true", "1", "yes", "y":
-		return true, nil
-	case "否", "false", "0", "no", "n":
-		return false, nil
-	default:
-		return false, fmt.Errorf("必须填写 是/否、TRUE/FALSE 或 1/0")
-	}
 }
 
 // ParseTaskBatchWorkbook reads the first worksheet named 批量任务 and returns
@@ -87,7 +70,7 @@ func ParseTaskBatchWorkbook(reader io.Reader) ([]model.TaskBatchInputRow, error)
 			columns[key] = index
 		}
 	}
-	for _, required := range []string{"sample", "pipeline", "remark", "enable_cnv", "enable_sv"} {
+	for _, required := range []string{"sample", "pipeline", "remark"} {
 		if _, ok := columns[required]; !ok {
 			return nil, fmt.Errorf("缺少模板列，请重新下载平台模板")
 		}
@@ -109,34 +92,21 @@ func ParseTaskBatchWorkbook(reader io.Reader) ([]model.TaskBatchInputRow, error)
 		pedigreeID := cell(row, "pedigree")
 		pipelineID := cell(row, "pipeline")
 		remark := cell(row, "remark")
-		cnvValue := cell(row, "enable_cnv")
-		svValue := cell(row, "enable_sv")
-		if sampleIdentifier == "" && pedigreeID == "" && pipelineID == "" && remark == "" && cnvValue == "" && svValue == "" {
+		if sampleIdentifier == "" && pedigreeID == "" && pipelineID == "" && remark == "" {
 			continue
 		}
 		if len(parsed) >= maxTaskBatchRows {
 			return nil, fmt.Errorf("每次最多导入 %d 个任务", maxTaskBatchRows)
 		}
-		enableCNV, cnvErr := parseTaskBatchBool(cnvValue, true)
-		enableSV, svErr := parseTaskBatchBool(svValue, false)
-		parsedRow := model.TaskBatchInputRow{
+		parsed = append(parsed, model.TaskBatchInputRow{
 			RowNumber:        index + 2,
 			SampleIdentifier: sampleIdentifier,
 			PedigreeID:       pedigreeID,
 			PipelineID:       pipelineID,
 			VCFAssetID:       cell(row, "vcf_asset_id"), VCFSampleName: cell(row, "vcf_sample_name"),
 			Remark:      remark,
-			EnableCNV:   enableCNV,
-			EnableSV:    enableSV,
-			ParseErrors: make([]string, 0, 2),
-		}
-		if cnvErr != nil {
-			parsedRow.ParseErrors = append(parsedRow.ParseErrors, fmt.Sprintf("启用CNV值 %q 无效，%v", cnvValue, cnvErr))
-		}
-		if svErr != nil {
-			parsedRow.ParseErrors = append(parsedRow.ParseErrors, fmt.Sprintf("启用SV值 %q 无效，%v", svValue, svErr))
-		}
-		parsed = append(parsed, parsedRow)
+			ParseErrors: make([]string, 0),
+		})
 	}
 	if len(parsed) == 0 {
 		return nil, fmt.Errorf("批量任务工作表没有可导入的数据行")
@@ -166,10 +136,7 @@ func (s *TaskService) previewTaskBatchRow(input model.TaskBatchInputRow, actor m
 		PipelineID: input.PipelineID,
 		VCFAssetID: input.VCFAssetID, VCFSampleName: input.VCFSampleName,
 		Remark: input.Remark,
-		Inputs: map[string]interface{}{
-			"enable_cnv": input.EnableCNV,
-			"enable_sv":  input.EnableSV,
-		},
+		Inputs: map[string]interface{}{},
 	}
 	if input.PipelineID != "" {
 		if _, err := s.resolveAnalysisPipeline(req, actor); err != nil {
